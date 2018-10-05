@@ -1,5 +1,6 @@
 nsh
 ====
+[![Build Status](https://travis-ci.com/seiyanuta/nsh.svg?branch=master)](https://travis-ci.com/seiyanuta/nsh)
 A command-line shell that focuses on performance and productivity.
 
 Road Map
