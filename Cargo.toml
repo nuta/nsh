@@ -1,0 +1,11 @@
+[package]
+name = "nsh"
+version = "0.1.0"
+authors = ["Seiya Nuta <nuta@seiya.me>"]
+
+[dependencies]
+lazy_static = "*"
+log = "0.4"
+pretty_env_logger = "0.2"
+nom = "4"
+rustyline = "2"
