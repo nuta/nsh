@@ -84,10 +84,10 @@ pub enum SyntaxError {
 pub enum ExpansionOp {
     Length, // ${#parameter}
     GetOrEmpty,                            // $parameter and ${parameter}
-    GetOrDefault(String),                  // ${parameter:-word}
-    GetNullableOrDefault(String),          // ${parameter-word}
-    GetOrDefaultAndAssign(String),         // ${parameter:-word}
-    GetNullableOrDefaultAndAssign(String), // ${parameter-word}
+    GetOrDefault(Word),                   // ${parameter:-word}
+    GetNullableOrDefault(Word),           // ${parameter-word}
+    GetOrDefaultAndAssign(Word),          // ${parameter:-word}
+    GetNullableOrDefaultAndAssign(Word),  // ${parameter-word}
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -126,7 +126,11 @@ fn is_valid_word_char(ch: char) -> bool {
 }
 
 fn is_valid_var_name_char(ch: char) -> bool {
-    is_valid_word_char(ch) && ch != '='
+    match ch {
+        '_' => true,
+        _ if ch.is_ascii_alphanumeric() => true,
+        _ => false,
+    }
 }
 
 fn is_whitespace(ch: char) -> bool {
@@ -142,26 +146,58 @@ named!(escape_sequence<Input, Fragment>,
     do_parse!(tag!("\\") >> s: recognize!(one_of!("\\n")) >> ( Fragment::Literal(s.to_string()) ))
 );
 
-named!(parameter_expansion<Input, Fragment>,
+named!(parameter_wo_braces<Input, Fragment>,
+    map!(recognize!(call!(var_name)),
+        |name| {
+            Fragment::Parameter {
+                name: name.to_string(),
+                op: ExpansionOp::GetOrEmpty
+            }
+        })
+);
+
+named!(parameter_w_braces<Input, Fragment>,
     do_parse!(
-        frag: alt!(
-            map!(recognize!(call!(var_name)),
-                |name| {
-                    Fragment::Parameter {
-                        name: name.to_string(),
-                        op: ExpansionOp::GetOrEmpty
-                    }
-                })
-        ) >>
-        ( frag )
+        tag!("{") >>
+        length_op: opt!(tag!("#")) >>
+        name: call!(var_name) >>
+        modifier: opt!(alt!(
+            tag!("-") | tag!(":-") | tag!("=") | tag!(":=")
+        )) >>
+        default: opt!(alt!(
+            // FIXME: accept Word instead
+            map!(call!(expansion), |frag| Word(vec![frag])) |
+            map!(recognize!(take_while1!(|c| is_valid_word_char(c) && c != '}')), parse_word)
+         )) >>
+        tag!("}") >>
+        ({
+            let default_word = default.unwrap_or(Word(vec![]));
+            let op = match (length_op, modifier) {
+                (Some(_), _) => ExpansionOp::Length,
+                (None, Some(Input("-")))  => ExpansionOp::GetNullableOrDefault(default_word),
+                (None, Some(Input(":-"))) => ExpansionOp::GetOrDefault(default_word),
+                (None, Some(Input("=")))  => ExpansionOp::GetNullableOrDefaultAndAssign(default_word),
+                (None, Some(Input(":="))) => ExpansionOp::GetOrDefaultAndAssign(default_word),
+                (None, None) => ExpansionOp::GetOrEmpty,
+                _ => unreachable!(),
+            };
+
+            Fragment::Parameter {
+                name: name.to_string(),
+                op,
+            }
+        })
     )
+);
+
+named!(parameter_expansion<Input, Fragment>,
+    alt!(call!(parameter_w_braces) | call!(parameter_wo_braces))
 );
 
 named!(command_expansion<Input, Fragment>,
     do_parse!(
         // Use tag! here instead of keyword because `(' must comes
         // right after `$'.
-        dbg_dmp!(value!("")) >>
         tag!("(") >>
         body: call!(compound_list) >>
         call!(keyword, ")") >>
@@ -190,6 +226,7 @@ fn parse_word(_buf: Input) -> Word {
                 trace!("frag: rest='{}', head='{}'", rest, head);
                 match alt!(rest, expansion | escape_sequence) {
                     Ok((rest, frag)) => {
+                        literal += &head;
                         match frag {
                             Fragment::Literal(s) => literal += s.as_str(),
                             Fragment::Parameter {..} | Fragment::Command {..} => {
@@ -247,7 +284,8 @@ named!(word<Input, Word>,
     do_parse!(
         call!(whitespaces) >>
         word: alt!(
-            do_parse!(tag!("$") >> frag: call!(command_expansion) >> (Word(vec![frag]))) |
+            // Try to parse $(...) here since it may span multiple words.
+            do_parse!(peek!(tag!("$(")) >> tag!("$") >> frag: call!(command_expansion) >> (Word(vec![frag]))) |
             call!(string_literal) |
             call!(unquoted_word)
         ) >>
@@ -1042,7 +1080,7 @@ pub fn test_compound_commands() {
 #[test]
 pub fn test_dollars() {
     assert_eq!(
-        parse_line("echo $undefined_variable message").unwrap(),
+        parse_line("echo ${undefined:-Current} ${undefined:=TERM} is $TERM len=${#TERM}").unwrap(),
         Ast {
             terms: vec![Term {
                 async: false,
@@ -1054,10 +1092,25 @@ pub fn test_dollars() {
                                 argv: vec![
                                     Word(vec![Fragment::Literal("echo".into())]),
                                     Word(vec![Fragment::Parameter {
-                                        name: "undefined_variable".into(),
+                                        name: "undefined".into(),
+                                        op: ExpansionOp::GetOrDefault(Word(vec![Fragment::Literal("Current".into())])),
+                                    }]),
+                                    Word(vec![Fragment::Parameter {
+                                        name: "undefined".into(),
+                                        op: ExpansionOp::GetOrDefaultAndAssign(Word(vec![Fragment::Literal("TERM".into())])),
+                                    }]),
+                                    Word(vec![Fragment::Literal("is".into())]),
+                                    Word(vec![Fragment::Parameter {
+                                        name: "TERM".into(),
                                         op: ExpansionOp::GetOrEmpty,
                                     }]),
-                                    Word(vec![Fragment::Literal("message".into())]),
+                                    Word(vec![
+                                        Fragment::Literal("len=".into()),
+                                        Fragment::Parameter {
+                                            name: "TERM".into(),
+                                            op: ExpansionOp::Length,
+                                        }
+                                    ]),
                                 ],
                                 redirects: vec![],
                                 assignments: vec![],
