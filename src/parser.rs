@@ -119,7 +119,7 @@ fn is_digit(ch: char) -> bool {
 
 fn is_valid_word_char(ch: char) -> bool {
     match ch {
-        '&' | '|' | ';' | '(' | ')' => false,
+        '&' | '|' | ';' | '(' | ')' | '`' => false,
         _ if is_whitespace(ch) => false,
         _ => true,
     }
@@ -205,6 +205,15 @@ named!(command_expansion<Input, Fragment>,
     )
 );
 
+named!(backquoted_command_expansion<Input, Fragment>,
+    do_parse!(
+        tag!("`") >>
+        body: call!(compound_list) >>
+        call!(keyword, "`") >>
+        ( Fragment::Command { body } )
+    )
+);
+
 named!(expansion<Input, Fragment>,
     do_parse!(
         tag!("$") >>
@@ -286,6 +295,7 @@ named!(word<Input, Word>,
         word: alt!(
             // Try to parse $(...) here since it may span multiple words.
             do_parse!(peek!(tag!("$(")) >> tag!("$") >> frag: call!(command_expansion) >> (Word(vec![frag]))) |
+            do_parse!(peek!(tag!("`")) >> frag: call!(backquoted_command_expansion) >> (Word(vec![frag]))) |
             call!(string_literal) |
             call!(unquoted_word)
         ) >>
@@ -307,6 +317,7 @@ named!(nonreserved_word<Input, Word>,
         not!(peek!(tag!("}"))) >>
         not!(peek!(tag!("("))) >>
         not!(peek!(tag!(")"))) >>
+        not!(peek!(tag!("`"))) >>
         word: call!(word) >>
         ( word )
     )
@@ -1111,6 +1122,49 @@ pub fn test_dollars() {
                                             op: ExpansionOp::Length,
                                         }
                                     ]),
+                                ],
+                                redirects: vec![],
+                                assignments: vec![],
+                            },
+                        ],
+                    },
+                ]
+            }]
+        }
+    );
+
+    assert_eq!(
+        parse_line("ls `echo -l`").unwrap(),
+        Ast {
+            terms: vec![Term {
+                async: false,
+                pipelines: vec![
+                    Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![
+                            Command::SimpleCommand {
+                                argv: vec![
+                                    Word(vec![Fragment::Literal("ls".into())]),
+                                    Word(vec![Fragment::Command {
+                                        body: vec![Term {
+                                            async: false,
+                                            pipelines: vec![
+                                                Pipeline {
+                                                    run_if: RunIf::Always,
+                                                    commands: vec![
+                                                        Command::SimpleCommand {
+                                                            argv: vec![
+                                                                Word(vec![Fragment::Literal("echo".into())]),
+                                                                Word(vec![Fragment::Literal("-l".into())]),
+                                                            ],
+                                                            redirects: vec![],
+                                                            assignments: vec![],
+                                                        }
+                                                    ]
+                                                }
+                                            ]
+                                        }]
+                                    }])
                                 ],
                                 redirects: vec![],
                                 assignments: vec![],
