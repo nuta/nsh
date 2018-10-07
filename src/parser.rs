@@ -123,6 +123,10 @@ pub enum Fragment {
         /// TODO: Parse and compute by ourselves.
         body: Vec<Word>,
     },
+    // *
+    AnyString,
+    // ?
+    AnyChar,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -163,8 +167,22 @@ fn is_whitespace_or_semicolon(ch: char) -> bool {
     is_whitespace(ch) || ch == ';'
 }
 
+fn is_special_word_char(ch: char) -> bool {
+    match ch {
+        '\\' | '$' | '*' | '?' => true,
+        _ => false,
+    }
+}
+
 named!(escape_sequence<Input, Fragment>,
     do_parse!(tag!("\\") >> s: recognize!(one_of!("\\n")) >> ( Fragment::Literal(s.to_string()) ))
+);
+
+named!(pattern<Input, Fragment>,
+    alt!(
+        map!(tag!("*"), |_| Fragment::AnyString) |
+        map!(tag!("?"), |_| Fragment::AnyChar)
+    )
 );
 
 named!(parameter_wo_braces<Input, Fragment>,
@@ -281,10 +299,10 @@ fn parse_word(_buf: Input) -> Word {
 
     info!("parse_word: {:?}", buf);
     loop {
-        buf = match recognize!(buf, take_while!(|c| c != '\\' && c != '$')) {
+        buf = match recognize!(buf, take_while!(|c| !is_special_word_char(c))) {
             Ok((rest, head)) => {
                 trace!("frag: rest='{}', head='{}'", rest, head);
-                match alt!(rest, expansion | escape_sequence) {
+                match alt!(rest, pattern | expansion | escape_sequence) {
                     Ok((rest, frag)) => {
                         literal += &head;
                         match frag {
@@ -512,13 +530,13 @@ named!(for_command<Input, Command>,
     )
 );
 
-named!(patterns<Input, Vec<Word>>,
+named!(case_item_patterns<Input, Vec<Word>>,
     alt!(
         do_parse!(
             head: call!(word) >>
             rest: opt!(do_parse!(
                 call!(operator, "|") >>
-                rest: call!(patterns) >>
+                rest: call!(case_item_patterns) >>
                 (rest)
             )) >>
             ({
@@ -535,7 +553,7 @@ named!(patterns<Input, Vec<Word>>,
 
 named!(case_item<Input, CaseItem>,
     do_parse!(
-        patterns: call!(patterns) >>
+        patterns: call!(case_item_patterns) >>
         call!(keyword, ")") >>
         body: dbg_dmp!(call!(compound_list)) >>
         // We cannot use call!(keyword) here; it ignores semicolons.
@@ -1484,6 +1502,36 @@ pub fn test_arith_expr() {
                                     }]),
                                 ],
                             }]),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        }
+    );
+}
+
+#[test]
+pub fn test_patterns() {
+    assert_eq!(
+        parse_line("echo * a?c").unwrap(),
+        Ast {
+            terms: vec![Term {
+                async: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                            Word(vec![Fragment::Literal("echo".into())]),
+                            Word(vec![
+                                Fragment::AnyString,
+                            ]),
+                            Word(vec![
+                                Fragment::Literal("a".into()),
+                                Fragment::AnyChar,
+                                Fragment::Literal("c".into()),
+                            ])
                         ],
                         redirects: vec![],
                         assignments: vec![],
