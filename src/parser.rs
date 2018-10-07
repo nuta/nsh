@@ -92,6 +92,8 @@ pub enum ExpansionOp {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Fragment {
     Literal(String),
+    // ~, ~mike, ...
+    Tilde(Option<String>),
     // $foo, ${foo}, ${foo:-default}, ...
     Parameter {
         name: String,
@@ -238,10 +240,29 @@ named!(arith_expr<Input, Fragment>,
     )
 );
 
+named!(tilde_expansion<Input, Fragment>,
+    do_parse!(
+        tag!("~") >>
+        name: opt!(recognize!(
+            take_while1!(|c| c != '/' && is_valid_word_char(c))
+        )) >>
+        ( Fragment::Tilde(name.map(|s| s.to_string())) )
+    )
+);
+
 fn parse_word(_buf: Input) -> Word {
     let mut buf = _buf;
     let mut fragments = Vec::new();
     let mut literal = String::new();
+
+    buf = match call!(buf, tilde_expansion) {
+        Ok((rest, frag)) => {
+            fragments.push(frag);
+            rest
+        },
+        Err(_) => buf,
+    };
+
     info!("parse_word: {:?}", buf);
     loop {
         buf = match recognize!(buf, take_while!(|c| c != '\\' && c != '$')) {
@@ -1213,6 +1234,33 @@ pub fn test_dollars() {
                                     }],
                                 }],
                             }]),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        }
+    );
+}
+
+#[test]
+pub fn test_tilde() {
+    assert_eq!(
+        parse_line("echo ~ ~/usr ~seiya ~seiya/usr a/~/b").unwrap(),
+        Ast {
+            terms: vec![Term {
+                async: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                            Word(vec![Fragment::Literal("echo".into())]),
+                            Word(vec![Fragment::Tilde(None)]),
+                            Word(vec![Fragment::Tilde(None), Fragment::Literal("/usr".into())]),
+                            Word(vec![Fragment::Tilde(Some("seiya".into()))]),
+                            Word(vec![Fragment::Tilde(Some("seiya".into())), Fragment::Literal("/usr".into())]),
+                            Word(vec![Fragment::Literal("a/~/b".into())])
                         ],
                         redirects: vec![],
                         assignments: vec![],
