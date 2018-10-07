@@ -36,6 +36,10 @@ pub enum Command {
         /// Assignment prefixes. (e.g. "RAILS_ENV=production rails server")
         assignments: Vec<(String, Word)>,
     },
+    // foo=1, bar="Hello World", ...
+    Assignment {
+        assignments: Vec<(String, Word)>,
+    },
     If {
         condition: Vec<Term>,
         then_part: Vec<Term>,
@@ -401,16 +405,9 @@ named!(assignment<Input, (String, Word)>,
     )
 );
 
-named!(assignments<Input, Vec<(String, Word)>>,
-    do_parse!(
-        assignments: many0!(call!(assignment)) >>
-        ( assignments )
-    )
-);
-
 named!(simple_command<Input, Command>,
     do_parse!(
-        assignments: call!(assignments) >>
+        assignments: many0!(call!(assignment)) >>
         head: call!(nonreserved_word) >>
         words: many0!(alt!(
             map!(call!(redirection), |r| WordOrRedirection::Redirection(r)) |
@@ -531,13 +528,29 @@ named!(func_def<Input, Command>,
     )
 );
 
+named!(assignment_command<Input, Command>,
+    do_parse!(
+        assignments: many1!(call!(assignment)) >>
+        ( Command::Assignment { assignments } )
+    )
+);
+
 named!(command<Input, Command>,
     alt!(
         call!(if_command) |
         call!(for_command) |
         call!(group) |
         call!(func_def) |
-        call!(simple_command)
+        do_parse!(
+            peek!(do_parse!(
+                many0!(call!(assignment)) >>
+                call!(nonreserved_word) >>
+                ( () )
+            )) >>
+            command: call!(simple_command) >>
+            ( command )
+        ) |
+        call!(assignment_command)
     )
 );
 
@@ -1237,6 +1250,44 @@ pub fn test_dollars() {
                         ],
                         redirects: vec![],
                         assignments: vec![],
+                    }],
+                }],
+            }],
+        }
+    );
+}
+
+#[test]
+pub fn test_assignments() {
+    assert_eq!(
+        parse_line("foo=bar").unwrap(),
+        Ast {
+            terms: vec![Term {
+                async: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::Assignment {
+                        assignments: vec![
+                            ("foo".into(), Word(vec![Fragment::Literal("bar".into())])),
+                        ]
+                    }],
+                }],
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line("nobody=expects the=\"spanish inquisition\"").unwrap(),
+        Ast {
+            terms: vec![Term {
+                async: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::Assignment {
+                        assignments: vec![
+                            ("nobody".into(), Word(vec![Fragment::Literal("expects".into())])),
+                            ("the".into(), Word(vec![Fragment::Literal("spanish inquisition".into())])),
+                        ]
                     }],
                 }],
             }],
