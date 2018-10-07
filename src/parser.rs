@@ -176,7 +176,7 @@ named!(parameter_w_braces<Input, Fragment>,
             tag!("-") | tag!(":-") | tag!("=") | tag!(":=")
         )) >>
         default: opt!(alt!(
-            // FIXME: accept Word instead
+            // FIXME: accept Word instead (e.g. `${foo:-bar$(echo baz)}`).
             map!(call!(expansion), |frag| Word(vec![frag])) |
             map!(recognize!(take_while1!(|c| is_valid_word_char(c) && c != '}')), parse_word)
          )) >>
@@ -229,7 +229,9 @@ named!(expansion<Input, Fragment>,
     do_parse!(
         tag!("$") >>
         frag: alt!(
-            call!(command_expansion) | call!(parameter_expansion)
+            call!(arith_expr) |
+            call!(command_expansion) |
+            call!(parameter_expansion)
         ) >>
         ( frag )
     )
@@ -237,7 +239,7 @@ named!(expansion<Input, Fragment>,
 
 named!(arith_expr<Input, Fragment>,
     do_parse!(
-        tag!("$((") >>
+        tag!("((") >>
         body: many0!(call!(word)) >>
         call!(keyword, "))") >>
         ( Fragment::ArithExpr { body } )
@@ -332,10 +334,8 @@ named!(word<Input, Word>,
     do_parse!(
         call!(whitespaces) >>
         word: alt!(
-            // Try to parse $((...)) here since it may span multiple words.
-            do_parse!(peek!(tag!("$((")) >> frag: call!(arith_expr) >> (Word(vec![frag]))) |
-            // Try to parse $(...) here since it may span multiple words.
-            do_parse!(peek!(tag!("$(")) >> tag!("$") >> frag: call!(command_expansion) >> (Word(vec![frag]))) |
+            // Try to parse $(..), $(()), and ${..} here since it may span multiple words.
+            do_parse!(peek!(tag!("$")) >> frag: call!(expansion) >> (Word(vec![frag]))) |
             do_parse!(peek!(tag!("`")) >> frag: call!(backquoted_command_expansion) >> (Word(vec![frag]))) |
             call!(string_literal) |
             call!(unquoted_word)
@@ -1142,50 +1142,7 @@ pub fn test_compound_commands() {
 }
 
 #[test]
-pub fn test_dollars() {
-    assert_eq!(
-        parse_line("echo ${undefined:-Current} ${undefined:=TERM} is $TERM len=${#TERM}").unwrap(),
-        Ast {
-            terms: vec![Term {
-                async: false,
-                pipelines: vec![Pipeline {
-                    run_if: RunIf::Always,
-                    commands: vec![Command::SimpleCommand {
-                        argv: vec![
-                            Word(vec![Fragment::Literal("echo".into())]),
-                            Word(vec![Fragment::Parameter {
-                                name: "undefined".into(),
-                                op: ExpansionOp::GetOrDefault(Word(vec![Fragment::Literal(
-                                    "Current".into(),
-                                )])),
-                            }]),
-                            Word(vec![Fragment::Parameter {
-                                name: "undefined".into(),
-                                op: ExpansionOp::GetOrDefaultAndAssign(Word(vec![
-                                    Fragment::Literal("TERM".into()),
-                                ])),
-                            }]),
-                            Word(vec![Fragment::Literal("is".into())]),
-                            Word(vec![Fragment::Parameter {
-                                name: "TERM".into(),
-                                op: ExpansionOp::GetOrEmpty,
-                            }]),
-                            Word(vec![
-                                Fragment::Literal("len=".into()),
-                                Fragment::Parameter {
-                                    name: "TERM".into(),
-                                    op: ExpansionOp::Length,
-                                },
-                            ]),
-                        ],
-                        redirects: vec![],
-                        assignments: vec![],
-                    }],
-                }],
-            }],
-        }
-    );
-
+pub fn test_expansions() {
     assert_eq!(
         parse_line("ls `echo -l`").unwrap(),
         Ast {
@@ -1203,7 +1160,7 @@ pub fn test_dollars() {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
                                             argv: vec![
-                                                Word(vec![Fragment::Literal("echo".into())]),
+                            Word(vec![Fragment::Literal("echo".into())]),
                                                 Word(vec![Fragment::Literal("-l".into())]),
                                             ],
                                             redirects: vec![],
@@ -1247,6 +1204,49 @@ pub fn test_dollars() {
                                     }],
                                 }],
                             }]),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line("echo ${undefined:-Current} ${undefined:=TERM} is $TERM len=${#TERM}").unwrap(),
+        Ast {
+            terms: vec![Term {
+                async: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                                                Word(vec![Fragment::Literal("echo".into())]),
+                            Word(vec![Fragment::Parameter {
+                                name: "undefined".into(),
+                                op: ExpansionOp::GetOrDefault(Word(vec![Fragment::Literal(
+                                    "Current".into(),
+                                )])),
+                            }]),
+                            Word(vec![Fragment::Parameter {
+                                name: "undefined".into(),
+                                op: ExpansionOp::GetOrDefaultAndAssign(Word(vec![
+                                    Fragment::Literal("TERM".into()),
+                                ])),
+                            }]),
+                            Word(vec![Fragment::Literal("is".into())]),
+                            Word(vec![Fragment::Parameter {
+                                name: "TERM".into(),
+                                op: ExpansionOp::GetOrEmpty,
+                            }]),
+                            Word(vec![
+                                Fragment::Literal("len=".into()),
+                                Fragment::Parameter {
+                                    name: "TERM".into(),
+                                    op: ExpansionOp::Length,
+                                },
+                            ]),
                         ],
                         redirects: vec![],
                         assignments: vec![],
