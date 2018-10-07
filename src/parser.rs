@@ -102,6 +102,12 @@ pub enum Fragment {
     Command {
         body: Vec<Term>,
     },
+    // $((1 + 2 * 3))
+    ArithExpr {
+        /// Arguments for expr(1).
+        /// TODO: Parse and compute by ourselves.
+        body: Vec<Word>,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -224,6 +230,15 @@ named!(expansion<Input, Fragment>,
     )
 );
 
+named!(arith_expr<Input, Fragment>,
+    do_parse!(
+        tag!("$((") >>
+        body: many0!(call!(word)) >>
+        call!(keyword, "))") >>
+        ( Fragment::ArithExpr { body } )
+    )
+);
+
 fn parse_word(_buf: Input) -> Word {
     let mut buf = _buf;
     let mut fragments = Vec::new();
@@ -238,7 +253,7 @@ fn parse_word(_buf: Input) -> Word {
                         literal += &head;
                         match frag {
                             Fragment::Literal(s) => literal += s.as_str(),
-                            Fragment::Parameter {..} | Fragment::Command {..} => {
+                            _ => {
                                 if literal.len() > 0 {
                                     fragments.push(Fragment::Literal(literal));
                                     literal = String::new();
@@ -293,6 +308,8 @@ named!(word<Input, Word>,
     do_parse!(
         call!(whitespaces) >>
         word: alt!(
+            // Try to parse $((...)) here since it may span multiple words.
+            do_parse!(peek!(tag!("$((")) >> frag: call!(arith_expr) >> (Word(vec![frag]))) |
             // Try to parse $(...) here since it may span multiple words.
             do_parse!(peek!(tag!("$(")) >> tag!("$") >> frag: call!(command_expansion) >> (Word(vec![frag]))) |
             do_parse!(peek!(tag!("`")) >> frag: call!(backquoted_command_expansion) >> (Word(vec![frag]))) |
