@@ -74,7 +74,7 @@ pub struct Term {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Ast {
-    pub terms: Vec<Term>, // Separated by `&&', `||', or `;'.
+    pub terms: Vec<Term>, // Separated by `&', or `;'.
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
