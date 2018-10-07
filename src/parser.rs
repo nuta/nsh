@@ -29,6 +29,12 @@ pub enum RunIf {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub struct CaseItem {
+    patterns: Vec<Word>,
+    body: Vec<Term>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Command {
     SimpleCommand {
         argv: Vec<Word>,
@@ -50,6 +56,10 @@ pub enum Command {
         var_name: String,
         words: Vec<Word>,
         body: Vec<Term>,
+    },
+    Case {
+        word: Word,
+        items: Vec<CaseItem>,
     },
     FunctionDef {
         name: String,
@@ -354,6 +364,8 @@ named!(nonreserved_word<Input, Word>,
         not!(peek!(tag!("in"))) >>
         not!(peek!(tag!("do"))) >>
         not!(peek!(tag!("done"))) >>
+        not!(peek!(tag!("case"))) >>
+        not!(peek!(tag!("esac"))) >>
         not!(peek!(tag!("{"))) >>
         not!(peek!(tag!("}"))) >>
         not!(peek!(tag!("("))) >>
@@ -500,6 +512,61 @@ named!(for_command<Input, Command>,
     )
 );
 
+named!(patterns<Input, Vec<Word>>,
+    alt!(
+        do_parse!(
+            head: call!(word) >>
+            rest: opt!(do_parse!(
+                call!(operator, "|") >>
+                rest: call!(patterns) >>
+                (rest)
+            )) >>
+            ({
+                let mut words = vec![head];
+                if let Some(rest_words) = rest {
+                    words.extend(rest_words);
+                }
+
+                words
+            })
+        )
+    )
+);
+
+named!(case_item<Input, CaseItem>,
+    do_parse!(
+        patterns: call!(patterns) >>
+        call!(keyword, ")") >>
+        body: dbg_dmp!(call!(compound_list)) >>
+        // We cannot use call!(keyword) here; it ignores semicolons.
+        take_while!(is_whitespace) >>
+        tag!(";;") >>
+        take_while!(is_whitespace) >>
+        ({
+            CaseItem {
+                patterns,
+                body,
+            }
+        })
+    )
+);
+
+named!(case_command<Input, Command>,
+    do_parse!(
+        call!(keyword, "case") >>
+        word: call!(word) >>
+        call!(keyword, "in") >>
+        items: many0!(call!(case_item)) >>
+        call!(keyword, "esac") >>
+        ({
+            Command::Case {
+                word,
+                items,
+            }
+        })
+    )
+);
+
 named!(group<Input, Command>,
     do_parse!(
         call!(whitespaces) >>
@@ -539,6 +606,7 @@ named!(command<Input, Command>,
     alt!(
         call!(if_command) |
         call!(for_command) |
+        call!(case_command) |
         call!(group) |
         call!(func_def) |
         do_parse!(
@@ -610,7 +678,10 @@ named!(and_or_list<Input, Vec<Pipeline>>,
 named!(compound_list<Input, Vec<Term>>,
     do_parse!(
         head: call!(and_or_list) >>
-        sep: opt!(alt!(call!(operator, ";") | call!(operator, "&"))) >>
+        sep: opt!(alt!(
+            do_parse!(not!(call!(operator, ";;")) >> op: call!(operator, ";") >> ( op )) |
+            call!(operator, "&"))
+        ) >>
         rest: opt!(do_parse!(
             rest: call!(compound_list) >>
             (rest)
@@ -1087,6 +1158,75 @@ pub fn test_compound_commands() {
                                 }],
                             },
                         ],
+                    }],
+                }],
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line(concat!(
+            "case $action in ",
+            "echo) echo action is echo ;;",
+            "date | time) echo action is date; date ;;",
+            "esac"
+        )).unwrap(),
+        Ast {
+            terms: vec![Term {
+                async: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::Case {
+                        word: Word(vec![Fragment::Parameter {
+                            name: "action".into(),
+                            op: ExpansionOp::GetOrEmpty,
+                        }]),
+                        items: vec![
+                            CaseItem {
+                                patterns: vec![Word(vec![Fragment::Literal("echo".into())])],
+                                body: vec![Term {
+                                    async: false,
+                                    pipelines: vec![Pipeline {
+                                        run_if: RunIf::Always,
+                                        commands: vec![Command::SimpleCommand {
+                                            argv: literal_word_vec!["echo", "action", "is", "echo"],
+                                            redirects: vec![],
+                                            assignments: vec![],
+                                        }]
+                                    }]
+                                }]
+                            },
+                            CaseItem {
+                                patterns: vec![
+                                    Word(vec![Fragment::Literal("date".into())]),
+                                    Word(vec![Fragment::Literal("time".into())]),
+                                ],
+                                body: vec![
+                                    Term {
+                                        async: false,
+                                        pipelines: vec![Pipeline {
+                                            run_if: RunIf::Always,
+                                            commands: vec![Command::SimpleCommand {
+                                                argv: literal_word_vec!["echo", "action", "is", "date"],
+                                                redirects: vec![],
+                                                assignments: vec![],
+                                            }]
+                                        }]
+                                    },
+                                    Term {
+                                        async: false,
+                                        pipelines: vec![Pipeline {
+                                            run_if: RunIf::Always,
+                                            commands: vec![Command::SimpleCommand {
+                                                argv: literal_word_vec!["date"],
+                                                redirects: vec![],
+                                                assignments: vec![],
+                                            }]
+                                        }]
+                                    },
+                                ]
+                            },
+                        ]
                     }],
                 }],
             }],
