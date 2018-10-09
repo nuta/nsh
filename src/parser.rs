@@ -104,6 +104,34 @@ pub enum ExpansionOp {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub struct BinaryExpr {
+    lhs: Box<Expr>,
+    rhs: Box<Expr>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Expr {
+    Add(BinaryExpr),
+    Sub(BinaryExpr),
+    Mul(BinaryExpr),
+    Div(BinaryExpr),
+    Literal(i32),
+    // $foo, ${foo}, ${foo:-default}, ...
+    Parameter {
+        name: String,
+        op: ExpansionOp,
+    },
+    // $(echo hello && echo world)
+    Command {
+        body: Vec<Term>,
+    },
+    // $((1 + 2 * 3))
+    ArithExpr {
+        expr: Box<Expr>,
+    },
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Fragment {
     Literal(String),
     // ~, ~mike, ...
@@ -119,9 +147,7 @@ pub enum Fragment {
     },
     // $((1 + 2 * 3))
     ArithExpr {
-        /// Arguments for expr(1).
-        /// TODO: Parse and compute by ourselves.
-        body: Vec<Word>,
+        expr: Expr,
     },
     // *
     AnyString,
@@ -265,12 +291,100 @@ named!(expansion<Input, Fragment>,
     )
 );
 
+named!(expr_factor<Input, Expr>,
+    do_parse!(
+        frag: alt!(
+            map!(
+                take_while1!(|c: char| c.is_ascii_digit()),
+                |s| Fragment::Literal(s.to_string())
+            ) |
+            // $(( $i ))
+            do_parse!(peek!(tag!("$")) >> frag: call!(expansion) >> ( frag )) |
+            // $(( i ))
+            call!(parameter_wo_braces)
+        ) >>
+        ({
+            match frag {
+                // TODO: throw an syntax error instead of .unwrap()
+                Fragment::Literal(s) => Expr::Literal(s.parse().unwrap()),
+                Fragment::Parameter { name, op } => Expr::Parameter { name, op },
+                Fragment::Command { body } => Expr::Command { body },
+                // TODO: throw an syntax error instead
+                _ => unreachable!(),
+            }
+        })
+    )
+);
+
+named!(expr_term<Input, Expr>,
+    do_parse!(
+        lhs: expr_factor >>
+        rest: opt!(do_parse!(
+            opt!(whitespaces) >>
+            op: alt!(tag!("*") | tag!("/")) >>
+            opt!(whitespaces) >>
+            rhs: expr_term >>
+            ( (op, rhs) )
+        )) >>
+        ({
+            if let Some((op, rhs)) = rest {
+                match op {
+                    Input("*") => Expr::Mul(BinaryExpr {
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    }),
+                    Input("/") => Expr::Div(BinaryExpr {
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    }),
+                    _ => unreachable!(),
+                }
+            } else {
+                lhs
+            }
+        })
+    )
+);
+
+named!(expr<Input, Expr>,
+    do_parse!(
+        lhs: expr_term >>
+        rest: opt!(do_parse!(
+            opt!(whitespaces) >>
+            op: alt!(tag!("+") | tag!("-")) >>
+            opt!(whitespaces) >>
+            rhs: expr >>
+            ( (op, rhs) )
+        )) >>
+        ({
+            if let Some((op, rhs)) = rest {
+                match op {
+                    Input("+") => Expr::Add(BinaryExpr {
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    }),
+                    Input("-") => Expr::Sub(BinaryExpr {
+                        lhs: Box::new(lhs),
+                        rhs: Box::new(rhs),
+                    }),
+                    _ => unreachable!(),
+                }
+            } else {
+                lhs
+            }
+        })
+    )
+);
+
+// TODO: implement <<, >>, %, ==, !=, &&, ||, ?:
 named!(arith_expr<Input, Fragment>,
     do_parse!(
         tag!("((") >>
-        body: many0!(call!(word)) >>
+        opt!(whitespaces) >>
+        expr: call!(expr) >>
+        opt!(whitespaces) >>
         call!(keyword, "))") >>
-        ( Fragment::ArithExpr { body } )
+        ( Fragment::ArithExpr { expr } )
     )
 );
 
@@ -1483,7 +1597,7 @@ pub fn test_tilde() {
 #[test]
 pub fn test_arith_expr() {
     assert_eq!(
-        parse_line("echo $((1+2 * $foo))").unwrap(),
+        parse_line("echo $(( 1 + 2-3 ))").unwrap(),
         Ast {
             terms: vec![Term {
                 async: false,
@@ -1493,14 +1607,50 @@ pub fn test_arith_expr() {
                         argv: vec![
                             Word(vec![Fragment::Literal("echo".into())]),
                             Word(vec![Fragment::ArithExpr {
-                                body: vec![
-                                    Word(vec![Fragment::Literal("1+2".into())]),
-                                    Word(vec![Fragment::Literal("*".into())]),
-                                    Word(vec![Fragment::Parameter {
-                                        name: "foo".into(),
-                                        op: ExpansionOp::GetOrEmpty,
-                                    }]),
-                                ],
+                                expr: Expr::Add(BinaryExpr {
+                                    lhs: Box::new(Expr::Literal(1)),
+                                    rhs: Box::new(Expr::Sub(BinaryExpr {
+                                        lhs: Box::new(Expr::Literal(2)),
+                                        rhs: Box::new(Expr::Literal(3)),
+                                    }))
+                                })
+                            }]),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line("echo $((1+2*$foo-bar))").unwrap(),
+        Ast {
+            terms: vec![Term {
+                async: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                            Word(vec![Fragment::Literal("echo".into())]),
+                            Word(vec![Fragment::ArithExpr {
+                                expr: Expr::Add(BinaryExpr {
+                                    lhs: Box::new(Expr::Literal(1)),
+                                    rhs: Box::new(Expr::Sub(BinaryExpr {
+                                        lhs: Box::new(Expr::Mul(BinaryExpr {
+                                            lhs: Box::new(Expr::Literal(2)),
+                                            rhs: Box::new(Expr::Parameter {
+                                                name: "foo".into(),
+                                                op: ExpansionOp::GetOrEmpty,
+                                            })
+                                        })),
+                                        rhs: Box::new(Expr::Parameter {
+                                            name: "bar".into(),
+                                            op: ExpansionOp::GetOrEmpty,
+                                        })
+                                    })),
+                                })
                             }]),
                         ],
                         redirects: vec![],
