@@ -212,7 +212,7 @@ named!(pattern<Input, Fragment>,
 );
 
 named!(parameter_wo_braces<Input, Fragment>,
-    map!(recognize!(call!(var_name)),
+    map!(recognize!(var_name),
         |name| {
             Fragment::Parameter {
                 name: name.to_string(),
@@ -225,13 +225,13 @@ named!(parameter_w_braces<Input, Fragment>,
     do_parse!(
         tag!("{") >>
         length_op: opt!(tag!("#")) >>
-        name: call!(var_name) >>
+        name: var_name >>
         modifier: opt!(alt!(
             tag!("-") | tag!(":-") | tag!("=") | tag!(":=")
         )) >>
         default: opt!(alt!(
             // FIXME: accept Word instead (e.g. `${foo:-bar$(echo baz)}`).
-            map!(call!(expansion), |frag| Word(vec![frag])) |
+            map!(expansion, |frag| Word(vec![frag])) |
             map!(recognize!(take_while1!(|c| is_valid_word_char(c) && c != '}')), parse_word)
          )) >>
         tag!("}") >>
@@ -256,7 +256,7 @@ named!(parameter_w_braces<Input, Fragment>,
 );
 
 named!(parameter_expansion<Input, Fragment>,
-    alt!(call!(parameter_w_braces) | call!(parameter_wo_braces))
+    alt!(parameter_w_braces | parameter_wo_braces)
 );
 
 named!(command_expansion<Input, Fragment>,
@@ -264,7 +264,7 @@ named!(command_expansion<Input, Fragment>,
         // Use tag! here instead of keyword because `(' must comes
         // right after `$'.
         tag!("(") >>
-        body: call!(compound_list) >>
+        body: compound_list >>
         call!(keyword, ")") >>
         ( Fragment::Command { body } )
     )
@@ -273,7 +273,7 @@ named!(command_expansion<Input, Fragment>,
 named!(backquoted_command_expansion<Input, Fragment>,
     do_parse!(
         tag!("`") >>
-        body: call!(compound_list) >>
+        body: compound_list >>
         call!(keyword, "`") >>
         ( Fragment::Command { body } )
     )
@@ -283,9 +283,9 @@ named!(expansion<Input, Fragment>,
     do_parse!(
         tag!("$") >>
         frag: alt!(
-            call!(arith_expr) |
-            call!(command_expansion) |
-            call!(parameter_expansion)
+            arith_expr |
+            command_expansion |
+            parameter_expansion
         ) >>
         ( frag )
     )
@@ -299,9 +299,9 @@ named!(expr_factor<Input, Expr>,
                 |s| Fragment::Literal(s.to_string())
             ) |
             // $(( $i ))
-            do_parse!(peek!(tag!("$")) >> frag: call!(expansion) >> ( frag )) |
+            do_parse!(peek!(tag!("$")) >> frag: expansion >> ( frag )) |
             // $(( i ))
-            call!(parameter_wo_braces)
+            parameter_wo_braces
         ) >>
         ({
             match frag {
@@ -381,7 +381,7 @@ named!(arith_expr<Input, Fragment>,
     do_parse!(
         tag!("((") >>
         opt!(whitespaces) >>
-        expr: call!(expr) >>
+        expr: expr >>
         opt!(whitespaces) >>
         call!(keyword, "))") >>
         ( Fragment::ArithExpr { expr } )
@@ -474,13 +474,13 @@ named!(var_name<Input, String>,
 
 named!(word<Input, Word>,
     do_parse!(
-        call!(whitespaces) >>
+        whitespaces >>
         word: alt!(
             // Try to parse $(..), $(()), and ${..} here since it may span multiple words.
-            do_parse!(peek!(tag!("$")) >> frag: call!(expansion) >> (Word(vec![frag]))) |
-            do_parse!(peek!(tag!("`")) >> frag: call!(backquoted_command_expansion) >> (Word(vec![frag]))) |
-            call!(string_literal) |
-            call!(unquoted_word)
+            do_parse!(peek!(tag!("$")) >> frag: expansion >> (Word(vec![frag]))) |
+            do_parse!(peek!(tag!("`")) >> frag: backquoted_command_expansion >> (Word(vec![frag]))) |
+            string_literal |
+            unquoted_word
         ) >>
         ( word )
     )
@@ -488,7 +488,7 @@ named!(word<Input, Word>,
 
 named!(nonreserved_word<Input, Word>,
     do_parse!(
-        call!(whitespaces) >>
+        whitespaces >>
         not!(peek!(tag!("if"))) >>
         not!(peek!(tag!("then"))) >>
         not!(peek!(tag!("fi"))) >>
@@ -503,20 +503,20 @@ named!(nonreserved_word<Input, Word>,
         not!(peek!(tag!("("))) >>
         not!(peek!(tag!(")"))) >>
         not!(peek!(tag!("`"))) >>
-        word: call!(word) >>
+        word: word >>
         ( word )
     )
 );
 
 named!(redirection<Input, Redirection>,
     do_parse!(
-        peek!(do_parse!(call!(whitespaces) >> opt!(take_while1!(is_digit)) >> call!(whitespaces) >> one_of!("<>") >> (()))) >>
-        call!(whitespaces) >>
+        peek!(do_parse!(whitespaces >> opt!(take_while1!(is_digit)) >> whitespaces >> one_of!("<>") >> (()))) >>
+        whitespaces >>
         fd_string: opt!(recognize!(take_while1!(is_digit))) >>
-        call!(whitespaces) >>
+        whitespaces >>
         op: recognize!(alt!(tag!("<") | tag!(">") | tag!(">>"))) >>
-        call!(whitespaces) >>
-        target: call!(word) >>
+        whitespaces >>
+        target: word >>
         ({
             let target = RedirectionType::File(target);
             let (fd, direction) = match (fd_string, op) {
@@ -540,22 +540,22 @@ named!(redirection<Input, Redirection>,
 
 named!(assignment<Input, (String, Word)>,
     do_parse!(
-        peek!(do_parse!(call!(var_name) >> tag!("=") >> (()))) >>
-        name: call!(var_name) >>
+        peek!(do_parse!(var_name >> tag!("=") >> (()))) >>
+        name: var_name >>
         tag!("=") >>
-        value: call!(word) >>
-        call!(whitespaces) >>
+        value: word >>
+        whitespaces >>
         ( (name, value) )
     )
 );
 
 named!(simple_command<Input, Command>,
     do_parse!(
-        assignments: many0!(call!(assignment)) >>
-        head: call!(nonreserved_word) >>
+        assignments: many0!(assignment) >>
+        head: nonreserved_word >>
         words: many0!(alt!(
-            map!(call!(redirection), |r| WordOrRedirection::Redirection(r)) |
-            map!(call!(word), |w| WordOrRedirection::Word(w))
+            map!(redirection, |r| WordOrRedirection::Redirection(r)) |
+            map!(word, |w| WordOrRedirection::Word(w))
         )) >>
         ({
             let mut argv = Vec::new();
@@ -607,9 +607,9 @@ named_args!(operator<'a>(keyword: &'static str)<Input<'a>, Input<'a>>,
 named!(if_command<Input, Command>,
     do_parse!(
         call!(keyword, "if") >>
-        condition: call!(compound_list) >>
+        condition: compound_list >>
         call!(keyword, "then") >>
-        then_part: call!(compound_list) >>
+        then_part: compound_list >>
         call!(keyword, "fi") >>
         ({
             Command::If {
@@ -625,14 +625,14 @@ named!(if_command<Input, Command>,
 named!(for_command<Input, Command>,
     do_parse!(
         call!(keyword, "for") >>
-        var_name: call!(var_name) >>
+        var_name: var_name >>
         words: opt!(do_parse!(
             call!(keyword, "in") >>
-            words: many0!(call!(nonreserved_word))  >>
+            words: many0!(nonreserved_word)  >>
             ( words )
         )) >>
         call!(keyword, "do") >>
-        body: call!(compound_list) >>
+        body: compound_list >>
         call!(keyword, "done") >>
         ({
             Command:: For {
@@ -647,10 +647,10 @@ named!(for_command<Input, Command>,
 named!(case_item_patterns<Input, Vec<Word>>,
     alt!(
         do_parse!(
-            head: call!(word) >>
+            head: word >>
             rest: opt!(do_parse!(
                 call!(operator, "|") >>
-                rest: call!(case_item_patterns) >>
+                rest: case_item_patterns >>
                 (rest)
             )) >>
             ({
@@ -667,9 +667,9 @@ named!(case_item_patterns<Input, Vec<Word>>,
 
 named!(case_item<Input, CaseItem>,
     do_parse!(
-        patterns: call!(case_item_patterns) >>
+        patterns: case_item_patterns >>
         call!(keyword, ")") >>
-        body: dbg_dmp!(call!(compound_list)) >>
+        body: compound_list >>
         // We cannot use call!(keyword) here; it ignores semicolons.
         take_while!(is_whitespace) >>
         tag!(";;") >>
@@ -686,7 +686,7 @@ named!(case_item<Input, CaseItem>,
 named!(case_command<Input, Command>,
     do_parse!(
         call!(keyword, "case") >>
-        word: call!(word) >>
+        word: word >>
         call!(keyword, "in") >>
         items: many0!(call!(case_item)) >>
         call!(keyword, "esac") >>
@@ -701,9 +701,9 @@ named!(case_command<Input, Command>,
 
 named!(group<Input, Command>,
     do_parse!(
-        call!(whitespaces) >>
+        whitespaces >>
         call!(keyword, "{") >>
-        terms: call!(compound_list) >>
+        terms: compound_list >>
         call!(keyword, "}") >>
         ( Command::Group { terms } )
     )
@@ -712,55 +712,55 @@ named!(group<Input, Command>,
 named!(func_def<Input, Command>,
     do_parse!(
         peek!(do_parse!(
-            call!(whitespaces) >>
-            call!(var_name) >>
+            whitespaces >>
+            var_name >>
             call!(keyword, "(") >>
             call!(keyword, ")") >>
             ( () )
         )) >>
-        call!(whitespaces) >>
-        name: call!(var_name) >>
+        whitespaces >>
+        name: var_name >>
         call!(keyword, "(") >>
         call!(keyword, ")") >>
-        body: call!(compound_list) >>
+        body: compound_list >>
         ( Command::FunctionDef { name, body } )
     )
 );
 
 named!(assignment_command<Input, Command>,
     do_parse!(
-        assignments: many1!(call!(assignment)) >>
+        assignments: many1!(assignment) >>
         ( Command::Assignment { assignments } )
     )
 );
 
 named!(command<Input, Command>,
     alt!(
-        call!(if_command) |
-        call!(for_command) |
-        call!(case_command) |
-        call!(group) |
-        call!(func_def) |
+        if_command |
+        for_command |
+        case_command |
+        group |
+        func_def |
         do_parse!(
             peek!(do_parse!(
-                many0!(call!(assignment)) >>
-                call!(nonreserved_word) >>
+                many0!(assignment) >>
+                nonreserved_word >>
                 ( () )
             )) >>
-            command: call!(simple_command) >>
+            command: simple_command >>
             ( command )
         ) |
-        call!(assignment_command)
+        assignment_command
     )
 );
 
 named!(pipeline<Input, Pipeline>,
     alt!(
         do_parse!(
-            head: call!(command) >>
+            head: command >>
             rest: opt!(do_parse!(
                 call!(operator, "|") >>
-                rest: call!(pipeline) >>
+                rest: pipeline >>
                 (rest)
             )) >>
             ({
@@ -783,9 +783,9 @@ named!(and_or_list<Input, Vec<Pipeline>>,
     alt!(
         do_parse!(
             sep: opt!(alt!(call!(operator, "&&") | call!(operator, "||"))) >>
-            head: call!(pipeline) >>
+            head: pipeline >>
             rest: opt!(do_parse!(
-                rest: call!(and_or_list) >>
+                rest: and_or_list >>
                 (rest)
             )) >>
             ({
@@ -809,13 +809,13 @@ named!(and_or_list<Input, Vec<Pipeline>>,
 
 named!(compound_list<Input, Vec<Term>>,
     do_parse!(
-        head: call!(and_or_list) >>
+        head: and_or_list >>
         sep: opt!(alt!(
             do_parse!(not!(call!(operator, ";;")) >> op: call!(operator, ";") >> ( op )) |
             call!(operator, "&"))
         ) >>
         rest: opt!(do_parse!(
-            rest: call!(compound_list) >>
+            rest: compound_list >>
             (rest)
         )) >>
         ({
@@ -842,9 +842,9 @@ named!(compound_list<Input, Vec<Term>>,
 
 named!(parse_script<Input, Ast>,
     do_parse!(
-        call!(whitespaces) >>
-        terms: opt!(call!(compound_list)) >>
-        call!(whitespaces) >>
+        whitespaces >>
+        terms: opt!(compound_list) >>
+        whitespaces >>
         eof!() >>
         (Ast { terms: terms.unwrap_or(Vec::new()) })
     )
