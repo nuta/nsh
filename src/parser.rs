@@ -1390,10 +1390,7 @@ pub fn test_compound_commands() {
                                     commands: vec![Command::SimpleCommand {
                                         argv: vec![
                                             Word(vec![Span::Literal("cowsay".into())]),
-                                            Word(vec![Span::Parameter {
-                                                name: "arg".into(),
-                                                op: ExpansionOp::GetOrEmpty,
-                                            }]),
+                                            Word(vec![param!("arg", ExpansionOp::GetOrEmpty)])
                                         ],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -1458,10 +1455,7 @@ pub fn test_compound_commands() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Case {
-                        word: Word(vec![Span::Parameter {
-                            name: "action".into(),
-                            op: ExpansionOp::GetOrEmpty,
-                        }]),
+                        word: Word(vec![param!("action", ExpansionOp::GetOrEmpty)]),
                         items: vec![
                             CaseItem {
                                 patterns: vec![Word(vec![Span::Literal("echo".into())])],
