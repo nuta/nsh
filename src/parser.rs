@@ -1389,8 +1389,8 @@ pub fn test_compound_commands() {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
                                         argv: vec![
-                                            Word(vec![Span::Literal("cowsay".into())]),
-                                            Word(vec![param!("arg", ExpansionOp::GetOrEmpty)])
+                                            lit!("cowsay"),
+                                            param!("arg", ExpansionOp::GetOrEmpty)
                                         ],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -1455,10 +1455,10 @@ pub fn test_compound_commands() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Case {
-                        word: Word(vec![param!("action", ExpansionOp::GetOrEmpty)]),
+                        word: param!("action", ExpansionOp::GetOrEmpty),
                         items: vec![
                             CaseItem {
-                                patterns: vec![Word(vec![Span::Literal("echo".into())])],
+                                patterns: vec![lit!("echo")],
                                 body: vec![Term {
                                     async: false,
                                     pipelines: vec![Pipeline {
@@ -1473,8 +1473,8 @@ pub fn test_compound_commands() {
                             },
                             CaseItem {
                                 patterns: vec![
-                                    Word(vec![Span::Literal("date".into())]),
-                                    Word(vec![Span::Literal("time".into())]),
+                                    lit!("date"),
+                                    lit!("time"),
                                 ],
                                 body: vec![
                                     Term {
