@@ -155,7 +155,7 @@ pub enum WordOrRedirection {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Word(Vec<Span>);
+pub struct Word(pub Vec<Span>);
 
 fn is_digit(ch: char) -> bool {
     ch.is_ascii_digit()
