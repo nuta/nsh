@@ -132,7 +132,7 @@ pub enum Expr {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Fragment {
+pub enum Span {
     Literal(String),
     // ~, ~mike, ...
     Tilde(Option<String>),
@@ -155,7 +155,7 @@ pub enum WordOrRedirection {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Word(Vec<Fragment>);
+pub struct Word(Vec<Span>);
 
 fn is_digit(ch: char) -> bool {
     ch.is_ascii_digit()
@@ -193,28 +193,28 @@ fn is_special_word_char(ch: char) -> bool {
     }
 }
 
-named!(escape_sequence<Input, Fragment>,
-    do_parse!(tag!("\\") >> s: recognize!(one_of!("\\n")) >> ( Fragment::Literal(s.to_string()) ))
+named!(escape_sequence<Input, Span>,
+    do_parse!(tag!("\\") >> s: recognize!(one_of!("\\n")) >> ( Span::Literal(s.to_string()) ))
 );
 
-named!(pattern<Input, Fragment>,
+named!(pattern<Input, Span>,
     alt!(
-        map!(tag!("*"), |_| Fragment::AnyString) |
-        map!(tag!("?"), |_| Fragment::AnyChar)
+        map!(tag!("*"), |_| Span::AnyString) |
+        map!(tag!("?"), |_| Span::AnyChar)
     )
 );
 
-named!(parameter_wo_braces<Input, Fragment>,
+named!(parameter_wo_braces<Input, Span>,
     map!(recognize!(var_name),
         |name| {
-            Fragment::Parameter {
+            Span::Parameter {
                 name: name.to_string(),
                 op: ExpansionOp::GetOrEmpty
             }
         })
 );
 
-named!(parameter_w_braces<Input, Fragment>,
+named!(parameter_w_braces<Input, Span>,
     do_parse!(
         tag!("{") >>
         length_op: opt!(tag!("#")) >>
@@ -240,7 +240,7 @@ named!(parameter_w_braces<Input, Fragment>,
                 _ => unreachable!(),
             };
 
-            Fragment::Parameter {
+            Span::Parameter {
                 name: name.to_string(),
                 op,
             }
@@ -248,31 +248,31 @@ named!(parameter_w_braces<Input, Fragment>,
     )
 );
 
-named!(parameter_expansion<Input, Fragment>,
+named!(parameter_expansion<Input, Span>,
     alt!(parameter_w_braces | parameter_wo_braces)
 );
 
-named!(command_expansion<Input, Fragment>,
+named!(command_expansion<Input, Span>,
     do_parse!(
         // Use tag! here instead of keyword because `(' must comes
         // right after `$'.
         tag!("(") >>
         body: compound_list >>
         call!(keyword, ")") >>
-        ( Fragment::Command { body } )
+        ( Span::Command { body } )
     )
 );
 
-named!(backquoted_command_expansion<Input, Fragment>,
+named!(backquoted_command_expansion<Input, Span>,
     do_parse!(
         tag!("`") >>
         body: compound_list >>
         call!(keyword, "`") >>
-        ( Fragment::Command { body } )
+        ( Span::Command { body } )
     )
 );
 
-named!(expansion<Input, Fragment>,
+named!(expansion<Input, Span>,
     do_parse!(
         tag!("$") >>
         frag: alt!(
@@ -289,7 +289,7 @@ named!(expr_factor<Input, Expr>,
         frag: alt!(
             map!(
                 take_while1!(|c: char| c.is_ascii_digit()),
-                |s| Fragment::Literal(s.to_string())
+                |s| Span::Literal(s.to_string())
             ) |
             // $(( $i ))
             do_parse!(peek!(tag!("$")) >> frag: expansion >> ( frag )) |
@@ -299,9 +299,9 @@ named!(expr_factor<Input, Expr>,
         ({
             match frag {
                 // TODO: throw an syntax error instead of .unwrap()
-                Fragment::Literal(s) => Expr::Literal(s.parse().unwrap()),
-                Fragment::Parameter { name, op } => Expr::Parameter { name, op },
-                Fragment::Command { body } => Expr::Command { body },
+                Span::Literal(s) => Expr::Literal(s.parse().unwrap()),
+                Span::Parameter { name, op } => Expr::Parameter { name, op },
+                Span::Command { body } => Expr::Command { body },
                 // TODO: throw an syntax error instead
                 _ => unreachable!(),
             }
@@ -370,35 +370,35 @@ named!(expr<Input, Expr>,
 );
 
 // TODO: implement <<, >>, %, ==, !=, &&, ||, ?:
-named!(arith_expr<Input, Fragment>,
+named!(arith_expr<Input, Span>,
     do_parse!(
         tag!("((") >>
         opt!(whitespaces) >>
         expr: expr >>
         opt!(whitespaces) >>
         call!(keyword, "))") >>
-        ( Fragment::ArithExpr { expr } )
+        ( Span::ArithExpr { expr } )
     )
 );
 
-named!(tilde_expansion<Input, Fragment>,
+named!(tilde_expansion<Input, Span>,
     do_parse!(
         tag!("~") >>
         name: opt!(recognize!(
             take_while1!(|c| c != '/' && is_valid_word_char(c))
         )) >>
-        ( Fragment::Tilde(name.map(|s| s.to_string())) )
+        ( Span::Tilde(name.map(|s| s.to_string())) )
     )
 );
 
 fn parse_word(_buf: Input) -> Word {
     let mut buf = _buf;
-    let mut fragments = Vec::new();
+    let mut Spans = Vec::new();
     let mut literal = String::new();
 
     buf = match call!(buf, tilde_expansion) {
         Ok((rest, frag)) => {
-            fragments.push(frag);
+            Spans.push(frag);
             rest
         }
         Err(_) => buf,
@@ -413,13 +413,13 @@ fn parse_word(_buf: Input) -> Word {
                     Ok((rest, frag)) => {
                         literal += &head;
                         match frag {
-                            Fragment::Literal(s) => literal += s.as_str(),
+                            Span::Literal(s) => literal += s.as_str(),
                             _ => {
                                 if literal.len() > 0 {
-                                    fragments.push(Fragment::Literal(literal));
+                                    Spans.push(Span::Literal(literal));
                                     literal = String::new();
                                 }
-                                fragments.push(frag)
+                                Spans.push(frag)
                             }
                         }
                         rest
@@ -433,10 +433,10 @@ fn parse_word(_buf: Input) -> Word {
 
     literal += buf.to_string().as_str();
     if literal.len() > 0 {
-        fragments.push(Fragment::Literal(literal));
+        Spans.push(Span::Literal(literal));
     }
 
-    Word(fragments)
+    Word(Spans)
 }
 
 named!(whitespaces<Input, Input>,
@@ -877,21 +877,21 @@ pub fn parse_line(line: &str) -> Result<Ast, SyntaxError> {
 #[allow(unused)]
 macro_rules! literal_word_vec {
     ($($x:expr), *) => {
-        vec![$( Word(vec![Fragment::Literal($x.to_string())]), )*]
+        vec![$( Word(vec![Span::Literal($x.to_string())]), )*]
     };
 }
 
 #[allow(unused)]
 macro_rules! lit {
     ($x:expr) => {
-        Word(vec![Fragment::Literal($x.to_string())])
+        Word(vec![Span::Literal($x.to_string())])
     };
 }
 
 #[allow(unused)]
 macro_rules! param {
     ($name:expr, $op:expr) => {
-        Word(vec![Fragment::Parameter {
+        Word(vec![Span::Parameter {
             name: $name.to_string(),
             op: $op,
         }])
@@ -1098,10 +1098,10 @@ pub fn test_simple_commands() {
                         argv: literal_word_vec!["rails", "s"],
                         redirects: vec![],
                         assignments: vec![
-                            ("PORT".into(), Word(vec![Fragment::Literal("1234".into())])),
+                            ("PORT".into(), Word(vec![Span::Literal("1234".into())])),
                             (
                                 "RAILS_ENV".into(),
-                                Word(vec![Fragment::Literal("production".into())]),
+                                Word(vec![Span::Literal("production".into())]),
                             ),
                         ],
                     }],
@@ -1389,8 +1389,8 @@ pub fn test_compound_commands() {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
                                         argv: vec![
-                                            Word(vec![Fragment::Literal("cowsay".into())]),
-                                            Word(vec![Fragment::Parameter {
+                                            Word(vec![Span::Literal("cowsay".into())]),
+                                            Word(vec![Span::Parameter {
                                                 name: "arg".into(),
                                                 op: ExpansionOp::GetOrEmpty,
                                             }]),
@@ -1458,13 +1458,13 @@ pub fn test_compound_commands() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Case {
-                        word: Word(vec![Fragment::Parameter {
+                        word: Word(vec![Span::Parameter {
                             name: "action".into(),
                             op: ExpansionOp::GetOrEmpty,
                         }]),
                         items: vec![
                             CaseItem {
-                                patterns: vec![Word(vec![Fragment::Literal("echo".into())])],
+                                patterns: vec![Word(vec![Span::Literal("echo".into())])],
                                 body: vec![Term {
                                     async: false,
                                     pipelines: vec![Pipeline {
@@ -1479,8 +1479,8 @@ pub fn test_compound_commands() {
                             },
                             CaseItem {
                                 patterns: vec![
-                                    Word(vec![Fragment::Literal("date".into())]),
-                                    Word(vec![Fragment::Literal("time".into())]),
+                                    Word(vec![Span::Literal("date".into())]),
+                                    Word(vec![Span::Literal("time".into())]),
                                 ],
                                 body: vec![
                                     Term {
@@ -1575,16 +1575,16 @@ pub fn test_expansions() {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
                         argv: vec![
-                            Word(vec![Fragment::Literal("ls".into())]),
-                            Word(vec![Fragment::Command {
+                            Word(vec![Span::Literal("ls".into())]),
+                            Word(vec![Span::Command {
                                 body: vec![Term {
                                     async: false,
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
                                             argv: vec![
-                                                Word(vec![Fragment::Literal("echo".into())]),
-                                                Word(vec![Fragment::Literal("-l".into())]),
+                                                Word(vec![Span::Literal("echo".into())]),
+                                                Word(vec![Span::Literal("-l".into())]),
                                             ],
                                             redirects: vec![],
                                             assignments: vec![],
@@ -1610,16 +1610,16 @@ pub fn test_expansions() {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
                         argv: vec![
-                            Word(vec![Fragment::Literal("ls".into())]),
-                            Word(vec![Fragment::Command {
+                            Word(vec![Span::Literal("ls".into())]),
+                            Word(vec![Span::Command {
                                 body: vec![Term {
                                     async: false,
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
                                             argv: vec![
-                                                Word(vec![Fragment::Literal("echo".into())]),
-                                                Word(vec![Fragment::Literal("-l".into())]),
+                                                Word(vec![Span::Literal("echo".into())]),
+                                                Word(vec![Span::Literal("-l".into())]),
                                             ],
                                             redirects: vec![],
                                             assignments: vec![],
@@ -1645,27 +1645,27 @@ pub fn test_expansions() {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
                         argv: vec![
-                            Word(vec![Fragment::Literal("echo".into())]),
-                            Word(vec![Fragment::Parameter {
+                            Word(vec![Span::Literal("echo".into())]),
+                            Word(vec![Span::Parameter {
                                 name: "undefined".into(),
-                                op: ExpansionOp::GetOrDefault(Word(vec![Fragment::Literal(
+                                op: ExpansionOp::GetOrDefault(Word(vec![Span::Literal(
                                     "Current".into(),
                                 )])),
                             }]),
-                            Word(vec![Fragment::Parameter {
+                            Word(vec![Span::Parameter {
                                 name: "undefined".into(),
                                 op: ExpansionOp::GetOrDefaultAndAssign(Word(vec![
-                                    Fragment::Literal("TERM".into()),
+                                    Span::Literal("TERM".into()),
                                 ])),
                             }]),
-                            Word(vec![Fragment::Literal("is".into())]),
-                            Word(vec![Fragment::Parameter {
+                            Word(vec![Span::Literal("is".into())]),
+                            Word(vec![Span::Parameter {
                                 name: "TERM".into(),
                                 op: ExpansionOp::GetOrEmpty,
                             }]),
                             Word(vec![
-                                Fragment::Literal("len=".into()),
-                                Fragment::Parameter {
+                                Span::Literal("len=".into()),
+                                Span::Parameter {
                                     name: "TERM".into(),
                                     op: ExpansionOp::Length,
                                 },
@@ -1692,7 +1692,7 @@ pub fn test_assignments() {
                     commands: vec![Command::Assignment {
                         assignments: vec![(
                             "foo".into(),
-                            Word(vec![Fragment::Literal("bar".into())]),
+                            Word(vec![Span::Literal("bar".into())]),
                         )],
                     }],
                 }],
@@ -1711,11 +1711,11 @@ pub fn test_assignments() {
                         assignments: vec![
                             (
                                 "nobody".into(),
-                                Word(vec![Fragment::Literal("expects".into())]),
+                                Word(vec![Span::Literal("expects".into())]),
                             ),
                             (
                                 "the".into(),
-                                Word(vec![Fragment::Literal("spanish inquisition".into())]),
+                                Word(vec![Span::Literal("spanish inquisition".into())]),
                             ),
                         ],
                     }],
@@ -1736,18 +1736,18 @@ pub fn test_tilde() {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
                         argv: vec![
-                            Word(vec![Fragment::Literal("echo".into())]),
-                            Word(vec![Fragment::Tilde(None)]),
+                            Word(vec![Span::Literal("echo".into())]),
+                            Word(vec![Span::Tilde(None)]),
                             Word(vec![
-                                Fragment::Tilde(None),
-                                Fragment::Literal("/usr".into()),
+                                Span::Tilde(None),
+                                Span::Literal("/usr".into()),
                             ]),
-                            Word(vec![Fragment::Tilde(Some("seiya".into()))]),
+                            Word(vec![Span::Tilde(Some("seiya".into()))]),
                             Word(vec![
-                                Fragment::Tilde(Some("seiya".into())),
-                                Fragment::Literal("/usr".into()),
+                                Span::Tilde(Some("seiya".into())),
+                                Span::Literal("/usr".into()),
                             ]),
-                            Word(vec![Fragment::Literal("a/~/b".into())]),
+                            Word(vec![Span::Literal("a/~/b".into())]),
                         ],
                         redirects: vec![],
                         assignments: vec![],
@@ -1769,8 +1769,8 @@ pub fn test_arith_expr() {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
                         argv: vec![
-                            Word(vec![Fragment::Literal("echo".into())]),
-                            Word(vec![Fragment::ArithExpr {
+                            Word(vec![Span::Literal("echo".into())]),
+                            Word(vec![Span::ArithExpr {
                                 expr: Expr::Add(BinaryExpr {
                                     lhs: Box::new(Expr::Literal(1)),
                                     rhs: Box::new(Expr::Sub(BinaryExpr {
@@ -1797,8 +1797,8 @@ pub fn test_arith_expr() {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
                         argv: vec![
-                            Word(vec![Fragment::Literal("echo".into())]),
-                            Word(vec![Fragment::ArithExpr {
+                            Word(vec![Span::Literal("echo".into())]),
+                            Word(vec![Span::ArithExpr {
                                 expr: Expr::Add(BinaryExpr {
                                     lhs: Box::new(Expr::Literal(1)),
                                     rhs: Box::new(Expr::Sub(BinaryExpr {
@@ -1837,12 +1837,12 @@ pub fn test_patterns() {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
                         argv: vec![
-                            Word(vec![Fragment::Literal("echo".into())]),
-                            Word(vec![Fragment::AnyString]),
+                            Word(vec![Span::Literal("echo".into())]),
+                            Word(vec![Span::AnyString]),
                             Word(vec![
-                                Fragment::Literal("a".into()),
-                                Fragment::AnyChar,
-                                Fragment::Literal("c".into()),
+                                Span::Literal("a".into()),
+                                Span::AnyChar,
+                                Span::Literal("c".into()),
                             ]),
                         ],
                         redirects: vec![],
