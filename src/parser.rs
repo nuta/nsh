@@ -35,6 +35,12 @@ pub struct CaseItem {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub struct ElIf {
+    condition: Vec<Term>,
+    then_part: Vec<Term>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Command {
     SimpleCommand {
         argv: Vec<Word>,
@@ -49,7 +55,8 @@ pub enum Command {
     If {
         condition: Vec<Term>,
         then_part: Vec<Term>,
-        else_part: Vec<Term>,
+        elif_parts: Vec<ElIf>,
+        else_part: Option<Vec<Term>>,
         redirects: Vec<Redirection>,
     },
     For {
@@ -490,7 +497,9 @@ named!(nonreserved_word<Input, Word>,
     do_parse!(
         whitespaces >>
         not!(peek!(tag!("if"))) >>
+        not!(peek!(tag!("elif"))) >>
         not!(peek!(tag!("then"))) >>
+        not!(peek!(tag!("else"))) >>
         not!(peek!(tag!("fi"))) >>
         not!(peek!(tag!("for"))) >>
         not!(peek!(tag!("in"))) >>
@@ -610,12 +619,25 @@ named!(if_command<Input, Command>,
         condition: compound_list >>
         call!(keyword, "then") >>
         then_part: compound_list >>
-        call!(keyword, "fi") >>
+        elif_parts: many0!(do_parse!(
+            call!(keyword, "elif") >>
+            condition: compound_list >>
+            call!(keyword, "then") >>
+            then_part: compound_list >>
+            ( ElIf { condition, then_part } )
+        )) >>
+        else_part: opt!(do_parse!(
+            call!(keyword, "else") >>
+            body: compound_list >>
+            ( body )
+        )) >>
+        dbg_dmp!(call!(keyword, "fi")) >>
         ({
             Command::If {
                 condition,
                 then_part,
-                else_part: vec![], // TODO:
+                elif_parts,
+                else_part,
                 redirects: vec![], // TODO:
             }
         })
@@ -874,9 +896,16 @@ macro_rules! literal_word_vec {
 }
 
 #[allow(unused)]
-macro_rules! single_word {
+macro_rules! lit {
     ($x:expr) => {
         Word(vec![Fragment::Literal($x.to_string())])
+    };
+}
+
+#[allow(unused)]
+macro_rules! param {
+    ($name:expr, $op:expr) => {
+        Word(vec![Fragment::Parameter { name: $name.to_string(), op: $op }])
     };
 }
 
@@ -1105,12 +1134,12 @@ pub fn test_simple_commands() {
                             Redirection {
                                 direction: RedirectionDirection::Input,
                                 fd: 0,
-                                target: RedirectionType::File(single_word!("foo.txt")),
+                                target: RedirectionType::File(lit!("foo.txt")),
                             },
                             Redirection {
                                 direction: RedirectionDirection::Output,
                                 fd: 2,
-                                target: RedirectionType::File(single_word!("bar.txt")),
+                                target: RedirectionType::File(lit!("bar.txt")),
                             },
                         ],
                         assignments: vec![],
@@ -1152,7 +1181,8 @@ pub fn test_compound_commands() {
                             }],
                             async: false,
                         }],
-                        else_part: vec![],
+                        elif_parts: vec![],
+                        else_part: None,
                         redirects: vec![],
                     }],
                 }],
@@ -1203,7 +1233,123 @@ pub fn test_compound_commands() {
                                 async: false,
                             },
                         ],
-                        else_part: vec![],
+                        elif_parts: vec![],
+                        else_part: None,
+                        redirects: vec![],
+                    }],
+                }],
+                async: false,
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line(concat!(
+            "if [ $name = \"john\" ];",
+            "then;",
+            "    echo Hello, John!;",
+            "elif [ $name = \"mike\" ];",
+            "then;",
+            "    echo Hello, Mike!;",
+            "elif [ $name = \"emily\" ];",
+            "then;",
+            "    echo Hello, Emily!;",
+            "else;",
+            "    echo Hello, stranger!;",
+            "fi"
+        )).unwrap(),
+        Ast {
+            terms: vec![Term {
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::If {
+                        condition: vec![Term {
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    argv: vec![lit!("["), param!("name", ExpansionOp::GetOrEmpty), lit!("="), lit!("john"), lit!("]")],
+                                    redirects: vec![],
+                                    assignments: vec![],
+                                }],
+                            }],
+                            async: false,
+                        }],
+                        then_part: vec![
+                            Term {
+                                pipelines: vec![Pipeline {
+                                    run_if: RunIf::Always,
+                                    commands: vec![Command::SimpleCommand {
+                                        argv: literal_word_vec!["echo", "Hello,", "John!"],
+                                        redirects: vec![],
+                                        assignments: vec![],
+                                    }],
+                                }],
+                                async: false,
+                            },
+                        ],
+                        elif_parts: vec![
+                            ElIf {
+                                condition: vec![Term {
+                                    pipelines: vec![Pipeline {
+                                        run_if: RunIf::Always,
+                                        commands: vec![Command::SimpleCommand {
+                                            argv: vec![lit!("["), param!("name", ExpansionOp::GetOrEmpty), lit!("="), lit!("mike"), lit!("]")],
+                                            redirects: vec![],
+                                            assignments: vec![],
+                                        }],
+                                    }],
+                                    async: false,
+                                }],
+                                then_part: vec![Term {
+                                    pipelines: vec![Pipeline {
+                                        run_if: RunIf::Always,
+                                        commands: vec![Command::SimpleCommand {
+                                            argv: literal_word_vec!["echo", "Hello,", "Mike!"],
+                                            redirects: vec![],
+                                            assignments: vec![],
+                                        }],
+                                    }],
+                                    async: false,
+                                }]
+                            },
+                            ElIf {
+                                condition: vec![Term {
+                                    pipelines: vec![Pipeline {
+                                        run_if: RunIf::Always,
+                                        commands: vec![Command::SimpleCommand {
+                                            argv: vec![lit!("["), param!("name", ExpansionOp::GetOrEmpty), lit!("="), lit!("emily"), lit!("]")],
+                                            redirects: vec![],
+                                            assignments: vec![],
+                                        }],
+                                    }],
+                                    async: false,
+                                }],
+                                then_part: vec![Term {
+                                    pipelines: vec![Pipeline {
+                                        run_if: RunIf::Always,
+                                        commands: vec![Command::SimpleCommand {
+                                            argv: literal_word_vec!["echo", "Hello,", "Emily!"],
+                                            redirects: vec![],
+                                            assignments: vec![],
+                                        }],
+                                    }],
+                                    async: false,
+                                }]
+                            }
+                        ],
+                        else_part: Some(vec![
+                            Term {
+                                pipelines: vec![Pipeline {
+                                    run_if: RunIf::Always,
+                                    commands: vec![Command::SimpleCommand {
+                                        argv: literal_word_vec!["echo", "Hello,", "stranger!"],
+                                        redirects: vec![],
+                                        assignments: vec![],
+                                    }],
+                                }],
+                                async: false,
+                            },
+                        ]),
                         redirects: vec![],
                     }],
                 }],
