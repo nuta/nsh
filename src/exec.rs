@@ -1,4 +1,4 @@
-use parser::{self, ExpansionOp, Ast, Word, Span};
+use parser::{self, ExpansionOp, Ast, Word, Span, RunIf};
 use std::collections::HashMap;
 use std::io;
 use std::process::{self, ExitStatus, Stdio};
@@ -102,7 +102,7 @@ fn exec_command(
 }
 
 pub struct CommandResult {
-    exit_code: i32,
+    status: i32,
 }
 
 fn run_command(scope: &mut Scope, command: &parser::Command, stdin: Stdio, stdout: Stdio, stderr: Stdio) -> CommandResult {
@@ -110,14 +110,14 @@ fn run_command(scope: &mut Scope, command: &parser::Command, stdin: Stdio, stdou
     match command {
         parser::Command::SimpleCommand { argv: wargv, .. } => {
             let argv2 = evaluate_words(scope, wargv);
-            let exit_code = match exec_command(argv2, stdin, stdout, stderr) {
+            let status = match exec_command(argv2, stdin, stdout, stderr) {
                 Ok(status) => status.code().unwrap(),
                 Err(_) => {
                     println!("nsh: failed to execute");
                     -1
                 },
             };
-            CommandResult { exit_code }
+            CommandResult { status }
         },
         parser::Command::Assignment { assignments } => {
             for (name, value) in assignments {
@@ -127,7 +127,7 @@ fn run_command(scope: &mut Scope, command: &parser::Command, stdin: Stdio, stdou
 
                 set_var(scope, name.as_str(), value)
             }
-            CommandResult { exit_code: 0 }
+            CommandResult { status: 0 }
         }
         _ => panic!("TODO:"),
     }
@@ -136,15 +136,26 @@ fn run_command(scope: &mut Scope, command: &parser::Command, stdin: Stdio, stdou
 pub fn exec(ast: Ast) -> i32 {
     trace!("exec: {:#?}", ast);
     let scope = &mut CONTEXT.lock().unwrap().scope;
-    let mut result = -128;
+    let mut last_status = 0;
     for term in ast.terms {
         for pipeline in term.pipelines {
+            // Should we execute the pipline?
+            match (last_status == 0, pipeline.run_if) {
+                (true, RunIf::Success) => (),
+                (false, RunIf::Failure) => (),
+                (_, RunIf::Always) => (),
+                _ => continue,
+            }
+
+            // Invoke commands in a pipeline.
             let mut stdin  = Stdio::inherit();
             let mut stdout = Stdio::inherit();
             let mut stderr = Stdio::inherit();
             let mut iter = pipeline.commands.iter().peekable();
             while let Some(command) = iter.next() {
                 let next_stdin = if iter.peek().is_some() {
+                    // There is a next command in the pipeline (e.g. date in
+                    // `date | hexdump`). Create and connect a pipe.
                     let (pipe_out, pipe_in) = pipe().unwrap();
                     stdout = unsafe { Stdio::from_raw_fd(pipe_in) };
                     Some(unsafe { Stdio::from_raw_fd(pipe_out) })
@@ -152,11 +163,12 @@ pub fn exec(ast: Ast) -> i32 {
                     None
                 };
 
-                run_command(scope, command, stdin, stdout, stderr);
+                let r = run_command(scope, command, stdin, stdout, stderr);
+                last_status = r.status;
 
                 stdin = Stdio::inherit();;
-                stdout = Stdio::inherit();;
                 stderr = Stdio::inherit();
+                stdout = Stdio::inherit();;
                 if let Some(next) = next_stdin {
                     stdin = next;
                 }
