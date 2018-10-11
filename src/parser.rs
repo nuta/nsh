@@ -127,8 +127,6 @@ pub enum Expr {
     Parameter { name: String, op: ExpansionOp },
     // $(echo hello && echo world)
     Command { body: Vec<Term> },
-    // $((1 + 2 * 3))
-    ArithExpr { expr: Box<Expr> },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
