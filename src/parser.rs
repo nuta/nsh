@@ -224,7 +224,7 @@ named!(parameter_w_braces<Input, Span>,
         )) >>
         default: opt!(alt!(
             // FIXME: accept Word instead (e.g. `${foo:-bar$(echo baz)}`).
-            map!(expansion, |frag| Word(vec![frag])) |
+            map!(expansion, |span| Word(vec![span])) |
             map!(recognize!(take_while1!(|c| is_valid_word_char(c) && c != '}')), parse_word)
          )) >>
         tag!("}") >>
@@ -275,29 +275,29 @@ named!(backquoted_command_expansion<Input, Span>,
 named!(expansion<Input, Span>,
     do_parse!(
         tag!("$") >>
-        frag: alt!(
+        span: alt!(
             arith_expr |
             command_expansion |
             parameter_expansion
         ) >>
-        ( frag )
+        ( span )
     )
 );
 
 named!(expr_factor<Input, Expr>,
     do_parse!(
-        frag: alt!(
+        span: alt!(
             map!(
                 take_while1!(|c: char| c.is_ascii_digit()),
                 |s| Span::Literal(s.to_string())
             ) |
             // $(( $i ))
-            do_parse!(peek!(tag!("$")) >> frag: expansion >> ( frag )) |
+            do_parse!(peek!(tag!("$")) >> span: expansion >> ( span )) |
             // $(( i ))
             parameter_wo_braces
         ) >>
         ({
-            match frag {
+            match span {
                 // TODO: throw an syntax error instead of .unwrap()
                 Span::Literal(s) => Expr::Literal(s.parse().unwrap()),
                 Span::Parameter { name, op } => Expr::Parameter { name, op },
@@ -393,12 +393,12 @@ named!(tilde_expansion<Input, Span>,
 
 fn parse_word(_buf: Input) -> Word {
     let mut buf = _buf;
-    let mut Spans = Vec::new();
+    let mut spans = Vec::new();
     let mut literal = String::new();
 
     buf = match call!(buf, tilde_expansion) {
-        Ok((rest, frag)) => {
-            Spans.push(frag);
+        Ok((rest, span)) => {
+            spans.push(span);
             rest
         }
         Err(_) => buf,
@@ -408,18 +408,18 @@ fn parse_word(_buf: Input) -> Word {
     loop {
         buf = match recognize!(buf, take_while!(|c| !is_special_word_char(c))) {
             Ok((rest, head)) => {
-                trace!("frag: rest='{}', head='{}'", rest, head);
+                trace!("span: rest='{}', head='{}'", rest, head);
                 match alt!(rest, pattern | expansion | escape_sequence) {
-                    Ok((rest, frag)) => {
+                    Ok((rest, span)) => {
                         literal += &head;
-                        match frag {
+                        match span {
                             Span::Literal(s) => literal += s.as_str(),
                             _ => {
                                 if literal.len() > 0 {
-                                    Spans.push(Span::Literal(literal));
+                                    spans.push(Span::Literal(literal));
                                     literal = String::new();
                                 }
-                                Spans.push(frag)
+                                spans.push(span)
                             }
                         }
                         rest
@@ -433,10 +433,10 @@ fn parse_word(_buf: Input) -> Word {
 
     literal += buf.to_string().as_str();
     if literal.len() > 0 {
-        Spans.push(Span::Literal(literal));
+        spans.push(Span::Literal(literal));
     }
 
-    Word(Spans)
+    Word(spans)
 }
 
 named!(whitespaces<Input, Input>,
@@ -470,8 +470,8 @@ named!(word<Input, Word>,
         whitespaces >>
         word: alt!(
             // Try to parse $(..), $(()), and ${..} here since it may span multiple words.
-            do_parse!(peek!(tag!("$")) >> frag: expansion >> (Word(vec![frag]))) |
-            do_parse!(peek!(tag!("`")) >> frag: backquoted_command_expansion >> (Word(vec![frag]))) |
+            do_parse!(peek!(tag!("$")) >> span: expansion >> (Word(vec![span]))) |
+            do_parse!(peek!(tag!("`")) >> span: backquoted_command_expansion >> (Word(vec![span]))) |
             string_literal |
             unquoted_word
         ) >>
