@@ -7,6 +7,7 @@ extern crate lazy_static;
 extern crate nom;
 extern crate pretty_env_logger;
 extern crate rustyline;
+extern crate nix;
 use rustyline::error::ReadlineError;
 use std::process;
 mod exec;

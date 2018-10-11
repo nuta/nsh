@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::io;
 use std::process::{self, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
+use std::os::unix::io::{FromRawFd};
+use nix::unistd::pipe;
 
 #[derive(Debug)]
 pub enum VariableValue {
@@ -42,7 +44,7 @@ pub fn get_var<'a, 'b>(scope: &'a Scope, key: &'b str) -> Option<&'a Variable> {
     scope.vars.get(key.into())
 }
 
-fn expand_param(scope: &Scope, name: String, op: ExpansionOp) -> String {
+fn expand_param(scope: &Scope, name: &String, op: &ExpansionOp) -> String {
     match op {
         ExpansionOp::GetOrEmpty => {
             if let Some(var) = get_var(&scope, name.as_str()) {
@@ -57,23 +59,23 @@ fn expand_param(scope: &Scope, name: String, op: ExpansionOp) -> String {
     }
 }
 
-fn evaluate_span(scope: &Scope, span: Span) -> String {
+fn evaluate_span(scope: &Scope, span: &Span) -> String {
     match span {
-        Span::Literal(s) => s,
+        Span::Literal(s) => s.clone(),
         Span::Parameter { name, op } => expand_param(scope, name, op),
         _ => panic!("TODO:"),
     }
 }
 
-fn evaluate_word(scope: &Scope, word: Word) -> String {
+fn evaluate_word(scope: &Scope, word: &Word) -> String {
     let mut s = String::new();
-    for span in word.0 {
-        s += evaluate_span(scope, span).as_str();
+    for span in &word.0 {
+        s += evaluate_span(scope, &span).as_str();
     }
     s
 }
 
-fn evaluate_words(scope: &Scope, words: Vec<Word>) -> Vec<String> {
+fn evaluate_words(scope: &Scope, words: &Vec<Word>) -> Vec<String> {
     let mut evaluated = Vec::new();
     for word in words {
         let s = evaluate_word(scope, word);
@@ -99,18 +101,23 @@ fn exec_command(
         .status()
 }
 
-fn run_command(scope: &mut Scope, command: parser::Command) -> i32 {
+pub struct CommandResult {
+    exit_code: i32,
+}
+
+fn run_command(scope: &mut Scope, command: &parser::Command, stdin: Stdio, stdout: Stdio, stderr: Stdio) -> CommandResult {
     trace!("run_command: {:?}", command);
     match command {
         parser::Command::SimpleCommand { argv: wargv, .. } => {
             let argv2 = evaluate_words(scope, wargv);
-            match exec_command(argv2, Stdio::inherit(), Stdio::inherit(), Stdio::inherit()) {
+            let exit_code = match exec_command(argv2, stdin, stdout, stderr) {
                 Ok(status) => status.code().unwrap(),
                 Err(_) => {
                     println!("nsh: failed to execute");
                     -1
                 },
-            }
+            };
+            CommandResult { exit_code }
         },
         parser::Command::Assignment { assignments } => {
             for (name, value) in assignments {
@@ -120,7 +127,7 @@ fn run_command(scope: &mut Scope, command: parser::Command) -> i32 {
 
                 set_var(scope, name.as_str(), value)
             }
-            0
+            CommandResult { exit_code: 0 }
         }
         _ => panic!("TODO:"),
     }
@@ -132,11 +139,30 @@ pub fn exec(ast: Ast) -> i32 {
     let mut result = -128;
     for term in ast.terms {
         for pipeline in term.pipelines {
-            for command in pipeline.commands {
-                result = run_command(scope, command);
+            let mut stdin  = Stdio::inherit();
+            let mut stdout = Stdio::inherit();
+            let mut stderr = Stdio::inherit();
+            let mut iter = pipeline.commands.iter().peekable();
+            while let Some(command) = iter.next() {
+                let next_stdin = if iter.peek().is_some() {
+                    let (pipe_out, pipe_in) = pipe().unwrap();
+                    stdout = unsafe { Stdio::from_raw_fd(pipe_in) };
+                    Some(unsafe { Stdio::from_raw_fd(pipe_out) })
+                } else {
+                    None
+                };
+
+                run_command(scope, command, stdin, stdout, stderr);
+
+                stdin = Stdio::inherit();;
+                stdout = Stdio::inherit();;
+                stderr = Stdio::inherit();
+                if let Some(next) = next_stdin {
+                    stdin = next;
+                }
             }
         }
     }
 
-    result
+    0
 }
