@@ -180,10 +180,6 @@ fn is_whitespace(ch: char) -> bool {
     " \t".to_owned().contains(ch)
 }
 
-fn is_whitespace_or_semicolon(ch: char) -> bool {
-    is_whitespace(ch) || ch == ';'
-}
-
 fn is_special_word_char(ch: char) -> bool {
     match ch {
         '\\' | '$' | '*' | '?' => true,
@@ -594,20 +590,11 @@ named!(simple_command<Input, Command>,
     )
 );
 
-named!(next_word<Input, Input>,
-    do_parse!(
-        take_while!(is_whitespace_or_semicolon) >>
-        word: take_while!(|c| !is_whitespace_or_semicolon(c)) >>
-        take_while!(is_whitespace_or_semicolon) >>
-        ( word )
-    )
-);
-
 named_args!(keyword<'a>(keyword: &'static str)<Input<'a>, ()>,
     do_parse!(
-        take_while!(is_whitespace_or_semicolon) >>
+        take_while!(|c| is_whitespace(c) || c == ';' || c == '\n') >>
         tag!(keyword) >>
-        take_while!(is_whitespace_or_semicolon) >>
+        take_while!(|c| is_whitespace(c) || c == ';' || c == '\n') >>
         ( () )
     )
 );
@@ -699,6 +686,7 @@ named!(case_item_patterns<Input, Vec<Word>>,
 
 named!(case_item<Input, CaseItem>,
     do_parse!(
+        opt!(call!(keyword, "(")) >>
         patterns: case_item_patterns >>
         call!(keyword, ")") >>
         body: compound_list >>
