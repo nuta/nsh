@@ -161,7 +161,7 @@ fn is_digit(ch: char) -> bool {
 
 fn is_valid_word_char(ch: char) -> bool {
     match ch {
-        '&' | '|' | ';' | '(' | ')' | '`' => false,
+        '&' | '|' | ';' | '(' | ')' | '`' | '\n' => false,
         _ if is_whitespace(ch) => false,
         _ => true,
     }
@@ -177,7 +177,7 @@ fn is_valid_var_name_char(ch: char) -> bool {
 
 fn is_whitespace(ch: char) -> bool {
     // TODO: $IFS
-    " \t\n".to_owned().contains(ch)
+    " \t".to_owned().contains(ch)
 }
 
 fn is_whitespace_or_semicolon(ch: char) -> bool {
@@ -437,8 +437,17 @@ fn parse_word(_buf: Input) -> Word {
     Word(spans)
 }
 
-named!(whitespaces<Input, Input>,
-    take_while!(is_whitespace)
+named!(whitespaces<Input, ()>,
+    do_parse!(
+        take_while!(|c| c != '\n' && is_whitespace(c)) >>
+        opt!(do_parse!(
+            tag!("#") >>
+            take_while!(|c| c != '\n') >>
+            ( () )
+        )) >>
+        take_while!(|c| c != '\n' && is_whitespace(c)) >>
+        ( () )
+    )
 );
 
 named!(string_literal<Input, Word>,
@@ -461,6 +470,14 @@ named!(unquoted_word<Input, Word>,
 
 named!(var_name<Input, String>,
     map!(recognize!(take_while1!(is_valid_var_name_char)), |name| name.to_string())
+);
+
+named!(comment<Input, ()>,
+    do_parse!(
+        tag!("#") >>
+        take_while!(|c| c != '\n') >>
+        ( () )
+    )
 );
 
 named!(word<Input, Word>,
@@ -546,9 +563,16 @@ named!(simple_command<Input, Command>,
     do_parse!(
         assignments: many0!(assignment) >>
         head: nonreserved_word >>
-        words: many0!(alt!(
-            map!(redirection, |r| WordOrRedirection::Redirection(r)) |
-            map!(word, |w| WordOrRedirection::Word(w))
+        whitespaces >>
+        opt!(comment) >>
+        words: many0!(do_parse!(
+            word: alt!(
+                map!(redirection, |r| WordOrRedirection::Redirection(r)) |
+                map!(word, |w| WordOrRedirection::Word(w))
+            ) >>
+            whitespaces >>
+            opt!(comment) >>
+            ( word )
         )) >>
         ({
             let mut argv = Vec::new();
@@ -602,6 +626,7 @@ named!(if_command<Input, Command>,
         call!(keyword, "if") >>
         condition: compound_list >>
         call!(keyword, "then") >>
+        opt!(tag!("\n")) >>
         then_part: compound_list >>
         elif_parts: many0!(do_parse!(
             call!(keyword, "elif") >>
@@ -638,6 +663,7 @@ named!(for_command<Input, Command>,
             ( words )
         )) >>
         call!(keyword, "do") >>
+        opt!(tag!("\n")) >>
         body: compound_list >>
         call!(keyword, "done") >>
         ({
@@ -817,16 +843,21 @@ named!(compound_list<Input, Vec<Term>>,
     do_parse!(
         head: and_or_list >>
         sep: opt!(alt!(
-            do_parse!(not!(call!(operator, ";;")) >> op: call!(operator, ";") >> ( op )) |
-            call!(operator, "&"))
-        ) >>
+            do_parse!(
+                not!(call!(operator, ";;")) >>
+                op: alt!(tag!("\n") | call!(operator, ";")) >>
+                ( op )
+            ) |
+            call!(operator, "&")
+        )) >>
+        opt!(take_while!(|c| c == '\n' || is_whitespace(c))) >>
         rest: opt!(do_parse!(
             rest: compound_list >>
             (rest)
         )) >>
         ({
             let async = match sep {
-                None | Some(Input(";")) => false,
+                None | Some(Input(";")) | Some(Input("\n")) => false,
                 Some(Input("&")) => true,
                 _ => unreachable!(),
             };
@@ -846,11 +877,24 @@ named!(compound_list<Input, Vec<Term>>,
     )
 );
 
+named!(comments<Input, ()>,
+    do_parse!(
+        many0!(do_parse!(
+            take_while!(|c| is_whitespace(c) || c == '\n') >>
+            comment >>
+            take_while!(|c| is_whitespace(c) || c == '\n') >>
+            ( () )
+        )) >>
+        ( () )
+    )
+);
+
 named!(parse_script<Input, Ast>,
     do_parse!(
-        whitespaces >>
+        take_while!(|c| is_whitespace(c) || c == '\n') >>
+        comments >>
         terms: opt!(compound_list) >>
-        whitespaces >>
+        comments >>
         eof!() >>
         (Ast { terms: terms.unwrap_or(Vec::new()) })
     )
@@ -1179,7 +1223,13 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line("if [ foo = \"foo\" ];then echo hello; echo world; fi").unwrap(),
+        parse_line(concat!(
+            "if [ foo = \"foo\" ];\n",
+            "then\n",
+            "    echo hello\n",
+            "    echo world\n",
+            "fi"
+        )).unwrap(),
         Ast {
             terms: vec![Term {
                 pipelines: vec![Pipeline {
@@ -1844,6 +1894,42 @@ pub fn test_patterns() {
             }],
         }
     );
+}
+
+#[test]
+pub fn test_comments() {
+    assert_eq!(
+        parse_line("foo bar # this is comment\nls -G /tmp # hello world\n"),
+        Ok(Ast {
+            terms: vec![
+                Term {
+                    async: false,
+                    pipelines: vec![Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![Command::SimpleCommand {
+                            argv: literal_word_vec!["foo", "bar"],
+                            redirects: vec![],
+                            assignments: vec![],
+                        }],
+                    }],
+                },
+                Term {
+                    async: false,
+                    pipelines: vec![Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![Command::SimpleCommand {
+                            argv: literal_word_vec!["ls", "-G", "/tmp"],
+                            redirects: vec![],
+                            assignments: vec![],
+                        }],
+                    }],
+                },
+            ],
+        })
+    );
+
+    assert_eq!(parse_line("# Hello"), Err(SyntaxError::Empty));
+    assert_eq!(parse_line("# Hello\n#World"), Err(SyntaxError::Empty));
 }
 
 #[test]
