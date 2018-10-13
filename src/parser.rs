@@ -850,7 +850,12 @@ named!(compound_list<Input, Vec<Term>>,
             ) |
             call!(operator, "&")
         )) >>
+        many0!(do_parse!(
         opt!(take_while!(|c| c == '\n' || is_whitespace(c))) >>
+            opt!(comment) >>
+            opt!(take_while!(|c| c == '\n' || is_whitespace(c))) >>
+            ( () )
+        )) >>
         rest: opt!(do_parse!(
             rest: compound_list >>
             (rest)
@@ -894,7 +899,6 @@ named!(parse_script<Input, Ast>,
         take_while!(|c| is_whitespace(c) || c == '\n') >>
         comments >>
         terms: opt!(compound_list) >>
-        comments >>
         eof!() >>
         (Ast { terms: terms.unwrap_or(Vec::new()) })
     )
@@ -1899,7 +1903,7 @@ pub fn test_patterns() {
 #[test]
 pub fn test_comments() {
     assert_eq!(
-        parse_line("foo bar # this is comment\nls -G /tmp # hello world\n"),
+        parse_line("foo bar # this is comment\n#comment line\nls -G /tmp # hello world\n"),
         Ok(Ast {
             terms: vec![
                 Term {
