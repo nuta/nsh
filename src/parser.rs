@@ -71,7 +71,7 @@ pub enum Command {
     },
     FunctionDef {
         name: String,
-        body: Vec<Term>,
+        body: Box<Command>, // Typically Command::Group.
     },
     Group {
         terms: Vec<Term>,
@@ -426,7 +426,7 @@ named_args!(literal_span(in_stirng_literal: bool, in_expansion: bool)<Input, Spa
     )
 );
 
-fn parse_word(_buf: Input, in_expansion: bool) ->  IResult<Input, Word> {
+fn parse_word(_buf: Input, in_expansion: bool) -> IResult<Input, Word> {
     let first_len = _buf.len();
     let mut buf = _buf;
     let mut spans = Vec::new();
@@ -444,14 +444,18 @@ fn parse_word(_buf: Input, in_expansion: bool) ->  IResult<Input, Word> {
         false
     };
 
-    info!("parse_word({}): '{}' ------------------------", in_expansion, buf);
+    info!(
+        "parse_word({}): '{}' ------------------------",
+        in_expansion, buf
+    );
     loop {
-        match alt!(buf,
+        match alt!(
+            buf,
             pattern
-            | expansion
-            | backquoted_command_expansion
-            | escape_sequence
-            | call!(literal_span, in_string, in_expansion)
+                | expansion
+                | backquoted_command_expansion
+                | escape_sequence
+                | call!(literal_span, in_string, in_expansion)
         ) {
             Ok((rest, span)) => {
                 trace!("rest='{}', span={:?}", rest, span);
@@ -488,7 +492,10 @@ fn parse_word(_buf: Input, in_expansion: bool) ->  IResult<Input, Word> {
 
     trace!("end_of_word: {:?}, {:?}", buf, spans);
     if first_len == buf.len() {
-        Err(nom::Err::Error(error_position!(buf, nom::ErrorKind::TakeWhile1)))
+        Err(nom::Err::Error(error_position!(
+            buf,
+            nom::ErrorKind::TakeWhile1
+        )))
     } else {
         Ok((buf, Word(spans)))
     }
@@ -751,7 +758,8 @@ named!(group<Input, Command>,
         whitespaces >>
         call!(keyword, "{") >>
         terms: compound_list >>
-        call!(keyword, "}") >>
+        whitespaces >>
+        tag!("}") >>
         ( Command::Group { terms } )
     )
 );
@@ -769,8 +777,8 @@ named!(func_def<Input, Command>,
         name: var_name >>
         call!(keyword, "(") >>
         call!(keyword, ")") >>
-        body: compound_list >>
-        ( Command::FunctionDef { name, body } )
+        body: command >>
+        ( Command::FunctionDef { name, body: Box::new(body) } )
     )
 );
 
@@ -1457,7 +1465,7 @@ pub fn test_compound_commands() {
                                     commands: vec![Command::SimpleCommand {
                                         argv: vec![
                                             lit!("cowsay"),
-                                            param!("arg", ExpansionOp::GetOrEmpty)
+                                            param!("arg", ExpansionOp::GetOrEmpty),
                                         ],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -1539,10 +1547,7 @@ pub fn test_compound_commands() {
                                 }],
                             },
                             CaseItem {
-                                patterns: vec![
-                                    lit!("date"),
-                                    lit!("time"),
-                                ],
+                                patterns: vec![lit!("date"), lit!("time")],
                                 body: vec![
                                     Term {
                                         async: false,
@@ -1578,50 +1583,57 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line("func1() { echo hello; echo world; }").unwrap(),
+        parse_line("func1() { echo hello; echo world; }; func1").unwrap(),
         Ast {
-            terms: vec![Term {
-                async: false,
-                pipelines: vec![Pipeline {
-                    run_if: RunIf::Always,
-                    commands: vec![Command::FunctionDef {
-                        name: "func1".into(),
-                        body: vec![Term {
-                            async: false,
-                            pipelines: vec![Pipeline {
-                                run_if: RunIf::Always,
-                                commands: vec![Command::Group {
-                                    terms: vec![
-                                        Term {
-                                            async: false,
-                                            pipelines: vec![Pipeline {
-                                                run_if: RunIf::Always,
-                                                commands: vec![Command::SimpleCommand {
-                                                    argv: literal_word_vec!["echo", "hello"],
-                                                    redirects: vec![],
-                                                    assignments: vec![],
-                                                }],
+            terms: vec![
+                Term {
+                    async: false,
+                    pipelines: vec![Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![Command::FunctionDef {
+                            name: "func1".into(),
+                            body: Box::new(Command::Group {
+                                terms: vec![
+                                    Term {
+                                        async: false,
+                                        pipelines: vec![Pipeline {
+                                            run_if: RunIf::Always,
+                                            commands: vec![Command::SimpleCommand {
+                                                argv: literal_word_vec!["echo", "hello"],
+                                                redirects: vec![],
+                                                assignments: vec![],
                                             }],
-                                        },
-                                        Term {
-                                            async: false,
-                                            pipelines: vec![Pipeline {
-                                                run_if: RunIf::Always,
-                                                commands: vec![Command::SimpleCommand {
-                                                    argv: literal_word_vec!["echo", "world"],
-                                                    redirects: vec![],
-                                                    assignments: vec![],
-                                                }],
+                                        }],
+                                    },
+                                    Term {
+                                        async: false,
+                                        pipelines: vec![Pipeline {
+                                            run_if: RunIf::Always,
+                                            commands: vec![Command::SimpleCommand {
+                                                argv: literal_word_vec!["echo", "world"],
+                                                redirects: vec![],
+                                                assignments: vec![],
                                             }],
-                                        },
-                                    ],
-                                }],
-                            }],
+                                        }],
+                                    },
+                                ],
+                            }),
                         }],
                     }],
-                }],
-            }],
-        }
+                },
+                Term {
+                    async: false,
+                    pipelines: vec![Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![Command::SimpleCommand {
+                            argv: vec![lit!("func1")],
+                            redirects: vec![],
+                            assignments: vec![],
+                        }],
+                    }],
+                },
+            ],
+        },
     );
 }
 
@@ -1674,16 +1686,14 @@ pub fn test_expansions() {
                             lit!("foo"),
                             Word(vec![Span::Parameter {
                                 name: "var1".into(),
-                                op: ExpansionOp::GetOrDefault(
-                                    Word(vec![
-                                        Span::Literal("a".into()),
-                                        Span::Parameter {
-                                            name: "xyz".into(),
-                                            op: ExpansionOp::GetOrEmpty
-                                        },
-                                        Span::Literal("b".into()),
-                                    ])
-                                )
+                                op: ExpansionOp::GetOrDefault(Word(vec![
+                                    Span::Literal("a".into()),
+                                    Span::Parameter {
+                                        name: "xyz".into(),
+                                        op: ExpansionOp::GetOrEmpty,
+                                    },
+                                    Span::Literal("b".into()),
+                                ])),
                             }]),
                             lit!("bar"),
                         ],
@@ -1748,9 +1758,9 @@ pub fn test_expansions() {
                             }]),
                             Word(vec![Span::Parameter {
                                 name: "undefined".into(),
-                                op: ExpansionOp::GetOrDefaultAndAssign(Word(vec![
-                                    Span::Literal("TERM".into()),
-                                ])),
+                                op: ExpansionOp::GetOrDefaultAndAssign(Word(vec![Span::Literal(
+                                    "TERM".into(),
+                                )])),
                             }]),
                             Word(vec![Span::Literal("is".into())]),
                             Word(vec![Span::Parameter {
@@ -1784,10 +1794,7 @@ pub fn test_assignments() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Assignment {
-                        assignments: vec![(
-                            "foo".into(),
-                            Word(vec![Span::Literal("bar".into())]),
-                        )],
+                        assignments: vec![("foo".into(), Word(vec![Span::Literal("bar".into())]))],
                     }],
                 }],
             }],
@@ -1803,10 +1810,7 @@ pub fn test_assignments() {
                     run_if: RunIf::Always,
                     commands: vec![Command::Assignment {
                         assignments: vec![
-                            (
-                                "nobody".into(),
-                                Word(vec![Span::Literal("expects".into())]),
-                            ),
+                            ("nobody".into(), Word(vec![Span::Literal("expects".into())])),
                             (
                                 "the".into(),
                                 Word(vec![Span::Literal("spanish inquisition".into())]),
@@ -1832,10 +1836,7 @@ pub fn test_tilde() {
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::Tilde(None)]),
-                            Word(vec![
-                                Span::Tilde(None),
-                                Span::Literal("/usr".into()),
-                            ]),
+                            Word(vec![Span::Tilde(None), Span::Literal("/usr".into())]),
                             Word(vec![Span::Tilde(Some("seiya".into()))]),
                             Word(vec![
                                 Span::Tilde(Some("seiya".into())),

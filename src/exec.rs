@@ -1,14 +1,15 @@
-use parser::{self, ExpansionOp, Ast, Word, Span, RunIf};
+use nix::unistd::pipe;
+use parser::{self, Ast, ExpansionOp, RunIf, Span, Word};
 use std::collections::HashMap;
 use std::io;
+use std::os::unix::io::FromRawFd;
 use std::process::{self, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
-use std::os::unix::io::{FromRawFd};
-use nix::unistd::pipe;
 
 #[derive(Debug)]
 pub enum VariableValue {
     String(String),
+    Function(Box<parser::Command>),
 }
 
 #[derive(Debug)]
@@ -18,7 +19,7 @@ pub struct Variable {
 
 #[derive(Debug)]
 pub struct Scope {
-    vars: HashMap<String, Variable>,
+    vars: HashMap<String, Arc<Variable>>,
     prev: Option<Arc<Scope>>,
 }
 
@@ -37,40 +38,45 @@ lazy_static! {
 }
 
 pub fn set_var(scope: &mut Scope, key: &str, value: Variable) {
-    scope.vars.insert(key.into(), value);
+    scope.vars.insert(key.into(), Arc::new(value));
 }
 
-pub fn get_var<'a, 'b>(scope: &'a Scope, key: &'b str) -> Option<&'a Variable> {
-    scope.vars.get(key.into())
+pub fn get_var<'a, 'b>(scope: &'a Scope, key: &'b str) -> Option<Arc<Variable>> {
+    scope.vars.get(key.into()).map(|var| var.clone())
 }
 
 fn expand_param(scope: &mut Scope, name: &String, op: &ExpansionOp) -> String {
-        if let Some(var) = get_var(&scope, name.as_str()) {
-            let string_value = match var.value {
-                VariableValue::String(ref s) => s.clone(),
-            };
+    if let Some(var) = get_var(&scope, name.as_str()) {
+        let string_value = match var.value {
+            VariableValue::String(ref s) => s.clone(),
+            _ => panic!("TODO: cannot expand"),
+        };
 
-            // $<name> is defined and contains a string value.
-            return match op {
-                ExpansionOp::Length => { string_value.len().to_string() },
-                _ => string_value,
-            };
-        }
+        // $<name> is defined and contains a string value.
+        return match op {
+            ExpansionOp::Length => string_value.len().to_string(),
+            _ => string_value,
+        };
+    }
 
-        // $<name> is not defined.
-        match op {
-            ExpansionOp::Length => { "0".to_owned() },
-            ExpansionOp::GetOrEmpty => { "".to_owned() },
-            ExpansionOp::GetOrDefault(word) => { evaluate_word(scope, word) },
-            ExpansionOp::GetOrDefaultAndAssign(word) => {
-                let value = evaluate_word(scope, word);
-                set_var(scope, name, Variable {
-                    value: VariableValue::String(value.clone())
-                });
-                value
-            },
-            _ => panic!("TODO:"),
+    // $<name> is not defined.
+    match op {
+        ExpansionOp::Length => "0".to_owned(),
+        ExpansionOp::GetOrEmpty => "".to_owned(),
+        ExpansionOp::GetOrDefault(word) => evaluate_word(scope, word),
+        ExpansionOp::GetOrDefaultAndAssign(word) => {
+            let value = evaluate_word(scope, word);
+            set_var(
+                scope,
+                name,
+                Variable {
+                    value: VariableValue::String(value.clone()),
+                },
+            );
+            value
         }
+        _ => panic!("TODO:"),
+    }
 }
 
 fn evaluate_span(scope: &mut Scope, span: &Span) -> String {
@@ -119,42 +125,18 @@ pub struct CommandResult {
     status: i32,
 }
 
-fn run_command(scope: &mut Scope, command: &parser::Command, stdin: Stdio, stdout: Stdio, stderr: Stdio) -> CommandResult {
-    trace!("run_command: {:?}", command);
-    match command {
-        parser::Command::SimpleCommand { argv: wargv, .. } => {
-            let argv2 = evaluate_words(scope, wargv);
-            let status = match exec_command(argv2, stdin, stdout, stderr) {
-                Ok(status) => status.code().unwrap(),
-                Err(_) => {
-                    println!("nsh: failed to execute");
-                    -1
-                },
-            };
-            CommandResult { status }
-        },
-        parser::Command::Assignment { assignments } => {
-            for (name, value) in assignments {
-                let value = Variable {
-                    value: VariableValue::String(evaluate_word(scope, value))
-                };
-
-                set_var(scope, name.as_str(), value)
-            }
-            CommandResult { status: 0 }
-        }
-        _ => panic!("TODO:"),
-    }
-}
-
-pub fn exec(ast: Ast) -> i32 {
-    trace!("exec: {:#?}", ast);
-    let scope = &mut CONTEXT.lock().unwrap().scope;
+fn run_terms(
+    scope: &mut Scope,
+    terms: &Vec<parser::Term>,
+    mut stdin: Stdio,
+    mut stdout: Stdio,
+    mut stderr: Stdio,
+) -> CommandResult {
     let mut last_status = 0;
-    for term in ast.terms {
-        for pipeline in term.pipelines {
+    for term in terms {
+        for pipeline in &term.pipelines {
             // Should we execute the pipline?
-            match (last_status == 0, pipeline.run_if) {
+            match (last_status == 0, &pipeline.run_if) {
                 (true, RunIf::Success) => (),
                 (false, RunIf::Failure) => (),
                 (_, RunIf::Always) => (),
@@ -162,9 +144,6 @@ pub fn exec(ast: Ast) -> i32 {
             }
 
             // Invoke commands in a pipeline.
-            let mut stdin  = Stdio::inherit();
-            let mut stdout = Stdio::inherit();
-            let mut stderr = Stdio::inherit();
             let mut iter = pipeline.commands.iter().peekable();
             while let Some(command) = iter.next() {
                 let next_stdin = if iter.peek().is_some() {
@@ -190,5 +169,81 @@ pub fn exec(ast: Ast) -> i32 {
         }
     }
 
-    0
+    CommandResult {
+        status: last_status,
+    }
+}
+
+fn run_command(
+    scope: &mut Scope,
+    command: &parser::Command,
+    stdin: Stdio,
+    stdout: Stdio,
+    stderr: Stdio,
+) -> CommandResult {
+    trace!("run_command: {:?}", command);
+    match command {
+        parser::Command::SimpleCommand { argv: wargv, .. } => {
+            let argv = evaluate_words(scope, wargv);
+            if argv.len() == 0 {
+                // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
+                // named "foo.txt".
+                return CommandResult { status: 0 };
+            }
+
+            // Functions
+            if let Some(var) = get_var(scope, argv.get(0).unwrap()) {
+                if let Variable {
+                    value: VariableValue::Function(body),
+                } = var.as_ref()
+                {
+                    return run_command(scope, &body, stdin, stdout, stderr);
+                }
+            }
+
+            // External commands
+            let status = match exec_command(argv, stdin, stdout, stderr) {
+                Ok(status) => status.code().unwrap(),
+                Err(_) => {
+                    println!("nsh: failed to execute");
+                    -1
+                }
+            };
+
+            CommandResult { status }
+        }
+        parser::Command::Assignment { assignments } => {
+            for (name, value) in assignments {
+                let value = Variable {
+                    value: VariableValue::String(evaluate_word(scope, value)),
+                };
+
+                set_var(scope, name.as_str(), value)
+            }
+            CommandResult { status: 0 }
+        }
+        parser::Command::FunctionDef { name, body } => {
+            set_var(
+                scope,
+                name.as_str(),
+                Variable {
+                    value: VariableValue::Function(body.clone()),
+                },
+            );
+            CommandResult { status: 0 }
+        },
+        parser::Command::Group { terms } => {
+            run_terms(scope, terms, stdin, stdout, stderr)
+        },
+        _ => panic!("TODO:"),
+    }
+}
+
+pub fn exec(ast: Ast) {
+    trace!("ast: {:#?}", ast);
+    let scope = &mut CONTEXT.lock().unwrap().scope;
+    let stdin = Stdio::inherit();
+    let stdout = Stdio::inherit();
+    let stderr = Stdio::inherit();
+    run_terms(scope, &ast.terms, stdin, stdout, stderr);
 }
