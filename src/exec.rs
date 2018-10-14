@@ -44,22 +44,36 @@ pub fn get_var<'a, 'b>(scope: &'a Scope, key: &'b str) -> Option<&'a Variable> {
     scope.vars.get(key.into())
 }
 
-fn expand_param(scope: &Scope, name: &String, op: &ExpansionOp) -> String {
-    match op {
-        ExpansionOp::GetOrEmpty => {
-            if let Some(var) = get_var(&scope, name.as_str()) {
-                match var.value {
-                    VariableValue::String(ref s) => s.clone(),
-                }
-            } else {
-                "".to_owned()
-            }
-        },
-        _ => panic!("TODO:"),
-    }
+fn expand_param(scope: &mut Scope, name: &String, op: &ExpansionOp) -> String {
+        if let Some(var) = get_var(&scope, name.as_str()) {
+            let string_value = match var.value {
+                VariableValue::String(ref s) => s.clone(),
+            };
+
+            // $<name> is defined and contains a string value.
+            return match op {
+                ExpansionOp::Length => { string_value.len().to_string() },
+                _ => string_value,
+            };
+        }
+
+        // $<name> is not defined.
+        match op {
+            ExpansionOp::Length => { "0".to_owned() },
+            ExpansionOp::GetOrEmpty => { "".to_owned() },
+            ExpansionOp::GetOrDefault(word) => { evaluate_word(scope, word) },
+            ExpansionOp::GetOrDefaultAndAssign(word) => {
+                let value = evaluate_word(scope, word);
+                set_var(scope, name, Variable {
+                    value: VariableValue::String(value.clone())
+                });
+                value
+            },
+            _ => panic!("TODO:"),
+        }
 }
 
-fn evaluate_span(scope: &Scope, span: &Span) -> String {
+fn evaluate_span(scope: &mut Scope, span: &Span) -> String {
     match span {
         Span::Literal(s) => s.clone(),
         Span::Parameter { name, op } => expand_param(scope, name, op),
@@ -67,7 +81,7 @@ fn evaluate_span(scope: &Scope, span: &Span) -> String {
     }
 }
 
-fn evaluate_word(scope: &Scope, word: &Word) -> String {
+fn evaluate_word(scope: &mut Scope, word: &Word) -> String {
     let mut s = String::new();
     for span in &word.0 {
         s += evaluate_span(scope, &span).as_str();
@@ -75,7 +89,7 @@ fn evaluate_word(scope: &Scope, word: &Word) -> String {
     s
 }
 
-fn evaluate_words(scope: &Scope, words: &Vec<Word>) -> Vec<String> {
+fn evaluate_words(scope: &mut Scope, words: &Vec<Word>) -> Vec<String> {
     let mut evaluated = Vec::new();
     for word in words {
         let s = evaluate_word(scope, word);
