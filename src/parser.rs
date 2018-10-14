@@ -1,4 +1,5 @@
 use nom::types::CompleteStr as Input;
+use nom::{self, IResult};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RedirectionDirection {
@@ -106,8 +107,8 @@ pub enum ExpansionOp {
     GetOrEmpty,                          // $parameter and ${parameter}
     GetOrDefault(Word),                  // ${parameter:-word}
     GetNullableOrDefault(Word),          // ${parameter-word}
-    GetOrDefaultAndAssign(Word),         // ${parameter:-word}
-    GetNullableOrDefaultAndAssign(Word), // ${parameter-word}
+    GetOrDefaultAndAssign(Word),         // ${parameter:=word}
+    GetNullableOrDefaultAndAssign(Word), // ${parameter=word}
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -161,7 +162,15 @@ fn is_digit(ch: char) -> bool {
 
 fn is_valid_word_char(ch: char) -> bool {
     match ch {
-        '&' | '|' | ';' | '(' | ')' | '`' | '\n' => false,
+        '&' | '|' | ';' | '(' | ')' | '`' | '\n' | '\\' | '$' | '*' | '?' | '"' => false,
+        _ if is_whitespace(ch) => false,
+        _ => true,
+    }
+}
+
+fn is_valid_first_word_char(ch: char) -> bool {
+    match ch {
+        '&' | '|' | ';' | '(' | ')' | '{' | '}' | '\n' => false,
         _ if is_whitespace(ch) => false,
         _ => true,
     }
@@ -178,13 +187,6 @@ fn is_valid_var_name_char(ch: char) -> bool {
 fn is_whitespace(ch: char) -> bool {
     // TODO: $IFS
     " \t".to_owned().contains(ch)
-}
-
-fn is_special_word_char(ch: char) -> bool {
-    match ch {
-        '\\' | '$' | '*' | '?' => true,
-        _ => false,
-    }
 }
 
 named!(escape_sequence<Input, Span>,
@@ -216,11 +218,7 @@ named!(parameter_w_braces<Input, Span>,
         modifier: opt!(alt!(
             tag!("-") | tag!(":-") | tag!("=") | tag!(":=")
         )) >>
-        default: opt!(alt!(
-            // FIXME: accept Word instead (e.g. `${foo:-bar$(echo baz)}`).
-            map!(expansion, |span| Word(vec![span])) |
-            map!(recognize!(take_while1!(|c| is_valid_word_char(c) && c != '}')), parse_word)
-         )) >>
+        default: opt!(word_in_expansion) >>
         tag!("}") >>
         ({
             let default_word = default.unwrap_or(Word(vec![]));
@@ -385,54 +383,6 @@ named!(tilde_expansion<Input, Span>,
     )
 );
 
-fn parse_word(_buf: Input) -> Word {
-    let mut buf = _buf;
-    let mut spans = Vec::new();
-    let mut literal = String::new();
-
-    buf = match call!(buf, tilde_expansion) {
-        Ok((rest, span)) => {
-            spans.push(span);
-            rest
-        }
-        Err(_) => buf,
-    };
-
-    info!("parse_word: {:?}", buf);
-    loop {
-        buf = match recognize!(buf, take_while!(|c| !is_special_word_char(c))) {
-            Ok((rest, head)) => {
-                trace!("span: rest='{}', head='{}'", rest, head);
-                match alt!(rest, pattern | expansion | escape_sequence) {
-                    Ok((rest, span)) => {
-                        literal += &head;
-                        match span {
-                            Span::Literal(s) => literal += s.as_str(),
-                            _ => {
-                                if literal.len() > 0 {
-                                    spans.push(Span::Literal(literal));
-                                    literal = String::new();
-                                }
-                                spans.push(span)
-                            }
-                        }
-                        rest
-                    }
-                    Err(_) => break,
-                }
-            }
-            Err(_) => break,
-        };
-    }
-
-    literal += buf.to_string().as_str();
-    if literal.len() > 0 {
-        spans.push(Span::Literal(literal));
-    }
-
-    Word(spans)
-}
-
 named!(whitespaces<Input, ()>,
     do_parse!(
         take_while!(|c| c != '\n' && is_whitespace(c)) >>
@@ -443,24 +393,6 @@ named!(whitespaces<Input, ()>,
         )) >>
         take_while!(|c| c != '\n' && is_whitespace(c)) >>
         ( () )
-    )
-);
-
-named!(string_literal<Input, Word>,
-    map!(
-        delimited!(
-           tag!("\""),
-           recognize!(take_until!("\"")),
-           tag!("\"")
-        ),
-        parse_word
-    )
-);
-
-named!(unquoted_word<Input, Word>,
-    map!(
-        recognize!(take_while1!(is_valid_word_char)),
-        parse_word
     )
 );
 
@@ -476,17 +408,112 @@ named!(comment<Input, ()>,
     )
 );
 
+named_args!(literal_span(in_stirng_literal: bool, in_expansion: bool)<Input, Span>,
+    map!(
+        take_while1!(|c| {
+            if in_expansion {
+                c != '}' &&
+                (is_valid_word_char(c)
+                || (in_stirng_literal && is_whitespace(c)))
+            } else {
+                c == '}'
+                || is_valid_word_char(c)
+                || (in_stirng_literal && is_whitespace(c))
+            }
+        }),
+            |s| Span::Literal(s.to_string()
+        )
+    )
+);
+
+fn parse_word(_buf: Input, in_expansion: bool) ->  IResult<Input, Word> {
+    let first_len = _buf.len();
+    let mut buf = _buf;
+    let mut spans = Vec::new();
+    let mut literal = String::new();
+
+    if let Ok((rest, span)) = call!(buf, tilde_expansion) {
+        spans.push(span);
+        buf = rest;
+    }
+
+    let in_string = if let Ok((rest, _)) = tag!(buf, "\"") {
+        buf = rest;
+        true
+    } else {
+        false
+    };
+
+    info!("parse_word({}): '{}' ------------------------", in_expansion, buf);
+    loop {
+        match alt!(buf,
+            pattern
+            | expansion
+            | backquoted_command_expansion
+            | escape_sequence
+            | call!(literal_span, in_string, in_expansion)
+        ) {
+            Ok((rest, span)) => {
+                trace!("rest='{}', span={:?}", rest, span);
+                buf = rest;
+                match span {
+                    // Don't simply add `s` into `spans`; merge continuous ones.
+                    Span::Literal(s) => literal += s.as_str(),
+                    _ => {
+                        if literal.len() > 0 {
+                            spans.push(Span::Literal(literal));
+                            literal = String::new();
+                        }
+                        spans.push(span)
+                    }
+                }
+            }
+            Err(_) => break,
+        }
+    }
+
+    if literal.len() > 0 {
+        spans.push(Span::Literal(literal));
+    }
+
+    if in_string {
+        if let Ok((rest, _)) = tag!(buf, "\"") {
+            buf = rest;
+        }
+    }
+
+    if let Ok((rest, _)) = call!(buf, whitespaces) {
+        buf = rest;
+    }
+
+    trace!("end_of_word: {:?}, {:?}", buf, spans);
+    if first_len == buf.len() {
+        Err(nom::Err::Error(error_position!(buf, nom::ErrorKind::TakeWhile1)))
+    } else {
+        Ok((buf, Word(spans)))
+    }
+}
+
 named!(word<Input, Word>,
-    do_parse!(
-        whitespaces >>
-        word: alt!(
-            // Try to parse $(..), $(()), and ${..} here since it may span multiple words.
-            do_parse!(peek!(tag!("$")) >> span: expansion >> (Word(vec![span]))) |
-            do_parse!(peek!(tag!("`")) >> span: backquoted_command_expansion >> (Word(vec![span]))) |
-            string_literal |
-            unquoted_word
-        ) >>
-        ( word )
+    call!(do_word, false)
+);
+
+named!(word_in_expansion<Input, Word>,
+    call!(do_word, true)
+);
+
+named_args!(do_word(in_expansion: bool)<Input, Word>,
+    alt!(
+        do_parse!(
+            peek!(do_parse!(
+                whitespaces >>
+                take_while1!(is_valid_first_word_char) >>
+                ( () )
+            )) >>
+            whitespaces >>
+            word: call!(parse_word, in_expansion) >>
+            ( word )
+        )
     )
 );
 
@@ -1626,6 +1653,39 @@ pub fn test_expansions() {
                                     }],
                                 }],
                             }]),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line("foo ${var1:-a${xyz}b} bar").unwrap(),
+        Ast {
+            terms: vec![Term {
+                async: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                            lit!("foo"),
+                            Word(vec![Span::Parameter {
+                                name: "var1".into(),
+                                op: ExpansionOp::GetOrDefault(
+                                    Word(vec![
+                                        Span::Literal("a".into()),
+                                        Span::Parameter {
+                                            name: "xyz".into(),
+                                            op: ExpansionOp::GetOrEmpty
+                                        },
+                                        Span::Literal("b".into()),
+                                    ])
+                                )
+                            }]),
+                            lit!("bar"),
                         ],
                         redirects: vec![],
                         assignments: vec![],
