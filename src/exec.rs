@@ -173,8 +173,8 @@ fn run_terms(
 fn run_pipeline(
     scope: &mut Scope,
     pipeline: &parser::Pipeline,
-    mut stdin: RawFd,
-    mut stdout: RawFd,
+    pipeline_stdin: RawFd,
+    pipeline_stdout: RawFd,
     stderr: RawFd
 ) -> ExitStatus {
 
@@ -182,8 +182,9 @@ fn run_pipeline(
     let mut last_command_result = None;
     let mut iter = pipeline.commands.iter().peekable();
     let mut childs = Vec::new();
-    let prev_stdout = stdout;
+    let mut stdin = pipeline_stdin;
     while let Some(command) = iter.next() {
+        let stdout;
         let pipes = if iter.peek().is_some() {
             // There is a next command in the pipeline (e.g. date in
             // `date | hexdump`). Create and connect a pipe.
@@ -191,6 +192,8 @@ fn run_pipeline(
             stdout = pipe_in;
             Some((pipe_out, pipe_in))
         } else {
+            // The last command in the pipeline.
+            stdout = pipeline_stdout;
             None
         };
 
@@ -199,9 +202,9 @@ fn run_pipeline(
             childs.push(pid);
         }
 
-        if let Some((next_stdin, pipe_in)) = pipes {
-            stdout = prev_stdout;
-            stdin = next_stdin;
+        if let Some((pipe_out, pipe_in)) = pipes {
+            stdin = pipe_out;
+            // `pipe_in` is used by a child process and is no longer needed.
             close(pipe_in).expect("failed to close pipe_in");
         }
     }
