@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::os::unix::io::RawFd;
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
+use path_loader::lookup_external_command;
 
 #[derive(Debug)]
 pub enum Value {
@@ -121,14 +122,21 @@ fn exec_command(
     stdin: RawFd,
     stdout: RawFd,
     stderr: RawFd,
-) -> Pid {
+) -> Result<Pid, ()> {
+    let argv0 = match lookup_external_command(&argv[0]) {
+        Some(argv0) => CString::new(argv0).unwrap(),
+        None => {
+            println!("nsh: command not found: `{}'", argv[0]);
+            return Err(());
+        }
+    };
+
     match fork().expect("failed to fork") {
         ForkResult::Parent { child } => {
-            return child;
+            return Ok(child);
         },
         ForkResult::Child => {
             // FIXME: CString::new() internally calls memchr(); it could be non-negligible cost.
-            let argv0 = CString::new(argv[0].clone()).unwrap();
             let mut args = Vec::new();
             for arg in argv {
                 args.push(CString::new(arg).unwrap());
@@ -276,8 +284,10 @@ fn run_command(
             }
 
             // External commands
-            let pid = exec_command(argv, stdin, stdout, stderr);
-            return CommandResult::External { pid };
+            return match exec_command(argv, stdin, stdout, stderr) {
+                Ok(pid) => CommandResult::External { pid },
+                Err(_) => CommandResult::Internal { exited_with: -1 },
+            };
         }
         parser::Command::Assignment { assignments } => {
             for (name, value) in assignments {

@@ -14,6 +14,7 @@ use rustyline::error::ReadlineError;
 use std::fs::File;
 use std::io::prelude::*;
 use std::process;
+mod path_loader;
 mod exec;
 mod parser;
 
@@ -61,6 +62,8 @@ fn mainloop() {
 
 fn main() {
     pretty_env_logger::init();
+    path_loader::init();
+
     let args = App::new("nsh")
         .version("0.0.0")
         .author("Seiya Nuta <nuta@seiya.me>")
