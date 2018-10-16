@@ -9,29 +9,18 @@ extern crate clap;
 extern crate nix;
 extern crate pretty_env_logger;
 extern crate rustyline;
-use clap::{App, Arg};
-use rustyline::error::ReadlineError;
-use std::fs::File;
-use std::io::prelude::*;
-use std::process;
+
+mod mainloop;
 mod path_loader;
 mod exec;
 mod parser;
 mod internals;
 mod alias;
+mod prompt;
 
-fn read_line_from_stdin() -> String {
-    let mut rl = rustyline::Editor::<()>::new();
-    match rl.readline("nsh$ ") {
-        Ok(line) => {
-            return line;
-        }
-        Err(ReadlineError::Eof) => process::exit(0),
-        Err(err) => {
-            panic!("something went wrong with readline: {:?}", err);
-        }
-    }
-}
+use clap::{App, Arg};
+use std::fs::File;
+use std::io::prelude::*;
 
 fn exec_file(script_file: &str) {
     let mut f = File::open(script_file).expect("failed to open a file");
@@ -47,19 +36,6 @@ fn exec_file(script_file: &str) {
             eprintln!("nsh: parse error: {:?}", err);
         }
     }
-}
-
-fn mainloop() {
-    let line = read_line_from_stdin();
-    let cmd = match parser::parse_line(line.as_str()) {
-        Ok(cmd) => cmd,
-        Err(err) => {
-            eprintln!("nsh: parse error: {:?}", err);
-            return;
-        }
-    };
-
-    exec::exec(cmd);
 }
 
 fn main() {
@@ -83,7 +59,7 @@ fn main() {
     } else {
         // Interactive mode.
         loop {
-            mainloop();
+            mainloop::mainloop();
         }
     }
 }
