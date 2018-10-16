@@ -6,6 +6,8 @@ use std::os::unix::io::RawFd;
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 use path_loader::lookup_external_command;
+use internals::{run_internal_command, InternalCommandError};
+use alias::lookup_alias;
 
 #[derive(Debug)]
 pub enum Value {
@@ -30,6 +32,12 @@ pub struct ExecEnv {
 }
 
 pub type ExitStatus = i32;
+
+#[derive(Debug, Copy, Clone)]
+enum CommandResult {
+    External { pid: Pid },
+    Internal { status: ExitStatus },
+}
 
 lazy_static! {
     static ref CONTEXT: Mutex<ExecEnv> = Mutex::new(ExecEnv {
@@ -223,8 +231,8 @@ fn run_pipeline(
             trace!("nothing to execute");
             last_status = 0;
         },
-        Some(CommandResult::Internal { exited_with }) => {
-            last_status = exited_with;
+        Some(CommandResult::Internal { status }) => {
+            last_status = status;
         },
         Some(CommandResult::External { pid: last_pid }) => {
             for child in childs {
@@ -253,11 +261,6 @@ fn run_pipeline(
     last_status
 }
 
-#[derive(Debug, Copy, Clone)]
-enum CommandResult {
-    External { pid: Pid },
-    Internal { exited_with: i32 },
-}
 
 fn run_command(
     scope: &mut Scope,
@@ -268,25 +271,57 @@ fn run_command(
 ) -> CommandResult {
     trace!("run_command: {:?}", command);
     match command {
-        parser::Command::SimpleCommand { argv: wargv, .. } => {
-            let argv = evaluate_words(scope, wargv);
-            if argv.len() == 0 {
+        parser::Command::SimpleCommand { argv: ref ref_wargv, .. } => {
+            if ref_wargv.len() == 0 {
                 // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
                 // named "foo.txt".
-                return CommandResult::Internal { exited_with: 0 };
+                return CommandResult::Internal { status: 0 };
+            }
+
+            // FIXME:
+            let Word(ref spans) = ref_wargv[0];
+            let wargv = if spans.len() > 0 {
+                 match spans[0] {
+                    Span::Literal(ref lit) => {
+                        if let Some(alias_argv) = lookup_alias(lit.as_str()) {
+                            let mut new_wargv = Vec::new();
+                            new_wargv.extend(alias_argv);
+                            new_wargv.extend(ref_wargv.iter().skip(1).cloned());
+                            new_wargv
+                        } else {
+                            ref_wargv.clone()
+                        }
+                    },
+                    _ => ref_wargv.clone(),
+                }
+            } else {
+                ref_wargv.clone()
+            };
+
+            let argv = evaluate_words(scope, &wargv);
+            if argv.len() == 0 {
+                return CommandResult::Internal { status: 0 };
             }
 
             // Functions
-            if let Some(var) = get_var(scope, argv.get(0).unwrap()) {
+            if let Some(var) = get_var(scope, argv[0].as_str()) {
                 if let Variable { value: Value::Function(body) } = var.as_ref() {
                     return run_command(scope, &body, stdin, stdout, stderr);
                 }
             }
 
+            // Internal commands
+            match run_internal_command(argv[0].as_str(), &argv) {
+                Ok(status) => {
+                    return CommandResult::Internal { status };
+                },
+                Err(InternalCommandError::NotFound) => () /* Try external command. */,
+            }
+
             // External commands
             return match exec_command(argv, stdin, stdout, stderr) {
                 Ok(pid) => CommandResult::External { pid },
-                Err(_) => CommandResult::Internal { exited_with: -1 },
+                Err(_) => CommandResult::Internal { status: -1 },
             };
         }
         parser::Command::Assignment { assignments } => {
@@ -297,28 +332,28 @@ fn run_command(
 
                 set_var(scope, name.as_str(), value)
             }
-            CommandResult::Internal { exited_with: 0 }
+            CommandResult::Internal { status: 0 }
         }
         parser::Command::FunctionDef { name, body } => {
             let value = Variable {
                 value: Value::Function(body.clone()),
             };
             set_var(scope, name.as_str(), value);
-            CommandResult::Internal { exited_with: 0 }
+            CommandResult::Internal { status: 0 }
         },
         parser::Command::If { condition, then_part, .. } => {
             // TODO: else, elif
             if run_terms(scope, condition, stdin, stdout, stderr) == 0 {
                     CommandResult::Internal {
-                        exited_with: run_terms(scope, then_part, stdin, stdout, stderr)
+                        status: run_terms(scope, then_part, stdin, stdout, stderr)
                     }
             } else {
-                CommandResult::Internal { exited_with: 0 }
+                CommandResult::Internal { status: 0 }
             }
         },
         parser::Command::Group { terms } => {
             CommandResult::Internal {
-                exited_with: run_terms(scope, terms, stdin, stdout, stderr)
+                status: run_terms(scope, terms, stdin, stdout, stderr)
             }
         },
         _ => panic!("TODO:"),

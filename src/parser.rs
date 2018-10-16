@@ -156,6 +156,12 @@ pub enum WordOrRedirection {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Word(pub Vec<Span>);
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Alias {
+    pub name: String,
+    pub words: Vec<Word>,
+}
+
 fn is_digit(ch: char) -> bool {
     ch.is_ascii_digit()
 }
@@ -426,6 +432,18 @@ named_args!(literal_span(in_stirng_literal: bool, in_expansion: bool)<Input, Spa
     )
 );
 
+named_args!(double_quoted(in_expansion: bool)<Input, Span>,
+    do_parse!(
+        tag!("\"") >>
+        literal: alt!(
+            map!(peek!(tag!("\"")), |_| Span::Literal("".to_owned())) // empty string
+            | call!(literal_span, true, in_expansion)
+        ) >>
+        tag!("\"") >>
+        ( literal )
+    )
+);
+
 fn parse_word(_buf: Input, in_expansion: bool) -> IResult<Input, Word> {
     let first_len = _buf.len();
     let mut buf = _buf;
@@ -437,25 +455,16 @@ fn parse_word(_buf: Input, in_expansion: bool) -> IResult<Input, Word> {
         buf = rest;
     }
 
-    let in_string = if let Ok((rest, _)) = tag!(buf, "\"") {
-        buf = rest;
-        true
-    } else {
-        false
-    };
-
-    info!(
-        "parse_word({}): '{}' ------------------------",
-        in_expansion, buf
-    );
+    info!("parse_word({}): '{}' ------------------------", in_expansion, buf);
     loop {
         match alt!(
             buf,
             pattern
-                | expansion
-                | backquoted_command_expansion
-                | escape_sequence
-                | call!(literal_span, in_string, in_expansion)
+            | expansion
+            | backquoted_command_expansion
+            | escape_sequence
+            | call!(double_quoted, in_expansion)
+            | call!(literal_span, false, in_expansion)
         ) {
             Ok((rest, span)) => {
                 trace!("rest='{}', span={:?}", rest, span);
@@ -478,12 +487,6 @@ fn parse_word(_buf: Input, in_expansion: bool) -> IResult<Input, Word> {
 
     if literal.len() > 0 {
         spans.push(Span::Literal(literal));
-    }
-
-    if in_string {
-        if let Ok((rest, _)) = tag!(buf, "\"") {
-            buf = rest;
-        }
     }
 
     if let Ok((rest, _)) = call!(buf, whitespaces) {
@@ -927,6 +930,16 @@ named!(parse_script<Input, Ast>,
     )
 );
 
+named!(parse_alias_line<Input, Alias>,
+    do_parse!(
+        name: take_while1!(|c| !is_whitespace(c) && c != '=') >>
+        tag!("=") >>
+        words: many0!(word) >>
+        whitespaces >>
+        ( Alias { name: name.to_string(), words } )
+    )
+);
+
 pub fn parse_line(line: &str) -> Result<Ast, SyntaxError> {
     match parse_script(Input(line)) {
         Ok((_, tree)) => {
@@ -935,6 +948,18 @@ pub fn parse_line(line: &str) -> Result<Ast, SyntaxError> {
             } else {
                 Ok(tree)
             }
+        }
+        Err(err) => {
+            trace!("parse error: '{}'", &err);
+            Err(SyntaxError::Fatal(err.to_string()))
+        }
+    }
+}
+
+pub fn parse_alias(line: &str) -> Result<Alias, SyntaxError> {
+    match parse_alias_line(Input(line)) {
+        Ok((_, alias)) => {
+            Ok(alias)
         }
         Err(err) => {
             trace!("parse error: '{}'", &err);
@@ -1983,6 +2008,60 @@ pub fn test_comments() {
 
     assert_eq!(parse_line("# Hello"), Err(SyntaxError::Empty));
     assert_eq!(parse_line("# Hello\n#World"), Err(SyntaxError::Empty));
+}
+
+#[test]
+pub fn test_string_literal() {
+    assert_eq!(parse_line("echo \"hello\""), Ok(Ast {
+        terms: vec![Term {
+            async: false,
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::SimpleCommand {
+                    argv: vec![
+                        lit!("echo"),
+                        lit!("hello")
+                    ],
+                    assignments: vec![],
+                    redirects: vec![],
+                }]
+            }]
+        }]
+    }));
+
+    assert_eq!(parse_line("echo \"hello world\""), Ok(Ast {
+        terms: vec![Term {
+            async: false,
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::SimpleCommand {
+                    argv: vec![
+                        lit!("echo"),
+                        lit!("hello world")
+                    ],
+                    assignments: vec![],
+                    redirects: vec![],
+                }]
+            }]
+        }]
+    }));
+
+    assert_eq!(parse_line("echo abc\"de\"fg"), Ok(Ast {
+        terms: vec![Term {
+            async: false,
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::SimpleCommand {
+                    argv: vec![
+                        lit!("echo"),
+                        lit!("abcdefg")
+                    ],
+                    assignments: vec![],
+                    redirects: vec![],
+                }]
+            }]
+        }]
+    }));
 }
 
 #[test]

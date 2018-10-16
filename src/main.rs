@@ -17,6 +17,8 @@ use std::process;
 mod path_loader;
 mod exec;
 mod parser;
+mod internals;
+mod alias;
 
 fn read_line_from_stdin() -> String {
     let mut rl = rustyline::Editor::<()>::new();
