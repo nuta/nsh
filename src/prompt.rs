@@ -1,4 +1,5 @@
 use nom::types::CompleteStr as Input;
+use std::env;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Prompt {
@@ -83,8 +84,11 @@ pub fn draw_prompt(prompt: &Prompt, buf: &mut String) {
             Span::Username => buf.push_str("spam"),
             // TODO:
             Span::Hostname => buf.push_str("egg"),
-            // TODO:
-            Span::CurrentDir => buf.push_str("sausage"),
+            Span::CurrentDir => {
+                if let Ok(current_dir) = env::current_dir() {
+                    buf.push_str(current_dir.to_str().unwrap());
+                }
+            },
         }
     }
 }
