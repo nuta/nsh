@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use alias::alias_command;
+use builtins::cd_command;
 
 #[derive(Debug)]
 pub enum InternalCommandError {
@@ -7,13 +8,15 @@ pub enum InternalCommandError {
 }
 
 pub enum InternalCommand {
-    Alias
+    Alias,
+    Cd,
 }
 
 lazy_static! {
     static ref INTERNAL_COMMANDS: BTreeMap<&'static str, InternalCommand> = {
         let mut commands = BTreeMap::new();
         commands.insert("alias", InternalCommand::Alias);
+        commands.insert("cd", InternalCommand::Cd);
         commands
     };
 }
@@ -21,6 +24,7 @@ lazy_static! {
 pub fn run_internal_command(cmd: &str, argv: &Vec<String>) -> Result<i32, InternalCommandError> {
     match INTERNAL_COMMANDS.get(cmd) {
         Some(InternalCommand::Alias) => Ok(alias_command(argv)),
+        Some(InternalCommand::Cd) => Ok(cd_command(argv)),
         _ => Err(InternalCommandError::NotFound),
     }
 }

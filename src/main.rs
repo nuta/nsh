@@ -16,6 +16,7 @@ mod exec;
 mod parser;
 mod internals;
 mod alias;
+mod builtins;
 mod prompt;
 
 use clap::{App, Arg};
