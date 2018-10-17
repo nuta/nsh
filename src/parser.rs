@@ -168,7 +168,7 @@ fn is_digit(ch: char) -> bool {
 
 fn is_valid_word_char(ch: char) -> bool {
     match ch {
-        '&' | '|' | ';' | '(' | ')' | '`' | '\n' | '\\' | '$' | '*' | '?' | '"' => false,
+        '&' | '|' | ';' | '(' | ')' | '`' | '\n' | '\\' | '$' | '*' | '?' | '"' | '\'' => false,
         _ if is_whitespace(ch) => false,
         _ => true,
     }
@@ -432,14 +432,14 @@ named_args!(literal_span(in_stirng_literal: bool, in_expansion: bool)<Input, Spa
     )
 );
 
-named_args!(double_quoted(in_expansion: bool)<Input, Span>,
+named_args!(quoted(delimiter: String, in_expansion: bool)<Input, Span>,
     do_parse!(
-        tag!("\"") >>
+        tag!(delimiter.as_str()) >>
         literal: alt!(
-            map!(peek!(tag!("\"")), |_| Span::Literal("".to_owned())) // empty string
+            map!(peek!(tag!(delimiter.as_str())), |_| Span::Literal("".to_owned())) // empty string
             | call!(literal_span, true, in_expansion)
         ) >>
-        tag!("\"") >>
+        tag!(delimiter.as_str()) >>
         ( literal )
     )
 );
@@ -463,7 +463,8 @@ fn parse_word(_buf: Input, in_expansion: bool) -> IResult<Input, Word> {
             | expansion
             | backquoted_command_expansion
             | escape_sequence
-            | call!(double_quoted, in_expansion)
+            | call!(quoted, "\"".to_owned(), in_expansion)
+            | call!(quoted, "\'".to_owned(), in_expansion)
             | call!(literal_span, false, in_expansion)
         ) {
             Ok((rest, span)) => {
@@ -2047,6 +2048,23 @@ pub fn test_string_literal() {
     }));
 
     assert_eq!(parse_line("echo abc\"de\"fg"), Ok(Ast {
+        terms: vec![Term {
+            async: false,
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::SimpleCommand {
+                    argv: vec![
+                        lit!("echo"),
+                        lit!("abcdefg")
+                    ],
+                    assignments: vec![],
+                    redirects: vec![],
+                }]
+            }]
+        }]
+    }));
+
+    assert_eq!(parse_line("echo abc\'de\'fg"), Ok(Ast {
         terms: vec![Term {
             async: false,
             pipelines: vec![Pipeline {
