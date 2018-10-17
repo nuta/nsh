@@ -177,7 +177,7 @@ fn run_terms(
                 (true, RunIf::Success) => (),
                 (false, RunIf::Failure) => (),
                 (_, RunIf::Always) => (),
-                _ => return last_status,
+                _ => continue,
             }
 
             last_status = run_pipeline(scope, pipeline, stdin, stdout, stderr);
