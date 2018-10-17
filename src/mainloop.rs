@@ -1,8 +1,13 @@
 use rustyline::error::ReadlineError;
 use std::fs::File;
+use std::borrow::Cow::{self, Borrowed, Owned};
 use std::env;
 use std::process;
-use rustyline;
+use rustyline::{Editor, Config, CompletionType, EditMode};
+use rustyline::completion::{Completer, FilenameCompleter, Pair};
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::Helper;
 use exec;
 use parser;
 use prompt::{parse_prompt, draw_prompt};
@@ -25,8 +30,56 @@ fn resolve_and_create_history_file() -> Option<PathBuf> {
     None
 }
 
+struct RustylineHelper {
+    filename_completer: FilenameCompleter,
+}
+
+impl RustylineHelper {
+    fn new() -> RustylineHelper {
+        RustylineHelper {
+            filename_completer: FilenameCompleter::new()
+        }
+    }
+}
+
+impl Completer for RustylineHelper {
+    type Candidate = Pair;
+
+    fn complete(&self, line: &str, pos: usize) -> Result<(usize, Vec<Pair>), ReadlineError> {
+        println!("");
+        trace!("complete: {}", line);
+        trace!("         {}^", " ".repeat(pos));
+        self.filename_completer.complete(line, pos)
+    }
+}
+
+impl Hinter for RustylineHelper {
+    fn hint(&self, line: &str, _pos: usize) -> Option<String> {
+        None
+    }
+}
+
+impl Highlighter for RustylineHelper {
+    fn highlight_prompt<'p>(&self, prompt: &'p str) -> Cow<'p, str> {
+        Borrowed(prompt)
+    }
+
+    fn highlight_hint<'h>(&self, hint: &'h str) -> Cow<'h, str> {
+        Owned(format!("\x1b[1m{}\x1b[", hint))
+    }
+}
+
+impl Helper for RustylineHelper {}
+
 pub fn mainloop() {
-    let mut rl = rustyline::Editor::<()>::new();
+    let config = Config::builder()
+        .edit_mode(EditMode::Emacs)
+        .completion_type(CompletionType::List)
+        .history_ignore_space(true)
+        .build();
+    let h = RustylineHelper::new();
+    let mut rl = Editor::with_config(config);
+    rl.set_helper(Some(h));
 
     // Load histories.
     let history_path = resolve_and_create_history_file();
