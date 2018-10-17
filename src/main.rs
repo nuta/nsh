@@ -58,8 +58,6 @@ fn main() {
         exec_file(script);
     } else {
         // Interactive mode.
-        loop {
-            mainloop::mainloop();
-        }
+        mainloop::mainloop();
     }
 }
