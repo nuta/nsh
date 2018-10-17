@@ -196,7 +196,14 @@ fn is_whitespace(ch: char) -> bool {
 }
 
 named!(escape_sequence<Input, Span>,
-    do_parse!(tag!("\\") >> s: recognize!(one_of!("\\n")) >> ( Span::Literal(s.to_string()) ))
+    do_parse!(
+        tag!("\\") >>
+        span: alt!(
+            map!(tag!("n"), |_| Span::Literal("\n".to_string()))
+            | map!(tag!("e"), |_| Span::Literal("\x1b".to_string()))
+        ) >>
+        ( span )
+    )
 );
 
 named!(pattern<Input, Span>,
@@ -2073,6 +2080,26 @@ pub fn test_string_literal() {
                     argv: vec![
                         lit!("echo"),
                         lit!("abcdefg")
+                    ],
+                    assignments: vec![],
+                    redirects: vec![],
+                }]
+            }]
+        }]
+    }));
+}
+
+#[test]
+pub fn test_escape_sequences() {
+    assert_eq!(parse_line("echo \\e[1m"), Ok(Ast {
+        terms: vec![Term {
+            async: false,
+            pipelines: vec![Pipeline {
+                run_if: RunIf::Always,
+                commands: vec![Command::SimpleCommand {
+                    argv: vec![
+                        lit!("echo"),
+                        lit!("\x1b[1m")
                     ],
                     assignments: vec![],
                     redirects: vec![],
