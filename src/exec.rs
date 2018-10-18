@@ -1,8 +1,11 @@
 use nix::unistd::{pipe, fork, ForkResult, execv, dup2, close, Pid};
 use nix::sys::wait::{waitpid, WaitStatus};
 use parser::{self, Ast, ExpansionOp, RunIf, Span, Word};
+use std::fs::{File, OpenOptions};
+use std::path::Path;
 use std::collections::HashMap;
 use std::os::unix::io::RawFd;
+use std::os::unix::io::IntoRawFd;
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 use path_loader::lookup_external_command;
@@ -125,12 +128,7 @@ fn move_fd(src: RawFd, dst: RawFd) {
     }
 }
 
-fn exec_command(
-    argv: Vec<String>,
-    stdin: RawFd,
-    stdout: RawFd,
-    stderr: RawFd,
-) -> Result<Pid, ()> {
+fn exec_command(argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> {
     let argv0 = match lookup_external_command(&argv[0]) {
         Some(argv0) => CString::new(argv0).unwrap(),
         None => {
@@ -150,10 +148,10 @@ fn exec_command(
                 args.push(CString::new(arg).unwrap());
             }
 
-            // Prepare child's stdin/stdout/stderr.
-            move_fd(stdin, 0);
-            move_fd(stdout, 1);
-            move_fd(stderr, 2);
+            // Initialize stdin/stdout/stderr and redirections.
+            for (src, dst) in fds {
+                move_fd(src, dst);
+            }
 
             // TODO: inherit exported variables
             execv(&argv0, &args).expect("failed to exec");
@@ -271,7 +269,7 @@ fn run_command(
 ) -> CommandResult {
     trace!("run_command: {:?}", command);
     match command {
-        parser::Command::SimpleCommand { argv: ref ref_wargv, .. } => {
+        parser::Command::SimpleCommand { argv: ref ref_wargv, ref redirects, .. } => {
             if ref_wargv.len() == 0 {
                 // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
                 // named "foo.txt".
@@ -319,7 +317,42 @@ fn run_command(
             }
 
             // External commands
-            return match exec_command(argv, stdin, stdout, stderr) {
+            let mut fds = Vec::new();
+            for r in redirects {
+                match r.target {
+                    parser::RedirectionType::File(ref wfilepath) => {
+                        let mut options = OpenOptions::new();
+                        match &r.direction {
+                            parser::RedirectionDirection::Input => options.read(true),
+                            parser::RedirectionDirection::Output => options.write(true).create(true),
+                            parser::RedirectionDirection::Append => options.write(true).append(true),
+                        };
+
+                        trace!("redirection: options={:?}", options);
+                        let filepath = evaluate_word(scope, wfilepath);
+                        if let Ok(file) = options.open(&filepath) {
+                            fds.push((file.into_raw_fd(), r.fd as RawFd))
+                        } else {
+                            warn!("nsh: failed to open file: `{}'", filepath);
+                            return CommandResult::Internal { status: 1 };
+                        }
+                    }
+                }
+            }
+
+            // Use provided stdin/stdout/stderr if these are not specified in
+            // redirections. TODO: I thinks there is better solution than this.
+            if fds.iter().any(|(_, dst)| *dst == 0) {
+                fds.push((stdin, 0));
+            }
+            if fds.iter().any(|(_, dst)| *dst == 0) {
+                fds.push((stdout, 1));
+            }
+            if fds.iter().any(|(_, dst)| *dst == 2) {
+                fds.push((stderr, 2));
+            }
+
+            return match exec_command(argv, fds) {
                 Ok(pid) => CommandResult::External { pid },
                 Err(_) => CommandResult::Internal { status: -1 },
             };

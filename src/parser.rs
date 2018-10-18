@@ -15,9 +15,9 @@ pub enum RedirectionType {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Redirection {
-    fd: usize,
-    direction: RedirectionDirection,
-    target: RedirectionType,
+    pub fd: usize,
+    pub direction: RedirectionDirection,
+    pub target: RedirectionType,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
