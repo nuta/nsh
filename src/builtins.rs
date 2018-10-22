@@ -1,6 +1,17 @@
 use std::env;
+use std::process;
 use std::path::Path;
 use exec::ExitStatus;
+
+pub fn exit_command(argv: &Vec<String>) -> ExitStatus {
+    let exit_with = if let Some(exit_with) = argv.get(1) {
+        exit_with.parse().unwrap_or(1)
+    } else {
+        0
+    };
+
+    process::exit(exit_with);
+}
 
 pub fn cd_command(argv: &Vec<String>) -> ExitStatus {
     trace!("cd: {:?}", argv);
