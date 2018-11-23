@@ -421,41 +421,27 @@ named!(comment<Input, ()>,
     )
 );
 
-named_args!(literal_span(in_stirng_literal: bool, in_expansion: bool)<Input, Span>,
+named_args!(literal_span(in_quote: bool, in_expansion: bool)<Input, Span>,
     map!(
         take_while1!(|c| {
             if in_expansion {
                 c != '}' &&
                 (is_valid_word_char(c)
-                || (in_stirng_literal && is_whitespace(c)))
+                || (in_quote && is_whitespace(c)))
             } else {
                 c == '}'
                 || is_valid_word_char(c)
-                || (in_stirng_literal && is_whitespace(c))
+                || (in_quote && is_whitespace(c))
             }
         }),
-            |s| Span::Literal(s.to_string()
-        )
+        |s| Span::Literal(s.to_string())
     )
 );
 
-named_args!(quoted(delimiter: String, in_expansion: bool)<Input, Span>,
-    do_parse!(
-        tag!(delimiter.as_str()) >>
-        literal: alt!(
-            map!(peek!(tag!(delimiter.as_str())), |_| Span::Literal("".to_owned())) // empty string
-            | call!(literal_span, true, in_expansion)
-        ) >>
-        tag!(delimiter.as_str()) >>
-        ( literal )
-    )
-);
-
-fn parse_word(_buf: Input, in_expansion: bool) -> IResult<Input, Word> {
+fn parse_word(_buf: Input, in_expansion: bool, in_quote: bool) -> IResult<Input, Word> {
     let first_len = _buf.len();
     let mut buf = _buf;
     let mut spans = Vec::new();
-    let mut literal = String::new();
 
     if let Ok((rest, span)) = call!(buf, tilde_expansion) {
         spans.push(span);
@@ -464,51 +450,72 @@ fn parse_word(_buf: Input, in_expansion: bool) -> IResult<Input, Word> {
 
     info!("parse_word({}): '{}' ------------------------", in_expansion, buf);
     loop {
+        // Parse quoted strings.
+        for quote in &["\"", "'"] {
+            if let Ok((rest, _)) = tag!(buf, quote) {
+                if in_quote {
+                    // End of a string.
+                    return Ok((buf, Word(spans)));
+                } else {
+                    let (rest2, word) = parse_word(rest, in_expansion, true)?;
+                    spans.extend(word.0);
+                    let (rest3, _) = tag!(rest2, quote)?;
+                    buf = rest3;
+                }
+            }
+        }
+
         match alt!(
             buf,
             pattern
             | expansion
             | backquoted_command_expansion
             | escape_sequence
-            | call!(quoted, "\"".to_owned(), in_expansion)
-            | call!(quoted, "\'".to_owned(), in_expansion)
-            | call!(literal_span, false, in_expansion)
+            | call!(literal_span, in_quote, in_expansion)
         ) {
             Ok((rest, span)) => {
                 trace!("rest='{}', span={:?}", rest, span);
+                spans.push(span);
                 buf = rest;
-                match span {
-                    // Don't simply add `s` into `spans`; merge continuous ones.
-                    Span::Literal(s) => literal += s.as_str(),
-                    _ => {
-                        if literal.len() > 0 {
-                            spans.push(Span::Literal(literal));
-                            literal = String::new();
-                        }
-                        spans.push(span)
-                    }
-                }
             }
             Err(_) => break,
         }
     }
 
-    if literal.len() > 0 {
-        spans.push(Span::Literal(literal));
+    // Merge continuous literals.
+    let mut merged_spans = Vec::new();
+    let mut literal = String::new();
+    for span in spans {
+        match span {
+            Span::Literal(s) => literal += &s,
+            _ => {
+                if literal.len() > 0 {
+                    merged_spans.push(Span::Literal(literal));
+                    literal = String::new();
+                }
+
+                merged_spans.push(span)
+            }
+        }
     }
+
+    if literal.len() > 0 {
+        merged_spans.push(Span::Literal(literal));
+    }
+
 
     if let Ok((rest, _)) = call!(buf, whitespaces) {
         buf = rest;
     }
 
-    trace!("end_of_word: {:?}, {:?}", buf, spans);
+    trace!("end_of_word: {:?}, {:?}", buf, merged_spans);
     if first_len == buf.len() {
         Err(nom::Err::Error(error_position!(
             buf,
             nom::ErrorKind::TakeWhile1
         )))
     } else {
-        Ok((buf, Word(spans)))
+        Ok((buf, Word(merged_spans)))
     }
 }
 
@@ -529,7 +536,7 @@ named_args!(do_word(in_expansion: bool)<Input, Word>,
                 ( () )
             )) >>
             whitespaces >>
-            word: call!(parse_word, in_expansion) >>
+            word: call!(parse_word, in_expansion, false) >>
             ( word )
         )
     )
@@ -1774,7 +1781,31 @@ pub fn test_expansions() {
     );
 
     assert_eq!(
-        parse_line("echo ${undefined:-Current} ${undefined:=TERM} is $TERM len=${#TERM}").unwrap(),
+        parse_line("echo \"$TERM\"").unwrap(),
+        Ast {
+            terms: vec![Term {
+                async: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                            Word(vec![Span::Literal("echo".into())]),
+                            Word(vec![Span::Parameter {
+                                    name: "TERM".into(),
+                                    op: ExpansionOp::GetOrEmpty,
+                                }],
+                            ),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line("echo ${undefined:-Current} ${undefined:=TERM} \"is $TERM len=${#TERM}\"").unwrap(),
         Ast {
             terms: vec![Term {
                 async: false,
@@ -1795,13 +1826,13 @@ pub fn test_expansions() {
                                     "TERM".into(),
                                 )])),
                             }]),
-                            Word(vec![Span::Literal("is".into())]),
-                            Word(vec![Span::Parameter {
-                                name: "TERM".into(),
-                                op: ExpansionOp::GetOrEmpty,
-                            }]),
                             Word(vec![
-                                Span::Literal("len=".into()),
+                                Span::Literal("is ".into()),
+                                Span::Parameter {
+                                    name: "TERM".into(),
+                                    op: ExpansionOp::GetOrEmpty,
+                                },
+                                Span::Literal(" len=".into()),
                                 Span::Parameter {
                                     name: "TERM".into(),
                                     op: ExpansionOp::Length,
