@@ -47,7 +47,7 @@ impl Completer for RustylineHelper {
     type Candidate = Pair;
 
     fn complete(&self, line: &str, pos: usize) -> Result<(usize, Vec<Pair>), ReadlineError> {
-        println!("");
+        println!();
         trace!("complete: {}", line);
         trace!("         {}^", " ".repeat(pos));
         self.filename_completer.complete(line, pos)
@@ -122,6 +122,6 @@ pub fn mainloop() {
             }
         };
 
-        exec::exec(cmd);
+        exec::exec(&cmd);
     }
 }

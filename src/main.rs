@@ -32,7 +32,7 @@ fn exec_file(script_file: &str) {
 
     match parser::parse_line(script.as_str()) {
         Ok(cmd) => {
-            exec::exec(cmd);
+            exec::exec(&cmd);
         }
         Err(err) => {
             eprintln!("nsh: parse error: {:?}", err);

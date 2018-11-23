@@ -9,11 +9,11 @@ lazy_static! {
 
 static DEFAULT_PATH: &'static str = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/sbin";
 
-pub fn lookup_external_command(cmd: &String) -> Option<String> {
-    if cmd.starts_with("/") {
-        Some(cmd.clone())
+pub fn lookup_external_command(cmd: &str) -> Option<String> {
+    if cmd.starts_with('/') {
+        Some(cmd.to_string())
     } else {
-        PATH_TABLE.lock().unwrap().get(cmd).map(|s| s.clone())
+        PATH_TABLE.lock().unwrap().get(cmd).cloned()
     }
 }
 
@@ -22,7 +22,7 @@ fn reload_paths() {
     let path = env::var("PATH").unwrap_or(DEFAULT_PATH.to_owned());
 
     // Look for all executables in $PATH.
-    for bin_dir in path.split(":") {
+    for bin_dir in path.split(':') {
         if let Ok(files) = read_dir(bin_dir) {
             for entry in files {
                 let file = entry.unwrap();

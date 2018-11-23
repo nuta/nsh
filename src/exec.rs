@@ -55,11 +55,11 @@ pub fn set_var(scope: &mut Scope, key: &str, value: Variable) {
 }
 
 pub fn get_var<'a, 'b>(scope: &'a Scope, key: &'b str) -> Option<Arc<Variable>> {
-    scope.vars.get(key.into()).map(|var| var.clone())
+    scope.vars.get(key).cloned()
 }
 
-fn expand_param(scope: &mut Scope, name: &String, op: &ExpansionOp) -> String {
-    if let Some(var) = get_var(&scope, name.as_str()) {
+fn expand_param(scope: &mut Scope, name: &str, op: &ExpansionOp) -> String {
+    if let Some(var) = get_var(&scope, name) {
         let string_value = match var.value {
             Value::String(ref s) => s.clone(),
             _ => panic!("TODO: cannot expand"),
@@ -112,7 +112,7 @@ fn evaluate_words(scope: &mut Scope, words: &Vec<Word>) -> Vec<String> {
     let mut evaluated = Vec::new();
     for word in words {
         let s = evaluate_word(scope, word);
-        if s.len() > 0 {
+        if !s.is_empty() {
             evaluated.push(s);
         }
     }
@@ -138,7 +138,7 @@ fn exec_command(argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> 
 
     match fork().expect("failed to fork") {
         ForkResult::Parent { child } => {
-            return Ok(child);
+            Ok(child)
         },
         ForkResult::Child => {
             // FIXME: CString::new() internally calls memchr(); it could be non-negligible cost.
@@ -269,7 +269,7 @@ fn run_command(
     trace!("run_command: {:?}", command);
     match command {
         parser::Command::SimpleCommand { argv: ref ref_wargv, ref redirects, .. } => {
-            if ref_wargv.len() == 0 {
+            if ref_wargv.is_empty() {
                 // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
                 // named "foo.txt".
                 return CommandResult::Internal { status: 0 };
@@ -277,7 +277,7 @@ fn run_command(
 
             // FIXME:
             let Word(ref spans) = ref_wargv[0];
-            let wargv = if spans.len() > 0 {
+            let wargv = if !spans.is_empty() {
                  match spans[0] {
                     Span::Literal(ref lit) => {
                         if let Some(alias_argv) = lookup_alias(lit.as_str()) {
@@ -296,7 +296,7 @@ fn run_command(
             };
 
             let argv = evaluate_words(scope, &wargv);
-            if argv.len() == 0 {
+            if argv.is_empty() {
                 return CommandResult::Internal { status: 0 };
             }
 
@@ -392,7 +392,7 @@ fn run_command(
     }
 }
 
-pub fn exec(ast: Ast) {
+pub fn exec(ast: &Ast) {
     trace!("ast: {:#?}", ast);
     let scope = &mut CONTEXT.lock().unwrap().scope;
 

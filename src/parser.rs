@@ -489,7 +489,7 @@ fn parse_word(_buf: Input, in_expansion: bool, in_quote: bool) -> IResult<Input,
         match span {
             Span::Literal(s) => literal += &s,
             _ => {
-                if literal.len() > 0 {
+                if !literal.is_empty() {
                     merged_spans.push(Span::Literal(literal));
                     literal = String::new();
                 }
@@ -499,7 +499,7 @@ fn parse_word(_buf: Input, in_expansion: bool, in_quote: bool) -> IResult<Input,
         }
     }
 
-    if literal.len() > 0 {
+    if !literal.is_empty() {
         merged_spans.push(Span::Literal(literal));
     }
 
@@ -958,7 +958,7 @@ named!(parse_alias_line<Input, Alias>,
 pub fn parse_line(line: &str) -> Result<Ast, SyntaxError> {
     match parse_script(Input(line)) {
         Ok((_, tree)) => {
-            if tree.terms.len() == 0 {
+            if tree.terms.is_empty() {
                 Err(SyntaxError::Empty)
             } else {
                 Ok(tree)

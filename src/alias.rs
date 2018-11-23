@@ -14,7 +14,7 @@ fn add_alias(line: &str) {
 }
 
 pub fn lookup_alias(alias: &str) -> Option<Vec<Word>> {
-    ALIASES.lock().unwrap().get(&alias.to_string()).map(|s| s.clone())
+    ALIASES.lock().unwrap().get(&alias.to_string()).cloned()
 }
 
 pub fn alias_command(argv: &Vec<String>) -> ExitStatus {

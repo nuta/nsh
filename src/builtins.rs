@@ -18,7 +18,7 @@ pub fn cd_command(argv: &Vec<String>) -> ExitStatus {
     trace!("cd: {:?}", argv);
     let dir = match argv.get(1) {
         Some(dir) => {
-            if dir.starts_with("/") {
+            if dir.starts_with('/') {
                 dir.clone()
             } else {
                 let current_dir = env::current_dir().expect("failed to getcwd()");
