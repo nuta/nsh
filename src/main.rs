@@ -9,6 +9,7 @@ extern crate clap;
 extern crate nix;
 extern crate pretty_env_logger;
 extern crate rustyline;
+extern crate dirs;
 
 mod mainloop;
 mod path_loader;

@@ -10,19 +10,20 @@ use rustyline::hint::Hinter;
 use rustyline::Helper;
 use exec;
 use parser;
+use dirs;
 use prompt::{parse_prompt, draw_prompt};
 use std::path::{Path, PathBuf};
 
 static DEFAULT_PROMPT: &'static str = "\\W $ ";
 
 fn resolve_and_create_history_file() -> Option<PathBuf> {
-    if let Some(home_dir) = env::home_dir() {
+    if let Some(home_dir) = dirs::home_dir() {
         let history_path = Path::new(&home_dir).join(".nsh_history");
         if history_path.exists() {
             return Some(history_path)
         }
 
-        if let Ok(f) = File::create(&history_path) {
+        if File::create(&history_path).is_ok() {
             return Some(history_path)
         }
     }
@@ -54,7 +55,7 @@ impl Completer for RustylineHelper {
 }
 
 impl Hinter for RustylineHelper {
-    fn hint(&self, line: &str, _pos: usize) -> Option<String> {
+    fn hint(&self, _line: &str, _pos: usize) -> Option<String> {
         None
     }
 }

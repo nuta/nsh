@@ -2,6 +2,7 @@ use std::env;
 use std::process;
 use std::path::Path;
 use exec::ExitStatus;
+use dirs;
 
 pub fn exit_command(argv: &Vec<String>) -> ExitStatus {
     let exit_with = if let Some(exit_with) = argv.get(1) {
@@ -25,7 +26,7 @@ pub fn cd_command(argv: &Vec<String>) -> ExitStatus {
             }
         }
         None => {
-            if let Some(home_dir) = env::home_dir() {
+            if let Some(home_dir) = dirs::home_dir() {
                 home_dir.to_string_lossy().into_owned()
             } else {
                 String::from("/")

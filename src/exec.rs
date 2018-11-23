@@ -1,8 +1,7 @@
 use nix::unistd::{pipe, fork, ForkResult, execv, dup2, close, Pid};
 use nix::sys::wait::{waitpid, WaitStatus};
 use parser::{self, Ast, ExpansionOp, RunIf, Span, Word};
-use std::fs::{File, OpenOptions};
-use std::path::Path;
+use std::fs::{OpenOptions};
 use std::collections::HashMap;
 use std::os::unix::io::RawFd;
 use std::os::unix::io::IntoRawFd;
