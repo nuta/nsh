@@ -1,5 +1,10 @@
 #![recursion_limit = "256"]
 #[macro_use]
+extern crate slog;
+extern crate slog_scope;
+extern crate slog_stdlog;
+extern crate slog_term;
+#[macro_use]
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
@@ -7,8 +12,6 @@ extern crate lazy_static;
 extern crate nom;
 extern crate clap;
 extern crate nix;
-extern crate pretty_env_logger;
-extern crate rustyline;
 extern crate dirs;
 
 mod mainloop;
@@ -40,8 +43,30 @@ fn exec_file(script_file: &str) {
     }
 }
 
+static mut GLOBAL_LOGGER: Option<slog_scope::GlobalLoggerGuard> = None;
+fn init_log() {
+    use std::fs::OpenOptions;
+    use slog::Drain;
+
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .append(true)
+        .open("nsh.log")
+        .unwrap();
+
+    let decorator = slog_term::PlainSyncDecorator::new(file);
+    let drain = slog_term::FullFormat::new(decorator).build().fuse();
+    let logger = slog::Logger::root(drain, o!());
+    let guard = slog_scope::set_global_logger(logger);
+    unsafe {
+        GLOBAL_LOGGER = Some(guard);
+    }
+    slog_stdlog::init().unwrap();
+}
+
 fn main() {
-    pretty_env_logger::init();
+    init_log();
     path_loader::init();
 
     let args = App::new("nsh")
