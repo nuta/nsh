@@ -22,6 +22,5 @@ if [ "$foo" != "this is a string" ]; then
     exit 1
 fi
 
-
 echo "ok!"
 exit 123
