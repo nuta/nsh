@@ -13,8 +13,9 @@ extern crate nom;
 extern crate clap;
 extern crate nix;
 extern crate dirs;
+extern crate termion;
+extern crate syntect;
 
-mod mainloop;
 mod path_loader;
 mod exec;
 mod parser;
@@ -22,26 +23,86 @@ mod internals;
 mod alias;
 mod builtins;
 mod prompt;
+mod input;
 
 use clap::{App, Arg};
 use std::fs::File;
 use std::io::prelude::*;
+use std::path::{Path, PathBuf};
 
 fn exec_file(script_file: &str) {
     let mut f = File::open(script_file).expect("failed to open a file");
     let mut script = String::new();
-    f.read_to_string(&mut script)
-        .expect("failed to load a file");
+    f.read_to_string(&mut script).expect("failed to load a file");
 
     match parser::parse_line(script.as_str()) {
         Ok(cmd) => {
             exec::exec(&cmd);
         }
+        Err(parser::SyntaxError::Empty) => (), // Just ignore.
         Err(err) => {
             eprintln!("nsh: parse error: {:?}", err);
         }
     }
 }
+
+fn resolve_and_create_history_file() -> Option<PathBuf> {
+    if let Some(home_dir) = dirs::home_dir() {
+        let history_path = Path::new(&home_dir).join(".nsh_history");
+        if history_path.exists() {
+            return Some(history_path)
+        }
+
+        if File::create(&history_path).is_ok() {
+            return Some(history_path)
+        }
+    }
+
+    None
+}
+
+fn interactive_mode() {
+    // Eval nshrc.
+    if let Some(home_dir) = dirs::home_dir() {
+        let nshrc_path = Path::new(&home_dir).join(".nshrc");
+        if nshrc_path.exists() {
+            exec_file(nshrc_path.to_str().unwrap());
+        }
+    }
+
+    // Load histories.
+    let history_path = resolve_and_create_history_file();
+    if let Some(ref _path) = history_path {
+        // TODO: load history
+    } else {
+        warn!("disabling history");
+    }
+
+    loop {
+        // Read a line.
+        let line = match input::input() {
+            Ok(line) => {
+                println!();
+                line
+            },
+            Err(err) => {
+                println!();
+                panic!("something went wrong: {:?}", err);
+            }
+        };
+
+        match parser::parse_line(line.as_str()) {
+            Ok(cmd) => {
+                exec::exec(&cmd);
+            },
+            Err(parser::SyntaxError::Empty) => (), // Just ignore.
+            Err(err) => {
+                eprintln!("nsh: parse error: {:?}", err);
+            }
+        };
+    }
+}
+
 
 static mut GLOBAL_LOGGER: Option<slog_scope::GlobalLoggerGuard> = None;
 fn init_log() {
@@ -84,7 +145,7 @@ fn main() {
     if let Some(script) = args.value_of("script") {
         exec_file(script);
     } else {
-        // Interactive mode.
-        mainloop::mainloop();
+       // Interactive mode.
+        interactive_mode();
     }
 }

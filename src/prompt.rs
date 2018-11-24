@@ -64,10 +64,17 @@ pub fn parse_prompt(prompt: &str) -> Result<Prompt, ()> {
     }
 }
 
-pub fn draw_prompt(prompt: &Prompt, buf: &mut String) {
+
+/// Returns the length of the last line excluding escape sequences.
+pub fn draw_prompt(prompt: &Prompt) -> (String, usize) {
+    let mut len = 0;
+    let mut buf = String::new();
     for span in &prompt.spans {
         match span {
-            Span::Literal(s) => buf.push_str(&s),
+            Span::Literal(s) => {
+                len += s.len();
+                buf.push_str(&s)
+            },
             Span::Color(c) => match c {
                 Color::Red => buf.push_str("\x1b[31m"),
                 Color::Blue => buf.push_str("\x1b[34m"),
@@ -79,18 +86,34 @@ pub fn draw_prompt(prompt: &Prompt, buf: &mut String) {
                 Color::Underline => buf.push_str("\x1b[4m"),
                 Color::Reset => buf.push_str("\x1b[0m"),
             },
-            Span::Newline => buf.push_str("\n"),
+            Span::Newline => {
+                len = 0;
+                buf.push_str("\n")
+            },
             // TODO:
-            Span::Username => buf.push_str("spam"),
+            Span::Username => {
+                let username = "spam";
+                len += username.len();
+                buf.push_str(username)
+            },
             // TODO:
-            Span::Hostname => buf.push_str("egg"),
+            Span::Hostname => {
+                let hostname = "egg";
+                len += hostname.len();
+                buf.push_str(hostname)
+            },
+            // TODO:
             Span::CurrentDir => {
                 if let Ok(current_dir) = env::current_dir() {
-                    buf.push_str(current_dir.to_str().unwrap());
+                    let path = current_dir.to_str().unwrap();
+                    len += path.len();
+                    buf.push_str(path);
                 }
             },
         }
     }
+
+    (buf, len)
 }
 
 #[test]
