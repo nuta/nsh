@@ -615,8 +615,8 @@ named!(simple_command<Input, Command>,
         opt!(comment) >>
         words: many0!(do_parse!(
             word: alt!(
-                map!(redirection, |r| WordOrRedirection::Redirection(r)) |
-                map!(word, |w| WordOrRedirection::Word(w))
+                map!(redirection, WordOrRedirection::Redirection) |
+                map!(word, WordOrRedirection::Word)
             ) >>
             whitespaces >>
             opt!(comment) >>
@@ -708,7 +708,7 @@ named!(for_command<Input, Command>,
         ({
             Command:: For {
                 var_name,
-                words: words.unwrap_or(Vec::new()),
+                words: words.unwrap_or_else(Vec::new),
                 body,
             }
         })
@@ -941,7 +941,7 @@ named!(parse_script<Input, Ast>,
         comments >>
         terms: opt!(compound_list) >>
         eof!() >>
-        (Ast { terms: terms.unwrap_or(Vec::new()) })
+        (Ast { terms: terms.unwrap_or_else(Vec::new) })
     )
 );
 

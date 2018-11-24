@@ -108,7 +108,7 @@ fn evaluate_word(scope: &mut Scope, word: &Word) -> String {
     s
 }
 
-fn evaluate_words(scope: &mut Scope, words: &Vec<Word>) -> Vec<String> {
+fn evaluate_words(scope: &mut Scope, words: &[Word]) -> Vec<String> {
     let mut evaluated = Vec::new();
     for word in words {
         let s = evaluate_word(scope, word);
@@ -161,7 +161,7 @@ fn exec_command(argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> 
 
 fn run_terms(
     scope: &mut Scope,
-    terms: &Vec<parser::Term>,
+    terms: &[parser::Term],
     stdin: RawFd,
     stdout: RawFd,
     stderr: RawFd,
@@ -351,10 +351,10 @@ fn run_command(
                 fds.push((stderr, 2));
             }
 
-            return match exec_command(argv, fds) {
+            match exec_command(argv, fds) {
                 Ok(pid) => CommandResult::External { pid },
                 Err(_) => CommandResult::Internal { status: -1 },
-            };
+            }
         }
         parser::Command::Assignment { assignments } => {
             for (name, value) in assignments {

@@ -23,7 +23,7 @@ lazy_static! {
     };
 }
 
-pub fn run_internal_command(cmd: &str, argv: &Vec<String>) -> Result<i32, InternalCommandError> {
+pub fn run_internal_command(cmd: &str, argv: &[String]) -> Result<i32, InternalCommandError> {
     match INTERNAL_COMMANDS.get(cmd) {
         Some(InternalCommand::Alias) => Ok(alias_command(argv)),
         Some(InternalCommand::Cd) => Ok(cd_command(argv)),

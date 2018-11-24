@@ -17,7 +17,7 @@ pub fn lookup_alias(alias: &str) -> Option<Vec<Word>> {
     ALIASES.lock().unwrap().get(&alias.to_string()).cloned()
 }
 
-pub fn alias_command(argv: &Vec<String>) -> ExitStatus {
+pub fn alias_command(argv: &[String]) -> ExitStatus {
     trace!("alias: {:?}", argv);
     if let Some(alias) = argv.get(1) {
         add_alias(alias);

@@ -4,7 +4,7 @@ use std::path::Path;
 use exec::ExitStatus;
 use dirs;
 
-pub fn exit_command(argv: &Vec<String>) -> ExitStatus {
+pub fn exit_command(argv: &[String]) -> ExitStatus {
     let exit_with = if let Some(exit_with) = argv.get(1) {
         exit_with.parse().unwrap_or(1)
     } else {
@@ -14,7 +14,7 @@ pub fn exit_command(argv: &Vec<String>) -> ExitStatus {
     process::exit(exit_with);
 }
 
-pub fn cd_command(argv: &Vec<String>) -> ExitStatus {
+pub fn cd_command(argv: &[String]) -> ExitStatus {
     trace!("cd: {:?}", argv);
     let dir = match argv.get(1) {
         Some(dir) => {

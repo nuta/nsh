@@ -33,7 +33,7 @@ lazy_static! {
     };
 }
 
-static DEFAULT_PROMPT: &'static str = "\\c{red}[\\c{bold}\\u@\\h:\\W]$\\c{reset} ";
+static DEFAULT_PROMPT: &'static str = "\\c{red}\\c{bold}[\\u@\\h:\\W]$\\c{reset} ";
 static DEFAULT_THEME: &'static str = "base16-ocean.dark";
 
 fn create_highlighter(theme_name: &str) -> HighlightLines {
@@ -43,7 +43,7 @@ fn create_highlighter(theme_name: &str) -> HighlightLines {
 }
 
 fn get_env(name: &str, default: &str) -> String {
-    env::var(name).unwrap_or(default.to_string())
+    env::var(name).unwrap_or_else(|_| default.to_string())
 }
 
 pub fn input() -> Result<String, InputError> {

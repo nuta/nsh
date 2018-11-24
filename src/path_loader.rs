@@ -19,7 +19,7 @@ pub fn lookup_external_command(cmd: &str) -> Option<String> {
 
 fn reload_paths() {
     let mut table = PATH_TABLE.lock().unwrap();
-    let path = env::var("PATH").unwrap_or(DEFAULT_PATH.to_owned());
+    let path = env::var("PATH").unwrap_or_else(|_| DEFAULT_PATH.to_owned());
 
     // Look for all executables in $PATH.
     for bin_dir in path.split(':') {
