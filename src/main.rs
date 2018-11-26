@@ -28,6 +28,8 @@ mod path;
 mod worker;
 mod prompt;
 mod utils;
+mod history;
+mod fuzzy;
 
 use clap::{App, Arg};
 use std::fs::File;
@@ -140,6 +142,7 @@ fn main() {
     init_log();
     worker::start_worker_threads();
     path::init();
+    history::init();
 
     let args = App::new("nsh")
         .version("0.0.0")

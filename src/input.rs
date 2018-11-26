@@ -1,6 +1,7 @@
 use crate::completion::{
     call_completion, extract_completion_context, CompletionContext, Completions,
 };
+use crate::history::{HistorySelector, append_history};
 use crate::prompt::render_prompt;
 use crate::utils::get_env;
 use std::io::{self, prelude::*, Stdout};
@@ -56,6 +57,7 @@ pub fn input() -> Result<String, InputError> {
     let mut completions = Completions::new(vec![]);
     let mut completion_ctx: CompletionContext = Default::default();
     let mut print_startup_time = true;
+    let mut history = HistorySelector::new();
 
     'input_line: loop {
         // Print the prompt.
@@ -120,12 +122,18 @@ pub fn input() -> Result<String, InputError> {
                         }
 
                         if mode == InputMode::Completion {
+                            completion_ctx = extract_completion_context(&user_input, user_cursor);
                             completions = call_completion(&completion_ctx);
                         }
                     }
                     Event::Key(Key::Up) => {
                         match mode {
-                            InputMode::Normal => (), // TODO: history
+                            InputMode::Normal => {
+                                history.prev(&user_input);
+                                let line = history.current();
+                                user_input = line.to_string();
+                                user_cursor = user_input.len();
+                            },
                             InputMode::Completion => {
                                 // Move to the previous candidate.
                                 completions.move_cursor(-1);
@@ -134,7 +142,12 @@ pub fn input() -> Result<String, InputError> {
                     }
                     Event::Key(Key::Down) => {
                         match mode {
-                            InputMode::Normal => (), // TODO: history
+                            InputMode::Normal => {
+                                history.next();
+                                let line = history.current();
+                                user_input = line.to_string();
+                                user_cursor = user_input.len();
+                            },
                             InputMode::Completion => {
                                 // Move to the next candidate.
                                 completions.move_cursor(1);
@@ -190,6 +203,7 @@ pub fn input() -> Result<String, InputError> {
         }
     }
 
+    append_history(&user_input);
     trace!("input: '{}'", user_input);
     Ok(user_input)
 }
