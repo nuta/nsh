@@ -851,13 +851,13 @@ named!(pipeline<Input, Pipeline>,
     )
 );
 
-named!(and_or_list<Input, Vec<Pipeline>>,
+named_args!(and_or_list<'a>(sep: Option<Input>)<Input<'a>, Vec<Pipeline>>,
     alt!(
         do_parse!(
-            sep: opt!(alt!(call!(operator, "&&") | call!(operator, "||"))) >>
             head: pipeline >>
             rest: opt!(do_parse!(
-                rest: and_or_list >>
+                sep: alt!(call!(operator, "&&") | call!(operator, "||")) >>
+                rest: call!(and_or_list, Some(sep)) >>
                 (rest)
             )) >>
             ({
@@ -881,7 +881,7 @@ named!(and_or_list<Input, Vec<Pipeline>>,
 
 named!(compound_list<Input, Vec<Term>>,
     do_parse!(
-        head: and_or_list >>
+        head: call!(and_or_list, None) >>
         sep: opt!(alt!(
             do_parse!(
                 not!(call!(operator, ";;")) >>
