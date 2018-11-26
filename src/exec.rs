@@ -1,15 +1,15 @@
 use nix::unistd::{pipe, fork, ForkResult, execv, dup2, close, Pid};
 use nix::sys::wait::{waitpid, WaitStatus};
-use parser::{self, Ast, ExpansionOp, RunIf, Span, Word};
 use std::fs::{OpenOptions};
 use std::collections::HashMap;
 use std::os::unix::io::RawFd;
 use std::os::unix::io::IntoRawFd;
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
-use path_loader::lookup_external_command;
-use builtins::{run_internal_command, InternalCommandError};
-use alias::lookup_alias;
+use crate::parser::{self, Ast, ExpansionOp, RunIf, Span, Word};
+use crate::path_loader::lookup_external_command;
+use crate::builtins::{run_internal_command, InternalCommandError};
+use crate::alias::lookup_alias;
 
 #[derive(Debug)]
 pub enum Value {

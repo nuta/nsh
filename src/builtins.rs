@@ -1,10 +1,10 @@
 use std::env;
 use std::process;
 use std::path::Path;
-use exec::ExitStatus;
 use dirs;
 use std::collections::BTreeMap;
-use alias::alias_command;
+use crate::exec::ExitStatus;
+use crate::alias::alias_command;
 
 pub fn exit_command(argv: &[String]) -> ExitStatus {
     let exit_with = if let Some(exit_with) = argv.get(1) {

@@ -1,14 +1,14 @@
 use nom::types::CompleteStr as Input;
 use std::env;
 use termion;
-use input::{InputMode};
-use completion::{Completions};
 use syntect::highlighting::Style;
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 use syntect::easy::HighlightLines;
 use syntect::parsing::{SyntaxSet};
 use syntect::highlighting::{ThemeSet};
-use utils::get_env;
+use crate::input::{InputMode};
+use crate::completion::{Completions};
+use crate::utils::get_env;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Prompt {

@@ -4,9 +4,9 @@ use termion::cursor::{DetectCursorPos};
 use termion::input::{TermRead};
 use termion::event::{Key, Event};
 use termion::raw::IntoRawMode;
-use prompt::render_prompt;
-use completion::{Completions, CompletionContext, call_completion, extract_completion_context};
-use utils::get_env;
+use crate::prompt::render_prompt;
+use crate::completion::{Completions, CompletionContext, call_completion, extract_completion_context};
+use crate::utils::get_env;
 
 #[derive(Debug)]
 pub enum InputError {

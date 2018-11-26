@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 use std::collections::BTreeMap;
-use exec::ExitStatus;
-use parser::{parse_alias, Alias, Word};
+use crate::exec::ExitStatus;
+use crate::parser::{parse_alias, Alias, Word};
 
 lazy_static! {
     static ref ALIASES: Mutex<BTreeMap<String, Vec<Word>>> = Mutex::new(BTreeMap::new());

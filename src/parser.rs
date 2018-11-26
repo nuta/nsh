@@ -87,7 +87,7 @@ pub struct Pipeline {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Term {
     pub pipelines: Vec<Pipeline>, // Separated by `&&', `||', or `;'.
-    pub async: bool,
+    pub background: bool,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -902,7 +902,7 @@ named!(compound_list<Input, Vec<Term>>,
             (rest)
         )) >>
         ({
-            let async = match sep {
+            let background = match sep {
                 None | Some(Input(";")) | Some(Input("\n")) => false,
                 Some(Input("&")) => true,
                 _ => unreachable!(),
@@ -911,7 +911,7 @@ named!(compound_list<Input, Vec<Term>>,
             let mut terms = Vec::new();
             terms.push(Term {
                 pipelines: head,
-                async,
+                background,
             });
 
             if let Some(rest_terms) = rest {
@@ -1013,7 +1013,7 @@ pub fn test_simple_commands() {
         parse_line("ls -G /tmp\n"),
         Ok(Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1030,7 +1030,7 @@ pub fn test_simple_commands() {
         parse_line("echo hello | hexdump -C | date"),
         Ok(Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![
@@ -1060,7 +1060,7 @@ pub fn test_simple_commands() {
         Ok(Ast {
             terms: vec![
                 Term {
-                    async: false,
+                    background: false,
                     pipelines: vec![
                         Pipeline {
                             run_if: RunIf::Always,
@@ -1089,7 +1089,7 @@ pub fn test_simple_commands() {
                     ],
                 },
                 Term {
-                    async: false,
+                    background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -1108,7 +1108,7 @@ pub fn test_simple_commands() {
         Ast {
             terms: vec![
                 Term {
-                    async: false,
+                    background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -1119,7 +1119,7 @@ pub fn test_simple_commands() {
                     }],
                 },
                 Term {
-                    async: false,
+                    background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -1138,7 +1138,7 @@ pub fn test_simple_commands() {
         Ast {
             terms: vec![
                 Term {
-                    async: true,
+                    background: true,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -1149,7 +1149,7 @@ pub fn test_simple_commands() {
                     }],
                 },
                 Term {
-                    async: true,
+                    background: true,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -1160,7 +1160,7 @@ pub fn test_simple_commands() {
                     }],
                 },
                 Term {
-                    async: false,
+                    background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -1171,7 +1171,7 @@ pub fn test_simple_commands() {
                     }],
                 },
                 Term {
-                    async: true,
+                    background: true,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -1182,7 +1182,7 @@ pub fn test_simple_commands() {
                     }],
                 },
                 Term {
-                    async: true,
+                    background: true,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -1200,7 +1200,7 @@ pub fn test_simple_commands() {
         parse_line("PORT=1234 RAILS_ENV=production rails s").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1223,7 +1223,7 @@ pub fn test_simple_commands() {
         parse_line("ls -G <foo.txt 2> bar.txt").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1266,7 +1266,7 @@ pub fn test_compound_commands() {
                                     assignments: vec![],
                                 }],
                             }],
-                            async: false,
+                            background: false,
                         }],
                         then_part: vec![Term {
                             pipelines: vec![Pipeline {
@@ -1277,14 +1277,14 @@ pub fn test_compound_commands() {
                                     assignments: vec![],
                                 }],
                             }],
-                            async: false,
+                            background: false,
                         }],
                         elif_parts: vec![],
                         else_part: None,
                         redirects: vec![],
                     }],
                 }],
-                async: false,
+                background: false,
             }],
         }
     );
@@ -1311,7 +1311,7 @@ pub fn test_compound_commands() {
                                     assignments: vec![],
                                 }],
                             }],
-                            async: false,
+                            background: false,
                         }],
                         then_part: vec![
                             Term {
@@ -1323,7 +1323,7 @@ pub fn test_compound_commands() {
                                         assignments: vec![],
                                     }],
                                 }],
-                                async: false,
+                                background: false,
                             },
                             Term {
                                 pipelines: vec![Pipeline {
@@ -1334,7 +1334,7 @@ pub fn test_compound_commands() {
                                         assignments: vec![],
                                     }],
                                 }],
-                                async: false,
+                                background: false,
                             },
                         ],
                         elif_parts: vec![],
@@ -1342,7 +1342,7 @@ pub fn test_compound_commands() {
                         redirects: vec![],
                     }],
                 }],
-                async: false,
+                background: false,
             }],
         }
     );
@@ -1382,7 +1382,7 @@ pub fn test_compound_commands() {
                                     assignments: vec![],
                                 }],
                             }],
-                            async: false,
+                            background: false,
                         }],
                         then_part: vec![Term {
                             pipelines: vec![Pipeline {
@@ -1393,7 +1393,7 @@ pub fn test_compound_commands() {
                                     assignments: vec![],
                                 }],
                             }],
-                            async: false,
+                            background: false,
                         }],
                         elif_parts: vec![
                             ElIf {
@@ -1412,7 +1412,7 @@ pub fn test_compound_commands() {
                                             assignments: vec![],
                                         }],
                                     }],
-                                    async: false,
+                                    background: false,
                                 }],
                                 then_part: vec![Term {
                                     pipelines: vec![Pipeline {
@@ -1423,7 +1423,7 @@ pub fn test_compound_commands() {
                                             assignments: vec![],
                                         }],
                                     }],
-                                    async: false,
+                                    background: false,
                                 }],
                             },
                             ElIf {
@@ -1442,7 +1442,7 @@ pub fn test_compound_commands() {
                                             assignments: vec![],
                                         }],
                                     }],
-                                    async: false,
+                                    background: false,
                                 }],
                                 then_part: vec![Term {
                                     pipelines: vec![Pipeline {
@@ -1453,7 +1453,7 @@ pub fn test_compound_commands() {
                                             assignments: vec![],
                                         }],
                                     }],
-                                    async: false,
+                                    background: false,
                                 }],
                             },
                         ],
@@ -1466,12 +1466,12 @@ pub fn test_compound_commands() {
                                     assignments: vec![],
                                 }],
                             }],
-                            async: false,
+                            background: false,
                         }]),
                         redirects: vec![],
                     }],
                 }],
-                async: false,
+                background: false,
             }],
         }
     );
@@ -1480,7 +1480,7 @@ pub fn test_compound_commands() {
         parse_line("for arg in hello world do echo ---------; cowsay $arg; done").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::For {
@@ -1488,7 +1488,7 @@ pub fn test_compound_commands() {
                         words: literal_word_vec!["hello", "world"],
                         body: vec![
                             Term {
-                                async: false,
+                                background: false,
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
@@ -1499,7 +1499,7 @@ pub fn test_compound_commands() {
                                 }],
                             },
                             Term {
-                                async: false,
+                                background: false,
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
@@ -1523,13 +1523,13 @@ pub fn test_compound_commands() {
         parse_line("{ echo hello; echo world; }").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Group {
                         terms: vec![
                             Term {
-                                async: false,
+                                background: false,
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
@@ -1540,7 +1540,7 @@ pub fn test_compound_commands() {
                                 }],
                             },
                             Term {
-                                async: false,
+                                background: false,
                                 pipelines: vec![Pipeline {
                                     run_if: RunIf::Always,
                                     commands: vec![Command::SimpleCommand {
@@ -1566,7 +1566,7 @@ pub fn test_compound_commands() {
         )).unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Case {
@@ -1575,7 +1575,7 @@ pub fn test_compound_commands() {
                             CaseItem {
                                 patterns: vec![lit!("echo")],
                                 body: vec![Term {
-                                    async: false,
+                                    background: false,
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
@@ -1590,7 +1590,7 @@ pub fn test_compound_commands() {
                                 patterns: vec![lit!("date"), lit!("time")],
                                 body: vec![
                                     Term {
-                                        async: false,
+                                        background: false,
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
                                             commands: vec![Command::SimpleCommand {
@@ -1603,7 +1603,7 @@ pub fn test_compound_commands() {
                                         }],
                                     },
                                     Term {
-                                        async: false,
+                                        background: false,
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
                                             commands: vec![Command::SimpleCommand {
@@ -1627,7 +1627,7 @@ pub fn test_compound_commands() {
         Ast {
             terms: vec![
                 Term {
-                    async: false,
+                    background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::FunctionDef {
@@ -1635,7 +1635,7 @@ pub fn test_compound_commands() {
                             body: Box::new(Command::Group {
                                 terms: vec![
                                     Term {
-                                        async: false,
+                                        background: false,
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
                                             commands: vec![Command::SimpleCommand {
@@ -1646,7 +1646,7 @@ pub fn test_compound_commands() {
                                         }],
                                     },
                                     Term {
-                                        async: false,
+                                        background: false,
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
                                             commands: vec![Command::SimpleCommand {
@@ -1662,7 +1662,7 @@ pub fn test_compound_commands() {
                     }],
                 },
                 Term {
-                    async: false,
+                    background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -1683,7 +1683,7 @@ pub fn test_expansions() {
         parse_line("ls `echo -l`").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1691,7 +1691,7 @@ pub fn test_expansions() {
                             Word(vec![Span::Literal("ls".into())]),
                             Word(vec![Span::Command {
                                 body: vec![Term {
-                                    async: false,
+                                    background: false,
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
@@ -1718,7 +1718,7 @@ pub fn test_expansions() {
         parse_line("foo ${var1:-a${xyz}b} bar").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1749,7 +1749,7 @@ pub fn test_expansions() {
         parse_line("ls $(echo -l)").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1757,7 +1757,7 @@ pub fn test_expansions() {
                             Word(vec![Span::Literal("ls".into())]),
                             Word(vec![Span::Command {
                                 body: vec![Term {
-                                    async: false,
+                                    background: false,
                                     pipelines: vec![Pipeline {
                                         run_if: RunIf::Always,
                                         commands: vec![Command::SimpleCommand {
@@ -1784,7 +1784,7 @@ pub fn test_expansions() {
         parse_line("echo \"$TERM\"").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1808,7 +1808,7 @@ pub fn test_expansions() {
         parse_line("echo ${undefined:-Current} ${undefined:=TERM} \"is $TERM len=${#TERM}\"").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1854,7 +1854,7 @@ pub fn test_assignments() {
         parse_line("foo=bar").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Assignment {
@@ -1869,7 +1869,7 @@ pub fn test_assignments() {
         parse_line("nobody=expects the=\"spanish inquisition\"").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Assignment {
@@ -1893,7 +1893,7 @@ pub fn test_tilde() {
         parse_line("echo ~ ~/usr ~seiya ~seiya/usr a/~/b").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1923,7 +1923,7 @@ pub fn test_arith_expr() {
         parse_line("echo $(( 1 + 2-3 ))").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1951,7 +1951,7 @@ pub fn test_arith_expr() {
         parse_line("echo $((1+2*$foo-bar))").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -1991,7 +1991,7 @@ pub fn test_patterns() {
         parse_line("echo * a?c").unwrap(),
         Ast {
             terms: vec![Term {
-                async: false,
+                background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
@@ -2020,7 +2020,7 @@ pub fn test_comments() {
         Ok(Ast {
             terms: vec![
                 Term {
-                    async: false,
+                    background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -2031,7 +2031,7 @@ pub fn test_comments() {
                     }],
                 },
                 Term {
-                    async: false,
+                    background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
@@ -2053,7 +2053,7 @@ pub fn test_comments() {
 pub fn test_string_literal() {
     assert_eq!(parse_line("echo \"hello\""), Ok(Ast {
         terms: vec![Term {
-            async: false,
+            background: false,
             pipelines: vec![Pipeline {
                 run_if: RunIf::Always,
                 commands: vec![Command::SimpleCommand {
@@ -2070,7 +2070,7 @@ pub fn test_string_literal() {
 
     assert_eq!(parse_line("echo \"hello world\""), Ok(Ast {
         terms: vec![Term {
-            async: false,
+            background: false,
             pipelines: vec![Pipeline {
                 run_if: RunIf::Always,
                 commands: vec![Command::SimpleCommand {
@@ -2087,7 +2087,7 @@ pub fn test_string_literal() {
 
     assert_eq!(parse_line("echo abc\"de\"fg"), Ok(Ast {
         terms: vec![Term {
-            async: false,
+            background: false,
             pipelines: vec![Pipeline {
                 run_if: RunIf::Always,
                 commands: vec![Command::SimpleCommand {
@@ -2104,7 +2104,7 @@ pub fn test_string_literal() {
 
     assert_eq!(parse_line("echo abc\'de\'fg"), Ok(Ast {
         terms: vec![Term {
-            async: false,
+            background: false,
             pipelines: vec![Pipeline {
                 run_if: RunIf::Always,
                 commands: vec![Command::SimpleCommand {
@@ -2124,7 +2124,7 @@ pub fn test_string_literal() {
 pub fn test_escape_sequences() {
     assert_eq!(parse_line("echo \\e[1m"), Ok(Ast {
         terms: vec![Term {
-            async: false,
+            background: false,
             pipelines: vec![Pipeline {
                 run_if: RunIf::Always,
                 commands: vec![Command::SimpleCommand {
