@@ -66,6 +66,7 @@ pub enum Command {
         body: Vec<Term>,
     },
     Break,
+    Continue,
     Case {
         word: Word,
         items: Vec<CaseItem>,
@@ -723,6 +724,13 @@ named!(break_command<Input, Command>,
     )
 );
 
+named!(continue_command<Input, Command>,
+    do_parse!(
+        call!(keyword, "continue") >>
+        ( Command::Continue )
+    )
+);
+
 named!(case_item_patterns<Input, Vec<Word>>,
     alt!(
         do_parse!(
@@ -821,6 +829,7 @@ named!(command<Input, Command>,
         for_command |
         case_command |
         break_command |
+        continue_command |
         group |
         func_def |
         do_parse!(
@@ -1534,6 +1543,9 @@ pub fn test_compound_commands() {
             "   if sometimes-true; then\n",
             "       break\n",
             "   fi\n",
+            "   if sometimes-true; then\n",
+            "       continue;\n",
+            "   fi\n",
             "   something &\n",
             "done"
         )).unwrap(),
@@ -1566,6 +1578,35 @@ pub fn test_compound_commands() {
                                             pipelines: vec![Pipeline {
                                                 run_if: RunIf::Always,
                                                 commands: vec![Command::Break],
+                                            }],
+                                            background: false,
+                                        }],
+                                        elif_parts: vec![],
+                                        else_part: None,
+                                        redirects: vec![],
+                                    }]
+                                }]
+                            },
+                            Term {
+                                background: false,
+                                pipelines: vec![Pipeline {
+                                    run_if: RunIf::Always,
+                                    commands: vec![Command::If {
+                                        condition: vec![Term {
+                                            pipelines: vec![Pipeline {
+                                                run_if: RunIf::Always,
+                                                commands: vec![Command::SimpleCommand {
+                                                    argv: vec![lit!("sometimes-true")],
+                                                    redirects: vec![],
+                                                    assignments: vec![],
+                                                }],
+                                            }],
+                                            background: false,
+                                        }],
+                                        then_part: vec![Term {
+                                            pipelines: vec![Pipeline {
+                                                run_if: RunIf::Always,
+                                                commands: vec![Command::Continue],
                                             }],
                                             background: false,
                                         }],

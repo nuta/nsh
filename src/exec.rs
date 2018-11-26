@@ -45,6 +45,7 @@ pub struct ExecEnv {
 pub enum ExitStatus {
     ExitedWith(i32),
     Break,
+    Continue,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -53,6 +54,8 @@ enum CommandResult {
     Internal { status: ExitStatus },
     // break command
     Break,
+    // continue command
+    Continue,
 }
 
 lazy_static! {
@@ -187,6 +190,7 @@ fn run_terms(
                 (ExitStatus::ExitedWith(0), RunIf::Success) => (),
                 (ExitStatus::ExitedWith(_), RunIf::Failure) => (),
                 (ExitStatus::Break, _) => return ExitStatus::Break,
+                (ExitStatus::Continue, _) => return ExitStatus::Continue,
                 (_, RunIf::Always) => (),
                 _ => continue,
             }
@@ -268,6 +272,9 @@ fn run_pipeline(
         },
         Some(CommandResult::Break) => {
             return ExitStatus::Break;
+        }
+        Some(CommandResult::Continue) => {
+            return ExitStatus::Continue;
         }
     }
 
@@ -424,6 +431,7 @@ fn run_command(
                 let result = run_terms(scope, body, stdin, stdout, stderr);
                 match result {
                     ExitStatus::Break => break,
+                    ExitStatus::Continue => (),
                     _ => (),
                 }
             }
@@ -432,6 +440,9 @@ fn run_command(
         },
         parser::Command::Break => {
             CommandResult::Break
+        }
+        parser::Command::Continue => {
+            CommandResult::Continue
         }
         parser::Command::Case {..} => {
             // TODO:
