@@ -124,10 +124,8 @@ pub enum Expr {
     Mul(BinaryExpr),
     Div(BinaryExpr),
     Literal(i32),
-    // $foo, ${foo}, ${foo:-default}, ...
-    Parameter { name: String, op: ExpansionOp },
-    // $(echo hello && echo world)
-    Command { body: Vec<Term> },
+    // `foo` in $((foo + 1))
+    Parameter { name: String },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -305,8 +303,7 @@ named!(expr_factor<Input, Expr>,
             match span {
                 // TODO: throw an syntax error instead of .unwrap()
                 Span::Literal(s) => Expr::Literal(s.parse().unwrap()),
-                Span::Parameter { name, op } => Expr::Parameter { name, op },
-                Span::Command { body } => Expr::Command { body },
+                Span::Parameter { name, .. } => Expr::Parameter { name },
                 // TODO: throw an syntax error instead
                 _ => unreachable!(),
             }
@@ -1968,12 +1965,10 @@ pub fn test_arith_expr() {
                                             lhs: Box::new(Expr::Literal(2)),
                                             rhs: Box::new(Expr::Parameter {
                                                 name: "foo".into(),
-                                                op: ExpansionOp::GetOrEmpty,
                                             }),
                                         })),
                                         rhs: Box::new(Expr::Parameter {
                                             name: "bar".into(),
-                                            op: ExpansionOp::GetOrEmpty,
                                         }),
                                     })),
                                 }),

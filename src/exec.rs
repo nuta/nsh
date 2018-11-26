@@ -113,6 +113,7 @@ fn evaluate_word(scope: &mut Scope, word: &Word) -> String {
     for span in &word.0 {
         s += evaluate_span(scope, &span).as_str();
     }
+
     s
 }
 
