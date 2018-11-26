@@ -30,6 +30,7 @@ use clap::{App, Arg};
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 fn exec_file(script_file: &str) {
     let mut f = File::open(script_file).expect("failed to open a file");
@@ -126,7 +127,13 @@ fn init_log() {
     slog_stdlog::init().unwrap();
 }
 
+pub static mut TIME_STARTED: Option<SystemTime> = None;
+
 fn main() {
+    unsafe {
+        TIME_STARTED = Some(SystemTime::now());
+    }
+
     init_log();
     path_loader::init();
 
