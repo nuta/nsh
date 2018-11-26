@@ -24,6 +24,7 @@ mod builtins;
 mod prompt;
 mod input;
 mod completion;
+mod utils;
 
 use clap::{App, Arg};
 use std::fs::File;

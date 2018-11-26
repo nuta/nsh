@@ -1,53 +1,22 @@
-use std::env;
 use std::io::{self, Stdout, prelude::*};
 use termion;
 use termion::cursor::{DetectCursorPos};
 use termion::input::{TermRead};
 use termion::event::{Key, Event};
 use termion::raw::IntoRawMode;
-use syntect::highlighting::Style;
-use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
-use syntect::easy::HighlightLines;
-use syntect::parsing::{SyntaxSet};
-use syntect::highlighting::{ThemeSet};
-use prompt::{parse_prompt, draw_prompt};
+use prompt::render_prompt;
 use completion::{Completions, CompletionContext, call_completion, extract_completion_context};
+use utils::get_env;
+
 #[derive(Debug)]
 pub enum InputError {
     Eof,
 }
 
-pub struct SyntectStatic {
-    syntax_set: SyntaxSet,
-    theme_set: ThemeSet,
-}
-
-lazy_static! {
-    static ref SYNTECT_STATIC: SyntectStatic = {
-        let syntax_set = SyntaxSet::load_defaults_newlines();
-        let theme_set = ThemeSet::load_defaults();
-        SyntectStatic {
-            syntax_set,
-            theme_set,
-        }
-    };
-}
-
-static DEFAULT_PROMPT: &'static str = "\\c{red}\\c{bold}[\\u@\\h:\\W]$\\c{reset} ";
 static DEFAULT_THEME: &'static str = "base16-ocean.dark";
 
-fn create_highlighter(theme_name: &str) -> HighlightLines {
-    let theme = &SYNTECT_STATIC.theme_set.themes[theme_name];
-    let syntax = SYNTECT_STATIC.syntax_set.find_syntax_by_extension("sh").unwrap();
-    HighlightLines::new(syntax, theme)
-}
-
-fn get_env(name: &str, default: &str) -> String {
-    env::var(name).unwrap_or_else(|_| default.to_string())
-}
-
 #[derive(PartialEq, Eq, Copy, Clone)]
-enum InputMode {
+pub enum InputMode {
     Normal,
     Completion,
 }
@@ -68,112 +37,6 @@ fn clear_n_lines(stdout: &mut Stdout, base: u16, n: u16) {
 fn get_current_y(stdout: &mut Stdout) -> u16 {
     let (_, y) = stdout.cursor_pos().unwrap();
     y - 1
-}
-
-/// Returns the number of lines of the rendered prompt and the rendered prompt.
-/// FIXME: too many arguments
-fn render_prompt(mode: InputMode, completions: &Completions,  prompt_base_y: u16, user_cursor: usize, user_input: &str, current_theme: &str) -> (u16, String) {
-    use std::fmt::Write;
-    let mut buf = String::new();
-    let rendered_lines;
-
-    // Apply syntax highlighting.
-    let mut highlighter = create_highlighter(current_theme);
-    let mut colored_user_input = String::new();
-    for line in LinesWithEndings::from(user_input) {
-        let ranges: Vec<(Style, &str)> = highlighter.highlight(line, &SYNTECT_STATIC.syntax_set);
-        let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
-        colored_user_input += &escaped;
-    }
-
-    // Parse and render the prompt.
-    let ps1 = get_env("PS1", DEFAULT_PROMPT);
-    let (prompt_str, prompt_len) = if let Ok(fmt) = parse_prompt(ps1.as_str()) {
-        draw_prompt(&fmt)
-    } else {
-        ("$ ".to_owned(), 2)
-    };
-
-    // Render the prompt and colored user input.
-    let user_cursor_pos = (prompt_len + user_cursor + 1) as u16;
-    write!(buf, "{}{}{}{}{}",
-        termion::style::Reset,
-        termion::cursor::Goto(1, 1 + prompt_base_y),
-        prompt_str,
-        colored_user_input,
-        termion::style::Reset,
-    ).ok();
-
-    // Render completions.
-    match mode {
-        InputMode::Normal => {
-            rendered_lines = 1;
-        },
-        InputMode::Completion => {
-            let entries_len = completions.len();
-            let actual_lines = if entries_len < completions.display_lines() {
-                entries_len as u16
-            } else {
-                completions.display_lines() as u16
-            };
-
-            if actual_lines > 0 {
-                // The prompt line, completions, and "TAB to expand" line.
-                rendered_lines = 1 + actual_lines + 1;
-                // The beginning y of the completions.
-                let completion_base_y = prompt_base_y + 1;
-
-                let results = completions.entries();
-                let iter = results.iter()
-                    .skip(completions.display_index())
-                    .take(completions.display_lines());
-
-                for (i, entry) in iter.enumerate() {
-                    write!(buf, "\n{}{}",
-                        termion::cursor::Goto(1, 1 + completion_base_y + i as u16),
-                        termion::clear::CurrentLine,
-                    ).ok();
-
-                    let selected = (completions.display_index() + i) == completions.selected_index() as usize;
-                    if selected {
-                        write!(buf, "{}{}", termion::style::Underline, termion::style::Bold).ok();
-                    } else {
-                        write!(buf, "{}{}", termion::style::NoUnderline, termion::style::NoBold).ok();
-                    };
-
-                    write!(buf, "{}{}", entry, termion::style::Reset).ok();
-                }
-
-                write!(buf, "\n{}{}{}{}{} {}/{} {}",
-                    termion::cursor::Goto(1, 1 + completion_base_y + actual_lines),
-                    termion::clear::CurrentLine,
-                    termion::style::Bold,
-                    termion::color::Fg(termion::color::White),
-                    termion::color::Bg(termion::color::Cyan),
-                    completions.selected_index() + 1,
-                    completions.len(),
-                    termion::style::Reset
-                ).ok();
-            } else {
-                rendered_lines = 2;
-                write!(buf, "\n{}{}{}{}{}no candidates{}",
-                    termion::cursor::Goto(1, 1 + prompt_base_y + 1),
-                    termion::clear::CurrentLine,
-                    termion::style::Bold,
-                    termion::color::Fg(termion::color::White),
-                    termion::color::Bg(termion::color::Cyan),
-                    termion::style::Reset
-                ).ok();
-            }
-        },
-    }
-
-    write!(
-        buf, "{}",
-        termion::cursor::Goto(user_cursor_pos, 1 + prompt_base_y)
-    ).ok();
-
-    (rendered_lines, buf)
 }
 
 pub fn input() -> Result<String, InputError> {
