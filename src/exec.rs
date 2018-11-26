@@ -22,6 +22,14 @@ pub struct Variable {
     value: Value,
 }
 
+impl Variable {
+    pub fn from_string(value: String) -> Variable {
+        Variable {
+            value: Value::String(value),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Scope {
     vars: HashMap<String, Arc<Variable>>,
@@ -397,7 +405,19 @@ fn run_command(
         parser::Command::Group { terms } => CommandResult::Internal {
             status: run_terms(scope, terms, stdin, stdout, stderr),
         },
-        _ => panic!("TODO:"),
+        parser::Command::For { var_name, words, body } => {
+            for word in words {
+                let var = Variable::from_string(evaluate_word(scope, word));
+                set_var(scope, &var_name, var);
+                run_terms(scope, body, stdin, stdout, stderr);
+            }
+
+            CommandResult::Internal { status: 0 }
+        },
+        parser::Command::Case {..} => {
+            // TODO:
+            unimplemented!();
+        }
     }
 }
 
