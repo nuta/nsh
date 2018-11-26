@@ -15,6 +15,8 @@ extern crate dirs;
 extern crate nix;
 extern crate syntect;
 extern crate termion;
+extern crate crossbeam;
+extern crate crossbeam_channel;
 
 mod alias;
 mod builtins;
@@ -22,7 +24,8 @@ mod completion;
 mod exec;
 mod input;
 mod parser;
-mod path_loader;
+mod path;
+mod worker;
 mod prompt;
 mod utils;
 
@@ -135,7 +138,8 @@ fn main() {
     }
 
     init_log();
-    path_loader::init();
+    worker::start_worker_threads();
+    path::init();
 
     let args = App::new("nsh")
         .version("0.0.0")

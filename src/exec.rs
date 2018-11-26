@@ -1,7 +1,7 @@
 use crate::alias::lookup_alias;
 use crate::builtins::{run_internal_command, InternalCommandError};
 use crate::parser::{self, Ast, ExpansionOp, RunIf, Span, Word};
-use crate::path_loader::lookup_external_command;
+use crate::path::lookup_external_command;
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{close, dup2, execv, fork, pipe, ForkResult, Pid};
 use std::collections::HashMap;
