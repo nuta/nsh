@@ -448,7 +448,10 @@ fn parse_word(_buf: Input, in_expansion: bool, in_quote: bool) -> IResult<Input,
         buf = rest;
     }
 
-    info!("parse_word({}): '{}' ------------------------", in_expansion, buf);
+    info!(
+        "parse_word({}): '{}' ------------------------",
+        in_expansion, buf
+    );
     loop {
         // Parse quoted strings.
         for quote in &["\"", "'"] {
@@ -468,10 +471,10 @@ fn parse_word(_buf: Input, in_expansion: bool, in_quote: bool) -> IResult<Input,
         match alt!(
             buf,
             pattern
-            | expansion
-            | backquoted_command_expansion
-            | escape_sequence
-            | call!(literal_span, in_quote, in_expansion)
+                | expansion
+                | backquoted_command_expansion
+                | escape_sequence
+                | call!(literal_span, in_quote, in_expansion)
         ) {
             Ok((rest, span)) => {
                 trace!("rest='{}', span={:?}", rest, span);
@@ -502,7 +505,6 @@ fn parse_word(_buf: Input, in_expansion: bool, in_quote: bool) -> IResult<Input,
     if !literal.is_empty() {
         merged_spans.push(Span::Literal(literal));
     }
-
 
     if let Ok((rest, _)) = call!(buf, whitespaces) {
         buf = rest;
@@ -973,9 +975,7 @@ pub fn parse_line(line: &str) -> Result<Ast, SyntaxError> {
 
 pub fn parse_alias(line: &str) -> Result<Alias, SyntaxError> {
     match parse_alias_line(Input(line)) {
-        Ok((_, alias)) => {
-            Ok(alias)
-        }
+        Ok((_, alias)) => Ok(alias),
         Err(err) => {
             trace!("parse error: '{}'", &err);
             Err(SyntaxError::Fatal(err.to_string()))
@@ -1296,7 +1296,8 @@ pub fn test_compound_commands() {
             "    echo hello\n",
             "    echo world\n",
             "fi"
-        )).unwrap(),
+        ))
+        .unwrap(),
         Ast {
             terms: vec![Term {
                 pipelines: vec![Pipeline {
@@ -1361,7 +1362,8 @@ pub fn test_compound_commands() {
             "else;",
             "    echo Hello, stranger!;",
             "fi"
-        )).unwrap(),
+        ))
+        .unwrap(),
         Ast {
             terms: vec![Term {
                 pipelines: vec![Pipeline {
@@ -1563,7 +1565,8 @@ pub fn test_compound_commands() {
             "echo) echo action is echo ;;",
             "date | time) echo action is date; date ;;",
             "esac"
-        )).unwrap(),
+        ))
+        .unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -1791,10 +1794,9 @@ pub fn test_expansions() {
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::Parameter {
-                                    name: "TERM".into(),
-                                    op: ExpansionOp::GetOrEmpty,
-                                }],
-                            ),
+                                name: "TERM".into(),
+                                op: ExpansionOp::GetOrEmpty,
+                            }],),
                         ],
                         redirects: vec![],
                         assignments: vec![],
@@ -1805,7 +1807,8 @@ pub fn test_expansions() {
     );
 
     assert_eq!(
-        parse_line("echo ${undefined:-Current} ${undefined:=TERM} \"is $TERM len=${#TERM}\"").unwrap(),
+        parse_line("echo ${undefined:-Current} ${undefined:=TERM} \"is $TERM len=${#TERM}\"")
+            .unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2051,93 +2054,93 @@ pub fn test_comments() {
 
 #[test]
 pub fn test_string_literal() {
-    assert_eq!(parse_line("echo \"hello\""), Ok(Ast {
-        terms: vec![Term {
-            background: false,
-            pipelines: vec![Pipeline {
-                run_if: RunIf::Always,
-                commands: vec![Command::SimpleCommand {
-                    argv: vec![
-                        lit!("echo"),
-                        lit!("hello")
-                    ],
-                    assignments: vec![],
-                    redirects: vec![],
+    assert_eq!(
+        parse_line("echo \"hello\""),
+        Ok(Ast {
+            terms: vec![Term {
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![lit!("echo"), lit!("hello")],
+                        assignments: vec![],
+                        redirects: vec![],
+                    }]
                 }]
             }]
-        }]
-    }));
+        })
+    );
 
-    assert_eq!(parse_line("echo \"hello world\""), Ok(Ast {
-        terms: vec![Term {
-            background: false,
-            pipelines: vec![Pipeline {
-                run_if: RunIf::Always,
-                commands: vec![Command::SimpleCommand {
-                    argv: vec![
-                        lit!("echo"),
-                        lit!("hello world")
-                    ],
-                    assignments: vec![],
-                    redirects: vec![],
+    assert_eq!(
+        parse_line("echo \"hello world\""),
+        Ok(Ast {
+            terms: vec![Term {
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![lit!("echo"), lit!("hello world")],
+                        assignments: vec![],
+                        redirects: vec![],
+                    }]
                 }]
             }]
-        }]
-    }));
+        })
+    );
 
-    assert_eq!(parse_line("echo abc\"de\"fg"), Ok(Ast {
-        terms: vec![Term {
-            background: false,
-            pipelines: vec![Pipeline {
-                run_if: RunIf::Always,
-                commands: vec![Command::SimpleCommand {
-                    argv: vec![
-                        lit!("echo"),
-                        lit!("abcdefg")
-                    ],
-                    assignments: vec![],
-                    redirects: vec![],
+    assert_eq!(
+        parse_line("echo abc\"de\"fg"),
+        Ok(Ast {
+            terms: vec![Term {
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![lit!("echo"), lit!("abcdefg")],
+                        assignments: vec![],
+                        redirects: vec![],
+                    }]
                 }]
             }]
-        }]
-    }));
+        })
+    );
 
-    assert_eq!(parse_line("echo abc\'de\'fg"), Ok(Ast {
-        terms: vec![Term {
-            background: false,
-            pipelines: vec![Pipeline {
-                run_if: RunIf::Always,
-                commands: vec![Command::SimpleCommand {
-                    argv: vec![
-                        lit!("echo"),
-                        lit!("abcdefg")
-                    ],
-                    assignments: vec![],
-                    redirects: vec![],
+    assert_eq!(
+        parse_line("echo abc\'de\'fg"),
+        Ok(Ast {
+            terms: vec![Term {
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![lit!("echo"), lit!("abcdefg")],
+                        assignments: vec![],
+                        redirects: vec![],
+                    }]
                 }]
             }]
-        }]
-    }));
+        })
+    );
 }
 
 #[test]
 pub fn test_escape_sequences() {
-    assert_eq!(parse_line("echo \\e[1m"), Ok(Ast {
-        terms: vec![Term {
-            background: false,
-            pipelines: vec![Pipeline {
-                run_if: RunIf::Always,
-                commands: vec![Command::SimpleCommand {
-                    argv: vec![
-                        lit!("echo"),
-                        lit!("\x1b[1m")
-                    ],
-                    assignments: vec![],
-                    redirects: vec![],
+    assert_eq!(
+        parse_line("echo \\e[1m"),
+        Ok(Ast {
+            terms: vec![Term {
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![lit!("echo"), lit!("\x1b[1m")],
+                        assignments: vec![],
+                        redirects: vec![],
+                    }]
                 }]
             }]
-        }]
-    }));
+        })
+    );
 }
 
 #[test]

@@ -1,15 +1,15 @@
-use nix::unistd::{pipe, fork, ForkResult, execv, dup2, close, Pid};
-use nix::sys::wait::{waitpid, WaitStatus};
-use std::fs::{OpenOptions};
-use std::collections::HashMap;
-use std::os::unix::io::RawFd;
-use std::os::unix::io::IntoRawFd;
-use std::ffi::CString;
-use std::sync::{Arc, Mutex};
+use crate::alias::lookup_alias;
+use crate::builtins::{run_internal_command, InternalCommandError};
 use crate::parser::{self, Ast, ExpansionOp, RunIf, Span, Word};
 use crate::path_loader::lookup_external_command;
-use crate::builtins::{run_internal_command, InternalCommandError};
-use crate::alias::lookup_alias;
+use nix::sys::wait::{waitpid, WaitStatus};
+use nix::unistd::{close, dup2, execv, fork, pipe, ForkResult, Pid};
+use std::collections::HashMap;
+use std::ffi::CString;
+use std::fs::OpenOptions;
+use std::os::unix::io::IntoRawFd;
+use std::os::unix::io::RawFd;
+use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 pub enum Value {
@@ -137,9 +137,7 @@ fn exec_command(argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> 
     };
 
     match fork().expect("failed to fork") {
-        ForkResult::Parent { child } => {
-            Ok(child)
-        },
+        ForkResult::Parent { child } => Ok(child),
         ForkResult::Child => {
             // FIXME: CString::new() internally calls memchr(); it could be non-negligible cost.
             let mut args = Vec::new();
@@ -155,7 +153,7 @@ fn exec_command(argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> 
             // TODO: inherit exported variables
             execv(&argv0, &args).expect("failed to exec");
             unreachable!();
-        },
+        }
     }
 }
 
@@ -188,9 +186,8 @@ fn run_pipeline(
     pipeline: &parser::Pipeline,
     pipeline_stdin: RawFd,
     pipeline_stdout: RawFd,
-    stderr: RawFd
+    stderr: RawFd,
 ) -> ExitStatus {
-
     // Invoke commands in a pipeline.
     let mut last_command_result = None;
     let mut iter = pipeline.commands.iter().peekable();
@@ -227,21 +224,21 @@ fn run_pipeline(
         None => {
             trace!("nothing to execute");
             last_status = 0;
-        },
+        }
         Some(CommandResult::Internal { status }) => {
             last_status = status;
-        },
+        }
         Some(CommandResult::External { pid: last_pid }) => {
             for child in childs {
                 let status = match waitpid(Pid::from_raw(-1), None).expect("faied to waitpid") {
                     WaitStatus::Exited(pid, status) => {
                         trace!("nsh: pid={} status={}", pid, status);
                         status
-                    },
+                    }
                     WaitStatus::Signaled(pid, status, _) => {
                         println!("nsh: pid={} signal={:#?}", pid, status);
                         -1
-                    },
+                    }
                     _ => {
                         // TODO:
                         panic!("unexpected waitpid event");
@@ -258,7 +255,6 @@ fn run_pipeline(
     last_status
 }
 
-
 fn run_command(
     scope: &mut Scope,
     command: &parser::Command,
@@ -268,7 +264,11 @@ fn run_command(
 ) -> CommandResult {
     trace!("run_command: {:?}", command);
     match command {
-        parser::Command::SimpleCommand { argv: ref ref_wargv, ref redirects, .. } => {
+        parser::Command::SimpleCommand {
+            argv: ref ref_wargv,
+            ref redirects,
+            ..
+        } => {
             if ref_wargv.is_empty() {
                 // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
                 // named "foo.txt".
@@ -278,7 +278,7 @@ fn run_command(
             // FIXME:
             let Word(ref spans) = ref_wargv[0];
             let wargv = if !spans.is_empty() {
-                 match spans[0] {
+                match spans[0] {
                     Span::Literal(ref lit) => {
                         if let Some(alias_argv) = lookup_alias(lit.as_str()) {
                             let mut new_wargv = Vec::new();
@@ -288,7 +288,7 @@ fn run_command(
                         } else {
                             ref_wargv.clone()
                         }
-                    },
+                    }
                     _ => ref_wargv.clone(),
                 }
             } else {
@@ -302,7 +302,10 @@ fn run_command(
 
             // Functions
             if let Some(var) = get_var(scope, argv[0].as_str()) {
-                if let Variable { value: Value::Function(body) } = var.as_ref() {
+                if let Variable {
+                    value: Value::Function(body),
+                } = var.as_ref()
+                {
                     return run_command(scope, &body, stdin, stdout, stderr);
                 }
             }
@@ -311,8 +314,8 @@ fn run_command(
             match run_internal_command(argv[0].as_str(), &argv) {
                 Ok(status) => {
                     return CommandResult::Internal { status };
-                },
-                Err(InternalCommandError::NotFound) => () /* Try external command. */,
+                }
+                Err(InternalCommandError::NotFound) => (), /* Try external command. */
             }
 
             // External commands
@@ -323,8 +326,12 @@ fn run_command(
                         let mut options = OpenOptions::new();
                         match &r.direction {
                             parser::RedirectionDirection::Input => options.read(true),
-                            parser::RedirectionDirection::Output => options.write(true).create(true),
-                            parser::RedirectionDirection::Append => options.write(true).append(true),
+                            parser::RedirectionDirection::Output => {
+                                options.write(true).create(true)
+                            }
+                            parser::RedirectionDirection::Append => {
+                                options.write(true).append(true)
+                            }
                         };
 
                         trace!("redirection: options={:?}", options);
@@ -372,21 +379,23 @@ fn run_command(
             };
             set_var(scope, name.as_str(), value);
             CommandResult::Internal { status: 0 }
-        },
-        parser::Command::If { condition, then_part, .. } => {
+        }
+        parser::Command::If {
+            condition,
+            then_part,
+            ..
+        } => {
             // TODO: else, elif
             if run_terms(scope, condition, stdin, stdout, stderr) == 0 {
-                    CommandResult::Internal {
-                        status: run_terms(scope, then_part, stdin, stdout, stderr)
-                    }
+                CommandResult::Internal {
+                    status: run_terms(scope, then_part, stdin, stdout, stderr),
+                }
             } else {
                 CommandResult::Internal { status: 0 }
             }
-        },
-        parser::Command::Group { terms } => {
-            CommandResult::Internal {
-                status: run_terms(scope, terms, stdin, stdout, stderr)
-            }
+        }
+        parser::Command::Group { terms } => CommandResult::Internal {
+            status: run_terms(scope, terms, stdin, stdout, stderr),
         },
         _ => panic!("TODO:"),
     }

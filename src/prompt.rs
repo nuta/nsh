@@ -1,18 +1,18 @@
+use crate::completion::Completions;
+use crate::input::InputMode;
+use crate::utils::get_env;
 use nom::types::CompleteStr as Input;
 use std::env;
-use termion;
-use syntect::highlighting::Style;
-use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 use syntect::easy::HighlightLines;
-use syntect::parsing::{SyntaxSet};
-use syntect::highlighting::{ThemeSet};
-use crate::input::{InputMode};
-use crate::completion::{Completions};
-use crate::utils::get_env;
+use syntect::highlighting::Style;
+use syntect::highlighting::ThemeSet;
+use syntect::parsing::SyntaxSet;
+use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+use termion;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Prompt {
-    spans: Vec<Span>
+    spans: Vec<Span>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -63,16 +63,13 @@ named!(prompt_parser<Input, Prompt>,
 
 fn parse_prompt(prompt: &str) -> Result<Prompt, ()> {
     match prompt_parser(Input(prompt)) {
-        Ok((_, prompt)) => {
-            Ok(prompt)
-        }
+        Ok((_, prompt)) => Ok(prompt),
         Err(err) => {
             trace!("prompt parse error: '{}'", &err);
             Err(())
         }
     }
 }
-
 
 /// Returns the length of the last line excluding escape sequences.
 fn draw_prompt(prompt: &Prompt) -> (String, usize) {
@@ -83,7 +80,7 @@ fn draw_prompt(prompt: &Prompt) -> (String, usize) {
             Span::Literal(s) => {
                 len += s.len();
                 buf.push_str(&s)
-            },
+            }
             Span::Color(c) => match c {
                 Color::Red => buf.push_str("\x1b[31m"),
                 Color::Blue => buf.push_str("\x1b[34m"),
@@ -98,19 +95,19 @@ fn draw_prompt(prompt: &Prompt) -> (String, usize) {
             Span::Newline => {
                 len = 0;
                 buf.push_str("\n")
-            },
+            }
             // TODO:
             Span::Username => {
                 let username = "spam";
                 len += username.len();
                 buf.push_str(username)
-            },
+            }
             // TODO:
             Span::Hostname => {
                 let hostname = "egg";
                 len += hostname.len();
                 buf.push_str(hostname)
-            },
+            }
             // TODO:
             Span::CurrentDir => {
                 if let Ok(current_dir) = env::current_dir() {
@@ -118,7 +115,7 @@ fn draw_prompt(prompt: &Prompt) -> (String, usize) {
                     len += path.len();
                     buf.push_str(path);
                 }
-            },
+            }
         }
     }
 
@@ -143,7 +140,10 @@ lazy_static! {
 
 fn create_highlighter(theme_name: &str) -> HighlightLines {
     let theme = &SYNTECT_STATIC.theme_set.themes[theme_name];
-    let syntax = SYNTECT_STATIC.syntax_set.find_syntax_by_extension("sh").unwrap();
+    let syntax = SYNTECT_STATIC
+        .syntax_set
+        .find_syntax_by_extension("sh")
+        .unwrap();
     HighlightLines::new(syntax, theme)
 }
 
@@ -151,7 +151,14 @@ static DEFAULT_PROMPT: &'static str = "\\c{red}\\c{bold}[\\u@\\h:\\W]$\\c{reset}
 
 /// Returns the number of lines of the rendered prompt and the rendered prompt.
 /// FIXME: too many arguments
-pub fn render_prompt(mode: InputMode, completions: &Completions,  prompt_base_y: u16, user_cursor: usize, user_input: &str, current_theme: &str) -> (u16, String) {
+pub fn render_prompt(
+    mode: InputMode,
+    completions: &Completions,
+    prompt_base_y: u16,
+    user_cursor: usize,
+    user_input: &str,
+    current_theme: &str,
+) -> (u16, String) {
     use std::fmt::Write;
     let mut buf = String::new();
     let rendered_lines;
@@ -175,19 +182,22 @@ pub fn render_prompt(mode: InputMode, completions: &Completions,  prompt_base_y:
 
     // Render the prompt and colored user input.
     let user_cursor_pos = (prompt_len + user_cursor + 1) as u16;
-    write!(buf, "{}{}{}{}{}",
+    write!(
+        buf,
+        "{}{}{}{}{}",
         termion::style::Reset,
         termion::cursor::Goto(1, 1 + prompt_base_y),
         prompt_str,
         colored_user_input,
         termion::style::Reset,
-    ).ok();
+    )
+    .ok();
 
     // Render completions.
     match mode {
         InputMode::Normal => {
             rendered_lines = 1;
-        },
+        }
         InputMode::Completion => {
             let entries_len = completions.len();
             let actual_lines = if entries_len < completions.display_lines() {
@@ -203,27 +213,40 @@ pub fn render_prompt(mode: InputMode, completions: &Completions,  prompt_base_y:
                 let completion_base_y = prompt_base_y + 1;
 
                 let results = completions.entries();
-                let iter = results.iter()
+                let iter = results
+                    .iter()
                     .skip(completions.display_index())
                     .take(completions.display_lines());
 
                 for (i, entry) in iter.enumerate() {
-                    write!(buf, "\n{}{}",
+                    write!(
+                        buf,
+                        "\n{}{}",
                         termion::cursor::Goto(1, 1 + completion_base_y + i as u16),
                         termion::clear::CurrentLine,
-                    ).ok();
+                    )
+                    .ok();
 
-                    let selected = (completions.display_index() + i) == completions.selected_index() as usize;
+                    let selected =
+                        (completions.display_index() + i) == completions.selected_index() as usize;
                     if selected {
                         write!(buf, "{}{}", termion::style::Underline, termion::style::Bold).ok();
                     } else {
-                        write!(buf, "{}{}", termion::style::NoUnderline, termion::style::NoBold).ok();
+                        write!(
+                            buf,
+                            "{}{}",
+                            termion::style::NoUnderline,
+                            termion::style::NoBold
+                        )
+                        .ok();
                     };
 
                     write!(buf, "{}{}", entry, termion::style::Reset).ok();
                 }
 
-                write!(buf, "\n{}{}{}{}{} {}/{} {}",
+                write!(
+                    buf,
+                    "\n{}{}{}{}{} {}/{} {}",
                     termion::cursor::Goto(1, 1 + completion_base_y + actual_lines),
                     termion::clear::CurrentLine,
                     termion::style::Bold,
@@ -232,25 +255,31 @@ pub fn render_prompt(mode: InputMode, completions: &Completions,  prompt_base_y:
                     completions.selected_index() + 1,
                     completions.len(),
                     termion::style::Reset
-                ).ok();
+                )
+                .ok();
             } else {
                 rendered_lines = 2;
-                write!(buf, "\n{}{}{}{}{}no candidates{}",
+                write!(
+                    buf,
+                    "\n{}{}{}{}{}no candidates{}",
                     termion::cursor::Goto(1, 1 + prompt_base_y + 1),
                     termion::clear::CurrentLine,
                     termion::style::Bold,
                     termion::color::Fg(termion::color::White),
                     termion::color::Bg(termion::color::Cyan),
                     termion::style::Reset
-                ).ok();
+                )
+                .ok();
             }
-        },
+        }
     }
 
     write!(
-        buf, "{}",
+        buf,
+        "{}",
         termion::cursor::Goto(user_cursor_pos, 1 + prompt_base_y)
-    ).ok();
+    )
+    .ok();
 
     (rendered_lines, buf)
 }

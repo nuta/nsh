@@ -1,10 +1,10 @@
-use std::env;
-use std::process;
-use std::path::Path;
+use crate::alias::alias_command;
+use crate::exec::ExitStatus;
 use dirs;
 use std::collections::BTreeMap;
-use crate::exec::ExitStatus;
-use crate::alias::alias_command;
+use std::env;
+use std::path::Path;
+use std::process;
 
 pub fn exit_command(argv: &[String]) -> ExitStatus {
     let exit_with = if let Some(exit_with) = argv.get(1) {
@@ -24,7 +24,10 @@ pub fn cd_command(argv: &[String]) -> ExitStatus {
                 dir.clone()
             } else {
                 let current_dir = env::current_dir().expect("failed to getcwd()");
-                Path::new(&current_dir).join(dir.clone()).to_string_lossy().into_owned()
+                Path::new(&current_dir)
+                    .join(dir.clone())
+                    .to_string_lossy()
+                    .into_owned()
             }
         }
         None => {
@@ -52,7 +55,7 @@ pub fn xkcd_rand_command(_argv: &[String]) -> ExitStatus {
 
 #[derive(Debug)]
 pub enum InternalCommandError {
-    NotFound
+    NotFound,
 }
 
 // TODO: Pass stdin, stdout, and stderr.
@@ -63,7 +66,10 @@ lazy_static! {
         commands.insert("alias", alias_command);
         commands.insert("cd", cd_command);
         commands.insert("exit", exit_command);
-        commands.insert("get-xkcd-true-random-number-chosen-by-fair-dice-roll", xkcd_rand_command);
+        commands.insert(
+            "get-xkcd-true-random-number-chosen-by-fair-dice-roll",
+            xkcd_rand_command,
+        );
         commands
     };
 }
@@ -74,4 +80,3 @@ pub fn run_internal_command(cmd: &str, argv: &[String]) -> Result<i32, InternalC
         _ => Err(InternalCommandError::NotFound),
     }
 }
-

@@ -11,19 +11,19 @@ extern crate lazy_static;
 #[macro_use]
 extern crate nom;
 extern crate clap;
-extern crate nix;
 extern crate dirs;
-extern crate termion;
+extern crate nix;
 extern crate syntect;
+extern crate termion;
 
-mod path_loader;
-mod exec;
-mod parser;
 mod alias;
 mod builtins;
-mod prompt;
-mod input;
 mod completion;
+mod exec;
+mod input;
+mod parser;
+mod path_loader;
+mod prompt;
 mod utils;
 
 use clap::{App, Arg};
@@ -34,7 +34,8 @@ use std::path::{Path, PathBuf};
 fn exec_file(script_file: &str) {
     let mut f = File::open(script_file).expect("failed to open a file");
     let mut script = String::new();
-    f.read_to_string(&mut script).expect("failed to load a file");
+    f.read_to_string(&mut script)
+        .expect("failed to load a file");
 
     match parser::parse_line(script.as_str()) {
         Ok(cmd) => {
@@ -51,11 +52,11 @@ fn resolve_and_create_history_file() -> Option<PathBuf> {
     if let Some(home_dir) = dirs::home_dir() {
         let history_path = Path::new(&home_dir).join(".nsh_history");
         if history_path.exists() {
-            return Some(history_path)
+            return Some(history_path);
         }
 
         if File::create(&history_path).is_ok() {
-            return Some(history_path)
+            return Some(history_path);
         }
     }
 
@@ -85,16 +86,16 @@ fn interactive_mode() {
             Ok(line) => {
                 println!();
                 line
-            },
+            }
             Err(input::InputError::Eof) => {
                 return;
-            },
+            }
         };
 
         match parser::parse_line(line.as_str()) {
             Ok(cmd) => {
                 exec::exec(&cmd);
-            },
+            }
             Err(parser::SyntaxError::Empty) => (), // Just ignore.
             Err(err) => {
                 eprintln!("nsh: parse error: {:?}", err);
@@ -103,11 +104,10 @@ fn interactive_mode() {
     }
 }
 
-
 static mut GLOBAL_LOGGER: Option<slog_scope::GlobalLoggerGuard> = None;
 fn init_log() {
-    use std::fs::OpenOptions;
     use slog::Drain;
+    use std::fs::OpenOptions;
 
     let file = OpenOptions::new()
         .create(true)
@@ -145,7 +145,7 @@ fn main() {
     if let Some(script) = args.value_of("script") {
         exec_file(script);
     } else {
-       // Interactive mode.
+        // Interactive mode.
         interactive_mode();
     }
 }
