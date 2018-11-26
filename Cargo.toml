@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Seiya Nuta <nuta@seiya.me>"]
 
 [dependencies]
-lazy_static = "*"
+lazy_static = "1"
 log = "*"
 slog = "*"
 slog-scope = "*"
