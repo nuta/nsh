@@ -166,7 +166,7 @@ fn is_digit(ch: char) -> bool {
     ch.is_ascii_digit()
 }
 
-fn is_valid_word_char(ch: char) -> bool {
+pub fn is_valid_word_char(ch: char) -> bool {
     match ch {
         '&' | '|' | ';' | '(' | ')' | '`' | '\n' | '\\' | '$' | '*' | '?' | '"' | '\'' => false,
         _ if is_whitespace(ch) => false,
