@@ -8,7 +8,7 @@ use std::os::unix::io::IntoRawFd;
 use std::ffi::CString;
 use std::sync::{Arc, Mutex};
 use path_loader::lookup_external_command;
-use internals::{run_internal_command, InternalCommandError};
+use builtins::{run_internal_command, InternalCommandError};
 use alias::lookup_alias;
 
 #[derive(Debug)]

@@ -19,7 +19,6 @@ extern crate syntect;
 mod path_loader;
 mod exec;
 mod parser;
-mod internals;
 mod alias;
 mod builtins;
 mod prompt;
