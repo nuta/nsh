@@ -5,7 +5,8 @@ cache: cargo
 rust:
   - nightly
   - beta
-  - stable
+# Rust Edition 2018 is not yet stable.
+#  - stable
 
 script:
   - cargo build --verbose
