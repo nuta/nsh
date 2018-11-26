@@ -65,6 +65,7 @@ pub enum Command {
         words: Vec<Word>,
         body: Vec<Term>,
     },
+    Break,
     Case {
         word: Word,
         items: Vec<CaseItem>,
@@ -555,6 +556,7 @@ named!(nonreserved_word<Input, Word>,
         not!(peek!(tag!("done"))) >>
         not!(peek!(tag!("case"))) >>
         not!(peek!(tag!("esac"))) >>
+        not!(peek!(tag!("break"))) >>
         not!(peek!(tag!("{"))) >>
         not!(peek!(tag!("}"))) >>
         not!(peek!(tag!("("))) >>
@@ -714,6 +716,13 @@ named!(for_command<Input, Command>,
     )
 );
 
+named!(break_command<Input, Command>,
+    do_parse!(
+        call!(keyword, "break") >>
+        ( Command::Break )
+    )
+);
+
 named!(case_item_patterns<Input, Vec<Word>>,
     alt!(
         do_parse!(
@@ -811,6 +820,7 @@ named!(command<Input, Command>,
         if_command |
         for_command |
         case_command |
+        break_command |
         group |
         func_def |
         do_parse!(
@@ -1510,6 +1520,74 @@ pub fn test_compound_commands() {
                                         assignments: vec![],
                                     }],
                                 }],
+                            },
+                        ],
+                    }],
+                }],
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line(concat!(
+            "for arg in hello world do",
+            "   if sometimes-true; then\n",
+            "       break\n",
+            "   fi\n",
+            "   something &\n",
+            "done"
+        )).unwrap(),
+        Ast {
+            terms: vec![Term {
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::For {
+                        var_name: "arg".into(),
+                        words: literal_word_vec!["hello", "world"],
+                        body: vec![
+                            Term {
+                                background: false,
+                                pipelines: vec![Pipeline {
+                                    run_if: RunIf::Always,
+                                    commands: vec![Command::If {
+                                        condition: vec![Term {
+                                            pipelines: vec![Pipeline {
+                                                run_if: RunIf::Always,
+                                                commands: vec![Command::SimpleCommand {
+                                                    argv: vec![lit!("sometimes-true")],
+                                                    redirects: vec![],
+                                                    assignments: vec![],
+                                                }],
+                                            }],
+                                            background: false,
+                                        }],
+                                        then_part: vec![Term {
+                                            pipelines: vec![Pipeline {
+                                                run_if: RunIf::Always,
+                                                commands: vec![Command::Break],
+                                            }],
+                                            background: false,
+                                        }],
+                                        elif_parts: vec![],
+                                        else_part: None,
+                                        redirects: vec![],
+                                    }]
+                                }]
+                            },
+                            Term {
+                                background: true,
+                                pipelines: vec![Pipeline {
+                                        run_if: RunIf::Always,
+                                        commands: vec![Command::SimpleCommand {
+                                            argv: vec![
+                                                lit!("something"),
+                                            ],
+                                            redirects: vec![],
+                                            assignments: vec![],
+                                        }],
+                                    }
+                                ]
                             },
                         ],
                     }],

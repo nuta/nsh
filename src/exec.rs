@@ -41,12 +41,18 @@ pub struct ExecEnv {
     scope: Scope,
 }
 
-pub type ExitStatus = i32;
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ExitStatus {
+    ExitedWith(i32),
+    Break,
+}
 
 #[derive(Debug, Copy, Clone)]
 enum CommandResult {
     External { pid: Pid },
     Internal { status: ExitStatus },
+    // break command
+    Break,
 }
 
 lazy_static! {
@@ -173,13 +179,14 @@ fn run_terms(
     stdout: RawFd,
     stderr: RawFd,
 ) -> ExitStatus {
-    let mut last_status = 0;
+    let mut last_status = ExitStatus::ExitedWith(0);
     for term in terms {
         for pipeline in &term.pipelines {
             // Should we execute the pipline?
-            match (last_status == 0, &pipeline.run_if) {
-                (true, RunIf::Success) => (),
-                (false, RunIf::Failure) => (),
+            match (last_status, &pipeline.run_if) {
+                (ExitStatus::ExitedWith(0), RunIf::Success) => (),
+                (ExitStatus::ExitedWith(_), RunIf::Failure) => (),
+                (ExitStatus::Break, _) => return ExitStatus::Break,
                 (_, RunIf::Always) => (),
                 _ => continue,
             }
@@ -228,11 +235,11 @@ fn run_pipeline(
         }
     }
 
-    let mut last_status = 0;
+    let mut last_status = ExitStatus::ExitedWith(0);
     match last_command_result {
         None => {
             trace!("nothing to execute");
-            last_status = 0;
+            last_status = ExitStatus::ExitedWith(0);
         }
         Some(CommandResult::Internal { status }) => {
             last_status = status;
@@ -255,9 +262,12 @@ fn run_pipeline(
                 };
 
                 if child == last_pid {
-                    last_status = status;
+                    last_status = ExitStatus::ExitedWith(status);
                 }
             }
+        },
+        Some(CommandResult::Break) => {
+            return ExitStatus::Break;
         }
     }
 
@@ -281,7 +291,7 @@ fn run_command(
             if ref_wargv.is_empty() {
                 // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
                 // named "foo.txt".
-                return CommandResult::Internal { status: 0 };
+                return CommandResult::Internal { status: ExitStatus::ExitedWith(0) };
             }
 
             // FIXME:
@@ -306,7 +316,7 @@ fn run_command(
 
             let argv = evaluate_words(scope, &wargv);
             if argv.is_empty() {
-                return CommandResult::Internal { status: 0 };
+                return CommandResult::Internal { status: ExitStatus::ExitedWith(0) };
             }
 
             // Functions
@@ -349,7 +359,7 @@ fn run_command(
                             fds.push((file.into_raw_fd(), r.fd as RawFd))
                         } else {
                             warn!("nsh: failed to open file: `{}'", filepath);
-                            return CommandResult::Internal { status: 1 };
+                            return CommandResult::Internal { status: ExitStatus::ExitedWith(1) };
                         }
                     }
                 }
@@ -368,7 +378,7 @@ fn run_command(
 
             match exec_command(argv, fds) {
                 Ok(pid) => CommandResult::External { pid },
-                Err(_) => CommandResult::Internal { status: -1 },
+                Err(_) => CommandResult::Internal { status: ExitStatus::ExitedWith(-1) },
             }
         }
         parser::Command::Assignment { assignments } => {
@@ -379,14 +389,14 @@ fn run_command(
 
                 set_var(scope, name.as_str(), value)
             }
-            CommandResult::Internal { status: 0 }
+            CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
         }
         parser::Command::FunctionDef { name, body } => {
             let value = Variable {
                 value: Value::Function(body.clone()),
             };
             set_var(scope, name.as_str(), value);
-            CommandResult::Internal { status: 0 }
+            CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
         }
         parser::Command::If {
             condition,
@@ -394,12 +404,13 @@ fn run_command(
             ..
         } => {
             // TODO: else, elif
-            if run_terms(scope, condition, stdin, stdout, stderr) == 0 {
+            let result = run_terms(scope, condition, stdin, stdout, stderr);
+            if result == ExitStatus::ExitedWith(0) {
                 CommandResult::Internal {
                     status: run_terms(scope, then_part, stdin, stdout, stderr),
                 }
             } else {
-                CommandResult::Internal { status: 0 }
+                CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
             }
         }
         parser::Command::Group { terms } => CommandResult::Internal {
@@ -409,11 +420,19 @@ fn run_command(
             for word in words {
                 let var = Variable::from_string(evaluate_word(scope, word));
                 set_var(scope, &var_name, var);
-                run_terms(scope, body, stdin, stdout, stderr);
+
+                let result = run_terms(scope, body, stdin, stdout, stderr);
+                match result {
+                    ExitStatus::Break => break,
+                    _ => (),
+                }
             }
 
-            CommandResult::Internal { status: 0 }
+            CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
         },
+        parser::Command::Break => {
+            CommandResult::Break
+        }
         parser::Command::Case {..} => {
             // TODO:
             unimplemented!();

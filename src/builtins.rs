@@ -40,17 +40,17 @@ pub fn cd_command(argv: &[String]) -> ExitStatus {
     };
 
     if env::set_current_dir(&dir).is_ok() {
-        0
+        ExitStatus::ExitedWith(0)
     } else {
         error!("failed to cd into {}", dir);
-        1
+        ExitStatus::ExitedWith(1)
     }
 }
 
 /// https://xkcd.com/221/
 pub fn xkcd_rand_command(_argv: &[String]) -> ExitStatus {
     println!("4");
-    0
+    ExitStatus::ExitedWith(0)
 }
 
 #[derive(Debug)]
@@ -74,7 +74,7 @@ lazy_static! {
     };
 }
 
-pub fn run_internal_command(cmd: &str, argv: &[String]) -> Result<i32, InternalCommandError> {
+pub fn run_internal_command(cmd: &str, argv: &[String]) -> Result<ExitStatus, InternalCommandError> {
     match INTERNAL_COMMANDS.get(cmd) {
         Some(func) => Ok(func(argv)),
         _ => Err(InternalCommandError::NotFound),

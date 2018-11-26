@@ -23,5 +23,5 @@ pub fn alias_command(argv: &[String]) -> ExitStatus {
         add_alias(alias);
     }
 
-    0
+    ExitStatus::ExitedWith(0)
 }
