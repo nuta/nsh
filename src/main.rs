@@ -85,10 +85,9 @@ fn interactive_mode() {
                 println!();
                 line
             },
-            Err(err) => {
-                println!();
-                panic!("something went wrong: {:?}", err);
-            }
+            Err(input::InputError::Eof) => {
+                return;
+            },
         };
 
         match parser::parse_line(line.as_str()) {
