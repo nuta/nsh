@@ -354,12 +354,11 @@ fn run_command(
                 }
             }
 
-            // Use provided stdin/stdout/stderr if these are not specified in
-            // redirections. TODO: I thinks there is better solution than this.
+            // Use provided (e.g. pipeline) stdin/stdout/stderr if no redirections speicfied.
             if fds.iter().any(|(_, dst)| *dst == 0) {
                 fds.push((stdin, 0));
             }
-            if fds.iter().any(|(_, dst)| *dst == 0) {
+            if fds.iter().any(|(_, dst)| *dst == 1) {
                 fds.push((stdout, 1));
             }
             if fds.iter().any(|(_, dst)| *dst == 2) {
