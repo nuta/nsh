@@ -13,11 +13,11 @@ slog-stdlog = "*"
 slog-term = "*"
 nom = "4"
 nix = "0.11"
-clap = "2"
 dirs = "1"
 syntect = "3"
 crossbeam = "0.5"
 crossbeam-channel = "0.3"
+structopt = "0.2"
 
 # The latest version published to the crates.io does not include
 # a bug fix to DetectCursorPos: https://github.com/redox-os/termion/pull/145

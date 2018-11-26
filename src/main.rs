@@ -10,7 +10,7 @@ extern crate log;
 extern crate lazy_static;
 #[macro_use]
 extern crate nom;
-extern crate clap;
+extern crate structopt;
 extern crate dirs;
 extern crate nix;
 extern crate syntect;
@@ -31,19 +31,23 @@ mod utils;
 mod history;
 mod fuzzy;
 
-use clap::{App, Arg};
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use structopt::StructOpt;
 
-fn exec_file(script_file: &str) {
+fn exec_file(script_file: PathBuf) {
     let mut f = File::open(script_file).expect("failed to open a file");
     let mut script = String::new();
     f.read_to_string(&mut script)
         .expect("failed to load a file");
 
-    match parser::parse_line(script.as_str()) {
+    exec_str(script.as_str());
+}
+
+fn exec_str(script: &str) {
+    match parser::parse_line(script) {
         Ok(cmd) => {
             exec::exec(&cmd);
         }
@@ -74,7 +78,7 @@ fn interactive_mode() {
     if let Some(home_dir) = dirs::home_dir() {
         let nshrc_path = Path::new(&home_dir).join(".nshrc");
         if nshrc_path.exists() {
-            exec_file(nshrc_path.to_str().unwrap());
+            exec_file(nshrc_path);
         }
     }
 
@@ -132,6 +136,19 @@ fn init_log() {
     slog_stdlog::init().unwrap();
 }
 
+#[derive(StructOpt, Debug)]
+#[structopt(name="nsh", about="A command-line shell that focuses on performance and productivity.")]
+struct Opt {
+    /// admin_level to consider
+    #[structopt(short="c")]
+    command: Option<String>,
+
+    /// Files to process
+    #[structopt(name="FILE", parse(from_os_str))]
+    file: Option<PathBuf>,
+}
+
+
 pub static mut TIME_STARTED: Option<SystemTime> = None;
 
 fn main() {
@@ -143,23 +160,11 @@ fn main() {
     worker::start_worker_threads();
     path::init();
     history::init();
+    let opt = Opt::from_args();
 
-    let args = App::new("nsh")
-        .version("0.0.0")
-        .author("Seiya Nuta <nuta@seiya.me>")
-        .about("A command-line shell that focuses on performance and productivity.")
-        .arg(
-            Arg::with_name("script")
-                .help("The shell script file.")
-                .required(false)
-                .index(1),
-        )
-        .get_matches();
-
-    if let Some(script) = args.value_of("script") {
-        exec_file(script);
-    } else {
-        // Interactive mode.
-        interactive_mode();
+    match (opt.command, opt.file) {
+        (Some(command), _) => exec_str(&command),
+        (_, Some(file)) => exec_file(file),
+        (_, _) => interactive_mode(),
     }
 }
