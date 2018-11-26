@@ -40,7 +40,6 @@ fn load_history() {
         for line in BufReader::new(file).lines() {
             if let Ok(line) = line {
                 let mut hist = HISTORY.lock().unwrap();
-                println!("{:?}", line);
                 hist.append(Arc::new(line));
             }
         }
