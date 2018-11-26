@@ -23,4 +23,3 @@ if [ "$foo" != "this is a string" ]; then
 fi
 
 echo "ok!"
-exit 123

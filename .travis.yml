@@ -9,8 +9,10 @@ rust:
 #  - stable
 
 script:
-  - cargo build --verbose
-  - cargo test --verbose
+  - cargo build
+  - cargo build --release
+  - cargo test
+  - ./tools/run-blackbox-tests.py
 
 notifications:
   email: false
