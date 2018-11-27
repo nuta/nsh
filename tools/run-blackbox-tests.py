@@ -10,7 +10,19 @@ def run_test(test):
     cprint(f"Running {test}...", attrs=["bold"], end="")
     sys.stdout.flush()
 
-    expected = open(Path(test).with_suffix(".stdout")).read()
+    expected_stdout_path = Path(test).with_suffix(".stdout")
+    expected = open(expected_stdout_path).read()
+
+    # Before running nsh, make sure that bash outputs expected stdout.
+    bash_stdout = subprocess.check_output(["bash", test]).decode("utf-8")
+    if bash_stdout.rstrip() != expected.rstrip():
+        cprint(f"unexpected bash output (fix {expected_stdout_path}!)", "red", attrs=["bold"])
+        print("expected ----------------------------")
+        print(expected)
+        print("bash stdout -------------------------")
+        print(stdout)
+        return
+
     try:
         stdout = subprocess.check_output(
             ["./target/debug/nsh", test],
