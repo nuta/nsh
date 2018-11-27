@@ -195,16 +195,27 @@ fn is_whitespace(ch: char) -> bool {
     " \t".to_owned().contains(ch)
 }
 
-named!(escape_sequence<Input, Span>,
-    do_parse!(
-        tag!("\\") >>
-        span: alt!(
-            map!(tag!("n"), |_| Span::Literal("\n".to_string()))
-            | map!(tag!("e"), |_| Span::Literal("\x1b".to_string()))
-        ) >>
-        ( span )
-    )
-);
+// echo "double quote \" is a escaped"
+fn escape_sequence(buf: Input, in_quote: bool) -> IResult<Input, Span> {
+    if in_quote {
+        do_parse!(buf,
+            tag!("\\") >>
+            span: alt!(
+                map!(tag!("n"), |_| Span::Literal("\n".to_string()))
+                | map!(tag!("e"), |_| Span::Literal("\x1b".to_string()))
+                | map!(tag!("a"), |_| Span::Literal("\x07".to_string()))
+                | map!(tag!("t"), |_| Span::Literal("\t".to_string()))
+                | map!(tag!("r"), |_| Span::Literal("\r".to_string()))
+                // \\, \', and \"
+                | map!(one_of!("\"\'\\"), |ch| Span::Literal(ch.to_string()))
+            ) >>
+            ( span )
+        )
+    } else {
+        // `echo a\nd` will output `and'.
+        do_parse!(buf, tag!("\\") >> ch: take!(1) >> (Span::Literal(ch.to_string())))
+    }
+}
 
 named!(pattern<Input, Span>,
     alt!(
@@ -477,7 +488,7 @@ fn parse_word(_buf: Input, in_expansion: bool, in_quote: bool) -> IResult<Input,
             pattern
                 | expansion
                 | backquoted_command_expansion
-                | escape_sequence
+                | call!(escape_sequence, in_quote)
                 | call!(literal_span, in_quote, in_expansion)
         ) {
             Ok((rest, span)) => {
@@ -2269,14 +2280,14 @@ pub fn test_string_literal() {
 #[test]
 pub fn test_escape_sequences() {
     assert_eq!(
-        parse_line("echo \\e[1m"),
+        parse_line("echo \"\\e[1m\" a\"b\\\"c\"d \\this_\\i\\s_\\normal"),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
-                        argv: vec![lit!("echo"), lit!("\x1b[1m")],
+                        argv: vec![lit!("echo"), lit!("\u{1b}[1m"), lit!("ab\"cd"), lit!("this_is_normal")],
                         assignments: vec![],
                         redirects: vec![],
                     }]
