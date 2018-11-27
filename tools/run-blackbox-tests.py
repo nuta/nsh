@@ -12,7 +12,11 @@ def run_test(test):
 
     expected_stdout_path = Path(test).with_suffix(".stdout")
     expected_stderr_path = Path(test).with_suffix(".stderr")
-    expected_stdout = open(expected_stdout_path).read()
+
+    try:
+        expected_stdout = open(expected_stdout_path).read()
+    except FileNotFoundError:
+        expected_stdout = ""
 
     try:
         expected_stderr = open(expected_stderr_path).read()
@@ -20,8 +24,10 @@ def run_test(test):
         expected_stderr = ""
 
     # Before running nsh, make sure that bash outputs expected stdout.
+    test_body = open(test).read()
+    disable_output_check = "disable-output-check" in test_body
     bash_stdout = subprocess.check_output(["bash", test], stderr=subprocess.PIPE).decode("utf-8")
-    if bash_stdout.rstrip() != expected_stdout.rstrip():
+    if disable_output_check == False and bash_stdout.rstrip() != expected_stdout.rstrip():
         cprint(f"unexpected bash output (fix {expected_stdout_path}!)", "red", attrs=["bold"])
         print("expected ----------------------------")
         print(expected_stdout)
@@ -41,14 +47,10 @@ def run_test(test):
     )
 
     returncode = p.wait()
-
-    if returncode != 0:
-        cprint(f"exited with {returncode}", "red", attrs=["bold"])
-        return
-
     stdout = p.stdout.read().decode("utf-8")
     stderr = p.stderr.read().decode("utf-8")
-    if stdout.rstrip() != expected_stdout.rstrip():
+
+    if disable_output_check == False and stdout.rstrip() != expected_stdout.rstrip():
         cprint("unexpected stdout", "red", attrs=["bold"])
         print("expected ----------------------------")
         print(expected_stdout)
@@ -58,12 +60,16 @@ def run_test(test):
         print(stderr)
         return
 
-    if stderr.rstrip() != expected_stderr.rstrip():
+    if disable_output_check == False and stderr.rstrip() != expected_stderr.rstrip():
         cprint("unexpected stderr", "red", attrs=["bold"])
         print("expected ----------------------------")
         print(expected_stderr)
         print("stderr ------------------------------")
         print(stderr)
+        return
+
+    if returncode != 0:
+        cprint(f"exited with {returncode}", "red", attrs=["bold"])
         return
 
     cprint("ok", "green", attrs=["bold"])
