@@ -30,6 +30,13 @@ impl Variable {
             value: Value::String(value),
         }
     }
+
+    pub fn value<'a>(&'a self) -> &'a str {
+        match &self.value {
+            Value::String(value) => value,
+            _ => "(function)",
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -71,6 +78,14 @@ impl Scope {
 
     pub fn get<'a, 'b>(&'a self, key: &'b str) -> Option<Arc<Variable>> {
         self.vars.get(key).cloned()
+    }
+
+    pub fn export(&mut self, name: &str) {
+        self.exported.insert(name.to_string());
+    }
+
+    pub fn exported_names(&self) -> std::collections::hash_set::Iter<String> {
+        self.exported.iter()
     }
 }
 
@@ -138,7 +153,7 @@ fn move_fd(src: RawFd, dst: RawFd) {
     }
 }
 
-fn exec_command(argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> {
+fn exec_command(scope: &Scope, argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> {
     let argv0 = match lookup_external_command(&argv[0]) {
         Some(argv0) => CString::new(argv0).unwrap(),
         None => {
@@ -159,6 +174,13 @@ fn exec_command(argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> 
             // Initialize stdin/stdout/stderr and redirections.
             for (src, dst) in fds {
                 move_fd(src, dst);
+            }
+
+            // Set exported variables.
+            for name in scope.exported_names() {
+                if let Some(var) = scope.get(name) {
+                    std::env::set_var(name, var.value());
+                }
             }
 
             // TODO: inherit exported variables
@@ -376,7 +398,7 @@ fn run_command(
                 fds.push((stderr, 2));
             }
 
-            match exec_command(argv, fds) {
+            match exec_command(scope, argv, fds) {
                 Ok(pid) => CommandResult::External { pid },
                 Err(_) => CommandResult::Internal { status: ExitStatus::ExitedWith(-1) },
             }

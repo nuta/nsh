@@ -94,6 +94,20 @@ pub fn source_command(ctx: &mut InternalCommandContext) -> ExitStatus {
     }
 }
 
+pub fn export_command(ctx: &mut InternalCommandContext) -> ExitStatus {
+    if let Some(name) = ctx.argv.get(1) {
+        ctx.scope.export(&name);
+    } else {
+        for name in ctx.scope.exported_names() {
+            if let Some(var) = ctx.scope.get(name) {
+                write!(ctx.stdout, "{}={}\n", name, var.value()).ok();
+            }
+        }
+    }
+
+    ExitStatus::ExitedWith(0)
+}
+
 /// https://xkcd.com/221/
 pub fn xkcd_rand_command(ctx: &mut InternalCommandContext) -> ExitStatus {
     write!(ctx.stdout, "4\n").ok();
@@ -111,6 +125,7 @@ lazy_static! {
         commands.insert("cd", cd_command);
         commands.insert("source", source_command);
         commands.insert("exit", exit_command);
+        commands.insert("export", export_command);
         commands.insert(
             "get-xkcd-true-random-number-chosen-by-fair-dice-roll",
             xkcd_rand_command,
