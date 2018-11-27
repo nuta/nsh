@@ -1,6 +1,6 @@
 use crate::alias::lookup_alias;
 use crate::builtins::{run_internal_command, InternalCommandError};
-use crate::parser::{self, Ast, ExpansionOp, RunIf, Span, Word};
+use crate::parser::{self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer};
 use crate::path::lookup_external_command;
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{close, dup2, execv, fork, pipe, ForkResult, Pid};
@@ -16,6 +16,7 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum Value {
     String(String),
+    Array(Vec<String>),
     Function(Box<parser::Command>),
 }
 
@@ -31,10 +32,36 @@ impl Variable {
         }
     }
 
+    // References value as `$foo`.
     pub fn value<'a>(&'a self) -> &'a str {
         match &self.value {
             Value::String(value) => value,
-            _ => "(function)",
+            Value::Function(_) => "(function)",
+            // Bash returns the first element in the array.
+            Value::Array(elems) => {
+                match elems.get(0) {
+                    Some(elem) => elem.as_str(),
+                    _ => "",
+                }
+            }
+        }
+    }
+
+    // References value as `$foo[expr]`.
+    pub fn value_at<'a>(&'a self, scope: &Scope, index: &Expr) -> &'a str {
+        match &self.value {
+            Value::Array(elems) => {
+                let index = evaluate_expr(scope, index);
+                if index < 0 {
+                    return "";
+                }
+
+                match elems.get(index as usize) {
+                    Some(elem) => elem.as_str(),
+                    _ => "",
+                }
+            },
+            _ => "",
         }
     }
 }
@@ -91,6 +118,34 @@ impl Scope {
     }
 }
 
+fn evaluate_expr(scope: &Scope, expr: &Expr) -> i32 {
+    match expr {
+        Expr::Literal(value) => *value,
+        Expr::Parameter { name } => {
+            if let Some(var) = scope.get(name) {
+                match &var.value {
+                    Value::String(s) => s.parse().unwrap_or(0),
+                    _ => 0,
+                }
+            } else {
+                0
+            }
+        },
+        Expr::Add(BinaryExpr { lhs, rhs }) => {
+            evaluate_expr(scope, lhs) + evaluate_expr(scope, rhs)
+        },
+        Expr::Sub(BinaryExpr { lhs, rhs }) => {
+            evaluate_expr(scope, lhs) - evaluate_expr(scope, rhs)
+        },
+        Expr::Mul(BinaryExpr { lhs, rhs }) => {
+            evaluate_expr(scope, lhs) * evaluate_expr(scope, rhs)
+        },
+        Expr::Div(BinaryExpr { lhs, rhs }) => {
+            evaluate_expr(scope, lhs) / evaluate_expr(scope, rhs)
+        },
+    }
+}
+
 fn expand_param(scope: &mut Scope, name: &str, op: &ExpansionOp) -> String {
     match name {
         "?" => {
@@ -98,15 +153,11 @@ fn expand_param(scope: &mut Scope, name: &str, op: &ExpansionOp) -> String {
         },
         _ => {
             if let Some(var) = scope.get(name) {
-                let string_value = match var.value {
-                    Value::String(ref s) => s.clone(),
-                    _ => panic!("TODO: cannot expand"),
-                };
-
                 // $<name> is defined and contains a string value.
+                let value = var.value().to_string();
                 return match op {
-                    ExpansionOp::Length => string_value.len().to_string(),
-                    _ => string_value,
+                    ExpansionOp::Length => value.len().to_string(),
+                    _ => value,
                 };
             }
         }
@@ -130,6 +181,13 @@ fn evaluate_span(scope: &mut Scope, span: &Span) -> String {
     match span {
         Span::Literal(s) => s.clone(),
         Span::Parameter { name, op } => expand_param(scope, name, op),
+        Span::ArrayParameter { name, index } => {
+            if let Some(var) = scope.get(name) {
+                var.value_at(scope, index).to_string()
+            } else {
+                "".to_owned()
+            }
+        },
         _ => panic!("TODO:"),
     }
 }
@@ -419,12 +477,26 @@ fn run_command(
             }
         }
         parser::Command::Assignment { assignments } => {
-            for (name, value) in assignments {
-                let value = Variable {
-                    value: Value::String(evaluate_word(scope, value)),
+            for assign in assignments {
+                let value = match assign.initializer {
+                    Initializer::String(ref word) =>  {
+                        Variable {
+                            value: Value::String(evaluate_word(scope, word)),
+                        }
+                    },
+                    Initializer::Array(ref words) =>  {
+                        let mut elems = Vec::new();
+                        for word in words {
+                            elems.push(evaluate_word(scope, word));
+                        }
+
+                        Variable {
+                            value: Value::Array(elems),
+                        }
+                    }
                 };
 
-                scope.set(&name, value)
+                scope.set(&assign.name, value)
             }
             CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
         }

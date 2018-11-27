@@ -42,16 +42,29 @@ pub struct ElIf {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Initializer {
+    Array(Vec<Word>),
+    String(Word),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Assignment {
+    pub name: String,
+    pub initializer: Initializer,
+    pub index: Option<Expr>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Command {
     SimpleCommand {
         argv: Vec<Word>,
         redirects: Vec<Redirection>,
         /// Assignment prefixes. (e.g. "RAILS_ENV=production rails server")
-        assignments: Vec<(String, Word)>,
+        assignments: Vec<Assignment>,
     },
     // foo=1, bar="Hello World", ...
     Assignment {
-        assignments: Vec<(String, Word)>,
+        assignments: Vec<Assignment>,
     },
     If {
         condition: Vec<Term>,
@@ -115,8 +128,8 @@ pub enum ExpansionOp {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BinaryExpr {
-    lhs: Box<Expr>,
-    rhs: Box<Expr>,
+    pub lhs: Box<Expr>,
+    pub rhs: Box<Expr>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -137,6 +150,8 @@ pub enum Span {
     Tilde(Option<String>),
     // $foo, ${foo}, ${foo:-default}, ...
     Parameter { name: String, op: ExpansionOp },
+    // $${foo[1]} ...
+    ArrayParameter { name: String, index: Expr },
     // $(echo hello && echo world)
     Command { body: Vec<Term> },
     // $((1 + 2 * 3))
@@ -264,8 +279,26 @@ named!(parameter_w_braces<Input, Span>,
     )
 );
 
+
+named!(array_parameter<Input, Span>,
+    do_parse!(
+        tag!("{") >>
+        name: var_name >>
+        tag!("[") >>
+        index: expr >>
+        tag!("]") >>
+        tag!("}") >>
+        ({
+            Span::ArrayParameter {
+                name: name.to_string(),
+                index,
+            }
+        })
+    )
+);
+
 named!(parameter_expansion<Input, Span>,
-    alt!(parameter_w_braces | parameter_wo_braces)
+    alt!(array_parameter | parameter_w_braces | parameter_wo_braces)
 );
 
 named!(command_expansion<Input, Span>,
@@ -614,14 +647,45 @@ named!(redirection<Input, Redirection>,
     )
 );
 
-named!(assignment<Input, (String, Word)>,
+named!(assignment<Input, Assignment>,
     do_parse!(
-        peek!(do_parse!(var_name >> tag!("=") >> (()))) >>
+        // Ensure that the following program is an assignment.
+        peek!(do_parse!(
+            var_name >>
+            opt!(
+                do_parse!(
+                    tag!("[") >>
+                    expr >>
+                    tag!("]") >>
+                    ( () )
+                )
+            ) >>
+            tag!("=") >>
+            ( () )
+        )) >>
         name: var_name >>
+        index: opt!(
+            do_parse!(
+                tag!("[") >>
+                index: expr >>
+                tag!("]") >>
+                ( index )
+            )
+        ) >>
         tag!("=") >>
-        value: word >>
+        initializer: alt!(
+            // array initializer (a b c d)
+            map!(do_parse!(
+                tag!("(") >>
+                words: many0!(word) >>
+                tag!(")") >>
+                ( words )
+            ), Initializer::Array)
+            // otherwise
+            | map!(word, Initializer::String)
+        ) >>
         whitespaces >>
-        ( (name, value) )
+        ( Assignment { name, index, initializer } )
     )
 );
 
@@ -1240,11 +1304,16 @@ pub fn test_simple_commands() {
                         argv: literal_word_vec!["rails", "s"],
                         redirects: vec![],
                         assignments: vec![
-                            ("PORT".into(), Word(vec![Span::Literal("1234".into())])),
-                            (
-                                "RAILS_ENV".into(),
-                                Word(vec![Span::Literal("production".into())]),
-                            ),
+                            Assignment {
+                                name: "PORT".into(),
+                                initializer: Initializer::String(Word(vec![Span::Literal("1234".into())])),
+                                index: None,
+                            },
+                            Assignment {
+                                name: "RAILS_ENV".into(),
+                                initializer: Initializer::String(Word(vec![Span::Literal("production".into())])),
+                                index: None,
+                            }
                         ],
                     }],
                 }],
@@ -2017,7 +2086,68 @@ pub fn test_assignments() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Assignment {
-                        assignments: vec![("foo".into(), Word(vec![Span::Literal("bar".into())]))],
+                        assignments: vec![
+                            Assignment {
+                                name: "foo".into(),
+                                initializer: Initializer::String(Word(vec![Span::Literal("bar".into())])),
+                                index: None,
+                            }
+                        ],
+                    }],
+                }],
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line("foo=('I wanna quit gym' 'holy moly' egg 'spam spam beans spam')").unwrap(),
+        Ast {
+            terms: vec![Term {
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::Assignment {
+                        assignments: vec![
+                            Assignment {
+                                name: "foo".into(),
+                                initializer: Initializer::Array(vec![
+                                    Word(vec![Span::Literal("I wanna quit gym".into())]),
+                                    Word(vec![Span::Literal("holy moly".into())]),
+                                    Word(vec![Span::Literal("egg".into())]),
+                                    Word(vec![Span::Literal("spam spam beans spam".into())]),
+                                ]),
+                                index: None,
+                            }
+                        ],
+                    }],
+                }],
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line("foo[k + 7 * c]=bar").unwrap(),
+        Ast {
+            terms: vec![Term {
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::Assignment {
+                        assignments: vec![
+                            Assignment {
+                                name: "foo".into(),
+                                initializer: Initializer::String(Word(vec![Span::Literal("bar".into())])),
+                                index: Some(Expr::Add(
+                                    BinaryExpr {
+                                        lhs: Box::new(Expr::Parameter { name: "k".into() }),
+                                        rhs: Box::new(Expr::Mul(BinaryExpr {
+                                            lhs: Box::new(Expr::Literal(7)),
+                                            rhs: Box::new(Expr::Parameter { name: "c".into() }),
+                                        }))
+                                    }
+                                )),
+                            }
+                        ],
                     }],
                 }],
             }],
@@ -2033,11 +2163,16 @@ pub fn test_assignments() {
                     run_if: RunIf::Always,
                     commands: vec![Command::Assignment {
                         assignments: vec![
-                            ("nobody".into(), Word(vec![Span::Literal("expects".into())])),
-                            (
-                                "the".into(),
-                                Word(vec![Span::Literal("spanish inquisition".into())]),
-                            ),
+                            Assignment {
+                                name: "nobody".into(),
+                                initializer: Initializer::String(Word(vec![Span::Literal("expects".into())])),
+                                index: None
+                            },
+                            Assignment {
+                                name: "the".into(),
+                                initializer: Initializer::String(Word(vec![Span::Literal("spanish inquisition".into())])),
+                                index: None
+                            },
                         ],
                     }],
                 }],
