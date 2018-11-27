@@ -546,23 +546,23 @@ named_args!(do_word(in_expansion: bool)<Input, Word>,
 named!(nonreserved_word<Input, Word>,
     do_parse!(
         whitespaces >>
-        not!(peek!(tag!("if"))) >>
-        not!(peek!(tag!("elif"))) >>
-        not!(peek!(tag!("then"))) >>
-        not!(peek!(tag!("else"))) >>
-        not!(peek!(tag!("fi"))) >>
-        not!(peek!(tag!("for"))) >>
-        not!(peek!(tag!("in"))) >>
-        not!(peek!(tag!("do"))) >>
-        not!(peek!(tag!("done"))) >>
-        not!(peek!(tag!("case"))) >>
-        not!(peek!(tag!("esac"))) >>
-        not!(peek!(tag!("break"))) >>
-        not!(peek!(tag!("{"))) >>
-        not!(peek!(tag!("}"))) >>
-        not!(peek!(tag!("("))) >>
-        not!(peek!(tag!(")"))) >>
-        not!(peek!(tag!("`"))) >>
+        not!(peek!(call!(keyword, "if"))) >>
+        not!(peek!(call!(keyword, "elif"))) >>
+        not!(peek!(call!(keyword, "then"))) >>
+        not!(peek!(call!(keyword, "else"))) >>
+        not!(peek!(call!(keyword, "fi"))) >>
+        not!(peek!(call!(keyword, "for"))) >>
+        not!(peek!(call!(keyword, "in"))) >>
+        not!(peek!(call!(keyword, "do"))) >>
+        not!(peek!(call!(keyword, "done"))) >>
+        not!(peek!(call!(keyword, "case"))) >>
+        not!(peek!(call!(keyword, "esac"))) >>
+        not!(peek!(call!(keyword, "break"))) >>
+        not!(peek!(call!(keyword, "{"))) >>
+        not!(peek!(call!(keyword, "}"))) >>
+        not!(peek!(call!(keyword, "("))) >>
+        not!(peek!(call!(keyword, ")"))) >>
+        not!(peek!(call!(keyword, "`"))) >>
         word: word >>
         ( word )
     )
@@ -648,6 +648,7 @@ named_args!(keyword<'a>(keyword: &'static str)<Input<'a>, ()>,
     do_parse!(
         take_while!(|c| is_whitespace(c) || c == ';' || c == '\n') >>
         tag!(keyword) >>
+        peek!(alt!(eof!() | take_while1!(|c| !is_valid_word_char(c)))) >>
         take_while!(|c| is_whitespace(c) || c == ';' || c == '\n') >>
         ( () )
     )
@@ -1267,8 +1268,8 @@ pub fn test_simple_commands() {
 #[test]
 pub fn test_compound_commands() {
     assert_eq!(
-        parse_line("if true; then echo it works; fi").unwrap(),
-        Ast {
+        parse_line("if true; then echo it works; fi"),
+        Ok(Ast {
             terms: vec![Term {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
@@ -1302,7 +1303,7 @@ pub fn test_compound_commands() {
                 }],
                 background: false,
             }],
-        }
+        })
     );
 
     assert_eq!(
