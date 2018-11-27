@@ -45,7 +45,7 @@ named!(span<Input, Span>,
         map!(tag!("\\u"), |_| Span::Username)
         | map!(tag!("\\h"), |_| Span::Hostname)
         | map!(tag!("\\W"), |_| Span::CurrentDir)
-        | map!(tag!("\\n"), |_| Span::Newline)
+        | map!(tag!("\n"), |_| Span::Newline)
         | map!(tag!("\\c{reset}"), |_| Span::Color(Color::Reset))
         | map!(tag!("\\c{bold}"), |_| Span::Color(Color::Bold))
         | map!(tag!("\\c{underline}"), |_| Span::Color(Color::Underline))
@@ -188,7 +188,7 @@ fn create_highlighter(theme_name: &str) -> HighlightLines {
     HighlightLines::new(syntax, theme)
 }
 
-static DEFAULT_PROMPT: &'static str = "\\c{red}\\c{bold}[\\u@\\h:\\W]$\\c{reset} ";
+static DEFAULT_PROMPT: &'static str = "\\c{cyan}\\c{bold}\\u@\\h:\\c{reset} \\W\n$\\c{reset} ";
 
 /// Returns the number of lines of the rendered prompt and the rendered prompt.
 /// FIXME: too many arguments
@@ -215,29 +215,31 @@ pub fn render_prompt(
 
     // Parse and render the prompt.
     let ps1 = get_env("PS1", DEFAULT_PROMPT);
-    let (prompt_str, prompt_len) = if let Ok(fmt) = parse_prompt(ps1.as_str()) {
+    let (prompt_str, prompt_last_line_len) = if let Ok(fmt) = parse_prompt(ps1.as_str()) {
         draw_prompt(&fmt)
     } else {
         ("$ ".to_owned(), 2)
     };
 
     // Render the prompt and colored user input.
-    let user_cursor_pos = (prompt_len + user_cursor + 1) as u16;
+    let user_cursor_pos = (prompt_last_line_len + user_cursor + 1) as u16;
     write!(
         buf,
         "{}{}{}{}{}",
         termion::style::Reset,
         termion::cursor::Goto(1, 1 + prompt_base_y),
-        prompt_str,
+        prompt_str.to_string().replace("\n", "\r\n"),
         colored_user_input,
         termion::style::Reset,
     )
     .ok();
 
     // Render completions.
+    let prompt_lines = prompt_str.chars().filter(|c| *c == '\n').count() as u16 + 1;
+    trace!("prompt_lines: {}", prompt_lines);
     match mode {
         InputMode::Normal => {
-            rendered_lines = 1;
+            rendered_lines = prompt_lines;
         }
         InputMode::Completion => {
             let entries_len = completions.len();
@@ -249,9 +251,9 @@ pub fn render_prompt(
 
             if actual_lines > 0 {
                 // The prompt line, completions, and "TAB to expand" line.
-                rendered_lines = 1 + actual_lines + 1;
+                rendered_lines = prompt_lines + actual_lines + 1;
                 // The beginning y of the completions.
-                let completion_base_y = prompt_base_y + 1;
+                let completion_base_y = prompt_base_y + prompt_lines;
 
                 let results = completions.entries();
                 let iter = results
@@ -299,7 +301,7 @@ pub fn render_prompt(
                 )
                 .ok();
             } else {
-                rendered_lines = 2;
+                rendered_lines = prompt_lines + 1;
                 write!(
                     buf,
                     "\n{}{}{}{}{}no candidates{}",
@@ -318,7 +320,7 @@ pub fn render_prompt(
     write!(
         buf,
         "{}",
-        termion::cursor::Goto(user_cursor_pos, 1 + prompt_base_y)
+        termion::cursor::Goto(user_cursor_pos, 1 + prompt_base_y + (prompt_lines - 1))
     )
     .ok();
 
@@ -328,7 +330,7 @@ pub fn render_prompt(
 #[test]
 fn test_prompt_parser() {
     assert_eq!(
-        parse_prompt("\\u at \\h in \\W\\n$ "),
+        parse_prompt("\\u at \\h in \\W\n$ "),
         Ok(Prompt {
             spans: vec![
                 Span::Username,
