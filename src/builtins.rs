@@ -1,13 +1,16 @@
 use crate::alias::alias_command;
-use crate::exec::ExitStatus;
+use crate::exec::{ExitStatus, Scope};
+use crate::utils::FdFile;
 use dirs;
 use std::collections::BTreeMap;
 use std::env;
+use std::io::Write;
 use std::path::Path;
 use std::process;
+use std::os::unix::io::RawFd;
 
-pub fn exit_command(argv: &[String]) -> ExitStatus {
-    let exit_with = if let Some(exit_with) = argv.get(1) {
+pub fn exit_command(ctx: &mut InternalCommandContext) -> ExitStatus {
+    let exit_with = if let Some(exit_with) = ctx.argv.get(1) {
         exit_with.parse().unwrap_or(1)
     } else {
         0
@@ -16,9 +19,9 @@ pub fn exit_command(argv: &[String]) -> ExitStatus {
     process::exit(exit_with);
 }
 
-pub fn cd_command(argv: &[String]) -> ExitStatus {
-    trace!("cd: {:?}", argv);
-    let dir = match argv.get(1) {
+pub fn cd_command(ctx: &mut InternalCommandContext) -> ExitStatus {
+    trace!("cd: {:?}", ctx.argv);
+    let dir = match ctx.argv.get(1) {
         Some(dir) => {
             if dir.starts_with('/') {
                 dir.clone()
@@ -47,9 +50,19 @@ pub fn cd_command(argv: &[String]) -> ExitStatus {
     }
 }
 
+pub struct InternalCommandContext<'a> {
+    pub argv: &'a [String],
+    pub scope: &'a mut Scope,
+    pub stdin: FdFile,
+    pub stdout: FdFile,
+    pub stderr: FdFile
+}
+
 /// https://xkcd.com/221/
-pub fn xkcd_rand_command(_argv: &[String]) -> ExitStatus {
-    println!("4");
+pub fn xkcd_rand_command(ctx: &mut InternalCommandContext) -> ExitStatus {
+    write!(ctx.stdout, "4\n").ok();
+    ctx.stdout.flush().ok();
+
     ExitStatus::ExitedWith(0)
 }
 
@@ -58,8 +71,7 @@ pub enum InternalCommandError {
     NotFound,
 }
 
-// TODO: Pass stdin, stdout, and stderr.
-type InternalCommand = fn(&[String]) -> ExitStatus;
+type InternalCommand = fn(&mut InternalCommandContext) -> ExitStatus;
 lazy_static! {
     static ref INTERNAL_COMMANDS: BTreeMap<&'static str, InternalCommand> = {
         let mut commands: BTreeMap<&'static str, InternalCommand> = BTreeMap::new();
@@ -74,9 +86,25 @@ lazy_static! {
     };
 }
 
-pub fn run_internal_command(cmd: &str, argv: &[String]) -> Result<ExitStatus, InternalCommandError> {
+pub fn run_internal_command(
+    scope: &mut Scope,
+    cmd: &str,
+    argv: &[String],
+    stdin: RawFd,
+    stdout: RawFd,
+    stderr: RawFd
+) -> Result<ExitStatus, InternalCommandError> {
+
+    let mut ctx = InternalCommandContext {
+        argv,
+        scope,
+        stdin: FdFile::new(stdin),
+        stdout: FdFile::new(stdout),
+        stderr: FdFile::new(stderr),
+    };
+
     match INTERNAL_COMMANDS.get(cmd) {
-        Some(func) => Ok(func(argv)),
+        Some(func) => Ok(func(&mut ctx)),
         _ => Err(InternalCommandError::NotFound),
     }
 }

@@ -175,7 +175,7 @@ fn exec_command(argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> 
     }
 }
 
-fn run_terms(
+pub fn run_terms(
     scope: &mut Scope,
     terms: &[parser::Term],
     stdin: RawFd,
@@ -337,7 +337,7 @@ fn run_command(
             }
 
             // Internal commands
-            match run_internal_command(argv[0].as_str(), &argv) {
+            match run_internal_command(scope, argv[0].as_str(), &argv, stdin, stdout, stderr) {
                 Ok(status) => {
                     return CommandResult::Internal { status };
                 }

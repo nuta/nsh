@@ -1,3 +1,4 @@
+use crate::builtins::InternalCommandContext;
 use crate::exec::ExitStatus;
 use crate::parser::{parse_alias, Alias, Word};
 use std::collections::BTreeMap;
@@ -17,9 +18,9 @@ pub fn lookup_alias(alias: &str) -> Option<Vec<Word>> {
     ALIASES.lock().unwrap().get(&alias.to_string()).cloned()
 }
 
-pub fn alias_command(argv: &[String]) -> ExitStatus {
-    trace!("alias: {:?}", argv);
-    if let Some(alias) = argv.get(1) {
+pub fn alias_command(ctx: &mut InternalCommandContext) -> ExitStatus {
+    trace!("alias: {:?}", ctx.argv);
+    if let Some(alias) = ctx.argv.get(1) {
         add_alias(alias);
     }
 
