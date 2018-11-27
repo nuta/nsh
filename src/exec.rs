@@ -191,8 +191,30 @@ fn evaluate_span(scope: &mut Scope, span: &Span) -> String {
         },
         Span::ArithExpr { expr } => {
             evaluate_expr(scope, expr).to_string()
-        }
-        _ => panic!("TODO:"),
+        },
+        Span::Tilde(user) => {
+            if user.is_some() {
+                // TODO: e.g. ~mike, ~chandler/venus
+                unimplemented!();
+            }
+
+            if let Some(home_dir) = dirs::home_dir() {
+                home_dir.to_string_lossy().into_owned()
+            } else {
+                // TODO: return an error instead
+                eprintln!("nsh: failed to get home directory");
+                String::from("./")
+            }
+        },
+        Span::Command { body } => {
+            unimplemented!();
+        },
+        Span::AnyChar => {
+            unimplemented!();
+        },
+        Span::AnyString => {
+            unimplemented!();
+        },
     }
 }
 
