@@ -35,7 +35,9 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use std::sync::Mutex;
+use std::process;
 use structopt::StructOpt;
+use crate::exec::ExitStatus;
 
 fn resolve_and_create_history_file() -> Option<PathBuf> {
     if let Some(home_dir) = dirs::home_dir() {
@@ -52,7 +54,7 @@ fn resolve_and_create_history_file() -> Option<PathBuf> {
     None
 }
 
-fn interactive_mode(scope: &mut exec::Scope) {
+fn interactive_mode(scope: &mut exec::Scope) -> ExitStatus {
     // Eval nshrc.
     if let Some(home_dir) = dirs::home_dir() {
         let nshrc_path = Path::new(&home_dir).join(".nshrc");
@@ -77,7 +79,7 @@ fn interactive_mode(scope: &mut exec::Scope) {
                 line
             }
             Err(input::InputError::Eof) => {
-                return;
+                return ExitStatus::ExitedWith(0);
             }
         };
 
@@ -138,9 +140,14 @@ fn main() {
     let opt = Opt::from_args();
 
     let scope = &mut CONTEXT.lock().unwrap();
-    match (opt.command, opt.file) {
+    let status = match (opt.command, opt.file) {
         (Some(command), _) => exec::exec_str(scope, &command),
         (_, Some(file)) => exec::exec_file(scope, file),
         (_, _) => interactive_mode(scope),
+    };
+
+    match status {
+        ExitStatus::ExitedWith(status) => process::exit(status),
+        _ => unreachable!(),
     }
 }

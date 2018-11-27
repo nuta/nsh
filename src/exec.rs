@@ -448,33 +448,37 @@ fn run_command(
     }
 }
 
-pub fn exec(scope: &mut Scope, ast: &Ast) {
+pub fn exec(scope: &mut Scope, ast: &Ast) -> ExitStatus {
     trace!("ast: {:#?}", ast);
 
     // Inherit shell's stdin/stdout/stderr.
     let stdin = 0;
     let stdout = 1;
     let stderr = 2;
-    run_terms(scope, &ast.terms, stdin, stdout, stderr);
+    run_terms(scope, &ast.terms, stdin, stdout, stderr)
 }
 
-pub fn exec_file(scope: &mut Scope, script_file: PathBuf) {
+pub fn exec_file(scope: &mut Scope, script_file: PathBuf) -> ExitStatus {
     let mut f = File::open(script_file).expect("failed to open a file");
     let mut script = String::new();
     f.read_to_string(&mut script)
         .expect("failed to load a file");
 
-    exec_str(scope, script.as_str());
+    exec_str(scope, script.as_str())
 }
 
-pub fn exec_str(scope: &mut Scope, script: &str) {
+pub fn exec_str(scope: &mut Scope, script: &str) -> ExitStatus {
     match parser::parse_line(script) {
         Ok(cmd) => {
-            exec(scope, &cmd);
+            exec(scope, &cmd)
         }
-        Err(parser::SyntaxError::Empty) => (), // Just ignore.
+        Err(parser::SyntaxError::Empty) => {
+            // Just ignore.
+            ExitStatus::ExitedWith(0)
+        },
         Err(err) => {
             eprintln!("nsh: parse error: {:?}", err);
+            ExitStatus::ExitedWith(-1)
         }
     }
 }
