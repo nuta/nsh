@@ -47,20 +47,24 @@ def run_test(test):
         return
 
     stdout = p.stdout.read().decode("utf-8")
+    stderr = p.stderr.read().decode("utf-8")
     if stdout.rstrip() != expected_stdout.rstrip():
         cprint("unexpected stdout", "red", attrs=["bold"])
         print("expected ----------------------------")
         print(expected_stdout)
         print("stdout ------------------------------")
         print(stdout)
+        print("stderr ------------------------------")
+        print(stderr)
+        return
 
-    stderr = p.stderr.read().decode("utf-8")
     if stderr.rstrip() != expected_stderr.rstrip():
         cprint("unexpected stderr", "red", attrs=["bold"])
         print("expected ----------------------------")
         print(expected_stderr)
         print("stderr ------------------------------")
         print(stderr)
+        return
 
     cprint("ok", "green", attrs=["bold"])
 
