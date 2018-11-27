@@ -4,7 +4,7 @@ use crate::parser::{self, Ast, ExpansionOp, RunIf, Span, Word};
 use crate::path::lookup_external_command;
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{close, dup2, execv, fork, pipe, ForkResult, Pid};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
@@ -32,21 +32,6 @@ impl Variable {
     }
 }
 
-#[derive(Debug)]
-pub struct Scope {
-    vars: HashMap<String, Arc<Variable>>,
-    prev: Option<Arc<Scope>>,
-}
-
-impl Scope {
-    pub fn new() -> Scope {
-        Scope {
-            vars: HashMap::new(),
-            prev: None,
-        }
-    }
-}
-
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ExitStatus {
     ExitedWith(i32),
@@ -64,16 +49,33 @@ enum CommandResult {
     Continue,
 }
 
-pub fn set_var(scope: &mut Scope, key: &str, value: Variable) {
-    scope.vars.insert(key.into(), Arc::new(value));
+#[derive(Debug)]
+pub struct Scope {
+    vars: HashMap<String, Arc<Variable>>,
+    prev: Option<Arc<Scope>>,
+    exported: HashSet<String>,
 }
 
-pub fn get_var<'a, 'b>(scope: &'a Scope, key: &'b str) -> Option<Arc<Variable>> {
-    scope.vars.get(key).cloned()
+impl Scope {
+    pub fn new() -> Scope {
+        Scope {
+            vars: HashMap::new(),
+            prev: None,
+            exported: HashSet::new(),
+        }
+    }
+
+    pub fn set(&mut self, key: &str, value: Variable) {
+        self.vars.insert(key.into(), Arc::new(value));
+    }
+
+    pub fn get<'a, 'b>(&'a self, key: &'b str) -> Option<Arc<Variable>> {
+        self.vars.get(key).cloned()
+    }
 }
 
 fn expand_param(scope: &mut Scope, name: &str, op: &ExpansionOp) -> String {
-    if let Some(var) = get_var(&scope, name) {
+    if let Some(var) = scope.get(name) {
         let string_value = match var.value {
             Value::String(ref s) => s.clone(),
             _ => panic!("TODO: cannot expand"),
@@ -92,15 +94,9 @@ fn expand_param(scope: &mut Scope, name: &str, op: &ExpansionOp) -> String {
         ExpansionOp::GetOrEmpty => "".to_owned(),
         ExpansionOp::GetOrDefault(word) => evaluate_word(scope, word),
         ExpansionOp::GetOrDefaultAndAssign(word) => {
-            let value = evaluate_word(scope, word);
-            set_var(
-                scope,
-                name,
-                Variable {
-                    value: Value::String(value.clone()),
-                },
-            );
-            value
+            let content = evaluate_word(scope, word);
+            scope.set(name, Variable::from_string(content.clone()));
+            content
         }
         _ => panic!("TODO:"),
     }
@@ -324,7 +320,7 @@ fn run_command(
             }
 
             // Functions
-            if let Some(var) = get_var(scope, argv[0].as_str()) {
+            if let Some(var) = scope.get(argv[0].as_str()) {
                 if let Variable {
                     value: Value::Function(body),
                 } = var.as_ref()
@@ -391,7 +387,7 @@ fn run_command(
                     value: Value::String(evaluate_word(scope, value)),
                 };
 
-                set_var(scope, name.as_str(), value)
+                scope.set(&name, value)
             }
             CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
         }
@@ -399,7 +395,7 @@ fn run_command(
             let value = Variable {
                 value: Value::Function(body.clone()),
             };
-            set_var(scope, name.as_str(), value);
+            scope.set(&name, value);
             CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
         }
         parser::Command::If {
@@ -423,7 +419,7 @@ fn run_command(
         parser::Command::For { var_name, words, body } => {
             for word in words {
                 let var = Variable::from_string(evaluate_word(scope, word));
-                set_var(scope, &var_name, var);
+                scope.set(&var_name, var);
 
                 let result = run_terms(scope, body, stdin, stdout, stderr);
                 match result {
