@@ -120,6 +120,7 @@ impl Scope {
 
 fn evaluate_expr(scope: &Scope, expr: &Expr) -> i32 {
     match expr {
+        Expr::Expr(sub_expr) => evaluate_expr(scope, sub_expr),
         Expr::Literal(value) => *value,
         Expr::Parameter { name } => {
             if let Some(var) = scope.get(name) {
@@ -188,6 +189,9 @@ fn evaluate_span(scope: &mut Scope, span: &Span) -> String {
                 "".to_owned()
             }
         },
+        Span::ArithExpr { expr } => {
+            evaluate_expr(scope, expr).to_string()
+        }
         _ => panic!("TODO:"),
     }
 }
@@ -586,4 +590,34 @@ pub fn exec_str(scope: &mut Scope, script: &str) -> ExitStatus {
             ExitStatus::ExitedWith(-1)
         }
     }
+}
+
+#[test]
+fn test_expr() {
+    let mut scope = Scope::new();
+    assert_eq!(
+        evaluate_expr(&scope, &Expr::Mul(BinaryExpr {
+            lhs: Box::new(Expr::Literal(2)),
+            rhs: Box::new(Expr::Add(BinaryExpr {
+                lhs: Box::new(Expr::Literal(3)),
+                rhs: Box::new(Expr::Literal(7)),
+            })),
+        })),
+        2 * (3 + 7)
+    );
+
+    scope.set("x", Variable::from_string(3.to_string()));
+    assert_eq!(
+        evaluate_expr(&scope, &Expr::Add(BinaryExpr {
+            lhs: Box::new(Expr::Literal(1)),
+            rhs: Box::new(Expr::Add(BinaryExpr {
+                lhs: Box::new(Expr::Mul(BinaryExpr {
+                    lhs: Box::new(Expr::Literal(2)),
+                    rhs: Box::new(Expr::Parameter { name: "x".into() }),
+                })),
+                rhs: Box::new(Expr::Literal(4)),
+            })),
+        })),
+        1 + 2 * 3 + 4
+    );
 }

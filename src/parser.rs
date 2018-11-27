@@ -141,6 +141,7 @@ pub enum Expr {
     Literal(i32),
     // `foo` in $((foo + 1))
     Parameter { name: String },
+    Expr(Box<Expr>),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -334,26 +335,47 @@ named!(expansion<Input, Span>,
 );
 
 named!(expr_factor<Input, Expr>,
-    do_parse!(
-        span: alt!(
-            map!(
-                take_while1!(|c: char| c.is_ascii_digit()),
-                |s| Span::Literal(s.to_string())
-            ) |
-            // $(( $i ))
-            do_parse!(peek!(tag!("$")) >> span: expansion >> ( span )) |
-            // $(( i ))
-            parameter_wo_braces
-        ) >>
-        ({
-            match span {
-                // TODO: throw an syntax error instead of .unwrap()
-                Span::Literal(s) => Expr::Literal(s.parse().unwrap()),
-                Span::Parameter { name, .. } => Expr::Parameter { name },
-                // TODO: throw an syntax error instead
-                _ => unreachable!(),
+    alt!(
+        // integer literal
+        do_parse!(
+            sign: opt!(alt!(tag!("-") | tag!("+"))) >>
+            digits: take_while1!(|c: char| c.is_ascii_digit()) >>
+            ({
+                let n = digits.parse::<i32>().unwrap();
+                match sign {
+                    Some(Input("-")) => Expr::Literal(-n),
+                    _ => Expr::Literal(n),
+                }
+            })
+        )
+        // $(( 7 * (8 + 9) ))
+        | do_parse!(
+            call!(symbol, "(") >>
+            expr: expr >>
+            call!(symbol, ")") >>
+            ( Expr::Expr(Box::new(expr)) )
+        )
+        // $(( $i ))
+        | do_parse!(
+            peek!(tag!("$")) >>
+            span: expansion >>
+            ({
+                match span {
+                    Span::Parameter {name, .. } => Expr::Parameter { name },
+                    _ => unreachable!(),
+                }
+            })
+        )
+        // $(( i ))
+        | map!(
+            parameter_wo_braces,
+            |span| {
+                match span {
+                    Span::Parameter {name, .. } => Expr::Parameter { name },
+                    _ => unreachable!(),
+                }
             }
-        })
+        )
     )
 );
 
@@ -724,8 +746,35 @@ named!(simple_command<Input, Command>,
     )
 );
 
+named_args!(symbol<'a>(symbol: &'static str)<Input<'a>, ()>,
+    do_parse!(
+        // Peek first not to comsume whitespace/semilocon/newline.
+        peek!(
+            do_parse!(
+                take_while!(|c| is_whitespace(c) || c == '\n') >>
+                tag!(symbol) >>
+                ( () )
+            )
+        ) >>
+
+        take_while!(|c| is_whitespace(c) || c == '\n') >>
+        tag!(symbol) >>
+        take_while!(|c| is_whitespace(c) || c == '\n') >>
+        ( () )
+    )
+);
+
 named_args!(keyword<'a>(keyword: &'static str)<Input<'a>, ()>,
     do_parse!(
+        // Peek first not to comsume whitespace/semilocon/newline.
+        peek!(
+            do_parse!(
+                take_while!(|c| is_whitespace(c) || c == ';' || c == '\n') >>
+                tag!(keyword) >>
+                ( () )
+            )
+        ) >>
+
         take_while!(|c| is_whitespace(c) || c == ';' || c == '\n') >>
         tag!(keyword) >>
         peek!(alt!(eof!() | take_while1!(|c| !is_valid_word_char(c)))) >>
@@ -2214,7 +2263,7 @@ pub fn test_tilde() {
 #[test]
 pub fn test_arith_expr() {
     assert_eq!(
-        parse_line("echo $(( 1 + 2-3 ))").unwrap(),
+        parse_line("echo $(( 1 + 2+(-3) ))").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2226,9 +2275,11 @@ pub fn test_arith_expr() {
                             Word(vec![Span::ArithExpr {
                                 expr: Expr::Add(BinaryExpr {
                                     lhs: Box::new(Expr::Literal(1)),
-                                    rhs: Box::new(Expr::Sub(BinaryExpr {
+                                    rhs: Box::new(Expr::Add(BinaryExpr {
                                         lhs: Box::new(Expr::Literal(2)),
-                                        rhs: Box::new(Expr::Literal(3)),
+                                        rhs: Box::new(Expr::Expr(
+                                            Box::new(Expr::Literal(-3))
+                                        )),
                                     })),
                                 }),
                             }]),
