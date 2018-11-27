@@ -2287,7 +2287,7 @@ pub fn test_escape_sequences() {
 }
 
 #[test]
-pub fn test_invalid_inputs() {
+pub fn test_courner_cases() {
     assert_eq!(parse_line(""), Err(SyntaxError::Empty));
     assert_eq!(parse_line("\n"), Err(SyntaxError::Empty));
     assert_eq!(parse_line("\n\n\n"), Err(SyntaxError::Empty));
