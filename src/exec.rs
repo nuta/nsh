@@ -10,6 +10,7 @@ use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 use std::io::prelude::*;
 use std::os::unix::io::IntoRawFd;
+use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
 
@@ -178,53 +179,54 @@ fn expand_param(scope: &mut Scope, name: &str, op: &ExpansionOp) -> String {
     }
 }
 
-fn evaluate_span(scope: &mut Scope, span: &Span) -> String {
-    match span {
-        Span::Literal(s) => s.clone(),
-        Span::Parameter { name, op } => expand_param(scope, name, op),
-        Span::ArrayParameter { name, index } => {
-            if let Some(var) = scope.get(name) {
-                var.value_at(scope, index).to_string()
-            } else {
-                "".to_owned()
-            }
-        },
-        Span::ArithExpr { expr } => {
-            evaluate_expr(scope, expr).to_string()
-        },
-        Span::Tilde(user) => {
-            if user.is_some() {
-                // TODO: e.g. ~mike, ~chandler/venus
-                unimplemented!();
-            }
-
-            if let Some(home_dir) = dirs::home_dir() {
-                home_dir.to_string_lossy().into_owned()
-            } else {
-                // TODO: return an error instead
-                eprintln!("nsh: failed to get home directory");
-                String::from("./")
-            }
-        },
-        Span::Command { body } => {
-            unimplemented!();
-        },
-        Span::AnyChar => {
-            unimplemented!();
-        },
-        Span::AnyString => {
-            unimplemented!();
-        },
-    }
-}
-
 fn evaluate_word(scope: &mut Scope, word: &Word) -> String {
-    let mut s = String::new();
+    let mut buf = String::new();
     for span in &word.0 {
-        s += evaluate_span(scope, &span).as_str();
+        match span {
+            Span::Literal(s) => {
+                buf += s;
+            },
+            Span::Parameter { name, op } => {
+                buf += &expand_param(scope, name, op);
+            },
+            Span::ArrayParameter { name, index } => {
+                if let Some(var) = scope.get(name) {
+                    buf += var.value_at(scope, index);
+                }
+            },
+            Span::ArithExpr { expr } => {
+                buf += &evaluate_expr(scope, expr).to_string();
+            },
+            Span::Tilde(user) => {
+                if user.is_some() {
+                    // TODO: e.g. ~mike, ~chandler/venus
+                    unimplemented!();
+                }
+
+                if let Some(home_dir) = dirs::home_dir() {
+                    buf += home_dir.to_str().unwrap();
+                } else {
+                    // TODO: return an error instead
+                    eprintln!("nsh: failed to get home directory");
+                    buf += "./";
+                }
+            },
+            Span::Command { body } => {
+                let stdout = exec_in_subshell(scope, body);
+                // TODO: support binary output
+                let s = std::str::from_utf8(&stdout).unwrap_or("").to_string();
+                buf += &s.trim_end_matches('\n');
+            },
+            Span::AnyChar => {
+                unimplemented!();
+            },
+            Span::AnyString => {
+                unimplemented!();
+            },
+        }
     }
 
-    s
+    buf
 }
 
 fn evaluate_words(scope: &mut Scope, words: &[Word]) -> Vec<String> {
@@ -279,6 +281,30 @@ fn exec_command(scope: &Scope, argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> R
             // TODO: inherit exported variables
             execv(&argv0, &args).expect("failed to exec");
             unreachable!();
+        }
+    }
+}
+
+pub fn exec_in_subshell(scope: &mut Scope, terms: &[parser::Term]) -> Vec<u8> {
+    let (pipe_out, pipe_in) = pipe().unwrap();
+    match fork().expect("failed to fork") {
+        ForkResult::Parent { child } => {
+            waitpid(child, None).ok();
+            let mut stdout = Vec::new();
+            close(pipe_in).ok();
+            unsafe { File::from_raw_fd(pipe_out) }.read_to_end(&mut stdout).ok();
+            stdout
+        },
+        ForkResult::Child => {
+            let stdin = 0;
+            let stdout = pipe_in;
+            let stderr = 2;
+            let status = match run_terms(scope, terms, stdin, stdout, stderr) {
+                ExitStatus::ExitedWith(status) => status,
+                _ => 0,
+            };
+
+            std::process::exit(status);
         }
     }
 }
