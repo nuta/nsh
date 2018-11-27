@@ -149,7 +149,7 @@ fn exec_command(argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> 
     let argv0 = match lookup_external_command(&argv[0]) {
         Some(argv0) => CString::new(argv0).unwrap(),
         None => {
-            println!("nsh: command not found: `{}'", argv[0]);
+            eprintln!("nsh: command not found `{}'", argv[0]);
             return Err(());
         }
     };
