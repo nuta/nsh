@@ -26,7 +26,7 @@ def run_test(test):
         print("expected ----------------------------")
         print(expected_stdout)
         print("bash stdout -------------------------")
-        print(stdout)
+        print(bash_stdout)
         return
 
     # Run the test.
