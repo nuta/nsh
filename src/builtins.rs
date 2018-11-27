@@ -9,6 +9,19 @@ use std::path::Path;
 use std::process;
 use std::os::unix::io::RawFd;
 
+pub struct InternalCommandContext<'a> {
+    pub argv: &'a [String],
+    pub scope: &'a mut Scope,
+    pub stdin: FdFile,
+    pub stdout: FdFile,
+    pub stderr: FdFile
+}
+
+#[derive(Debug)]
+pub enum InternalCommandError {
+    NotFound,
+}
+
 pub fn exit_command(ctx: &mut InternalCommandContext) -> ExitStatus {
     let exit_with = if let Some(exit_with) = ctx.argv.get(1) {
         exit_with.parse().unwrap_or(1)
@@ -50,12 +63,25 @@ pub fn cd_command(ctx: &mut InternalCommandContext) -> ExitStatus {
     }
 }
 
-pub struct InternalCommandContext<'a> {
-    pub argv: &'a [String],
-    pub scope: &'a mut Scope,
-    pub stdin: FdFile,
-    pub stdout: FdFile,
-    pub stderr: FdFile
+pub fn echo_command(ctx: &mut InternalCommandContext) -> ExitStatus {
+    let (newline, skip) = match ctx.argv.get(1).map(|s| s.as_str()) {
+        Some("-n") => (false, 2),
+        _ => (true, 1),
+    };
+
+    for (i, arg) in ctx.argv.iter().skip(skip).enumerate() {
+        if i > 0 {
+            write!(ctx.stdout, " {}", arg).ok();
+        } else {
+            write!(ctx.stdout, "{}", arg).ok();
+        }
+    }
+
+    if newline {
+        write!(ctx.stdout, "\n").ok();
+    }
+    ctx.stdout.flush().ok();
+    ExitStatus::ExitedWith(0)
 }
 
 /// https://xkcd.com/221/
@@ -66,16 +92,12 @@ pub fn xkcd_rand_command(ctx: &mut InternalCommandContext) -> ExitStatus {
     ExitStatus::ExitedWith(0)
 }
 
-#[derive(Debug)]
-pub enum InternalCommandError {
-    NotFound,
-}
-
 type InternalCommand = fn(&mut InternalCommandContext) -> ExitStatus;
 lazy_static! {
     static ref INTERNAL_COMMANDS: BTreeMap<&'static str, InternalCommand> = {
         let mut commands: BTreeMap<&'static str, InternalCommand> = BTreeMap::new();
         commands.insert("alias", alias_command);
+        commands.insert("echo", echo_command);
         commands.insert("cd", cd_command);
         commands.insert("exit", exit_command);
         commands.insert(
@@ -88,7 +110,6 @@ lazy_static! {
 
 pub fn run_internal_command(
     scope: &mut Scope,
-    cmd: &str,
     argv: &[String],
     stdin: RawFd,
     stdout: RawFd,
@@ -103,6 +124,7 @@ pub fn run_internal_command(
         stderr: FdFile::new(stderr),
     };
 
+    let cmd = argv[0].as_str();
     match INTERNAL_COMMANDS.get(cmd) {
         Some(func) => Ok(func(&mut ctx)),
         _ => Err(InternalCommandError::NotFound),

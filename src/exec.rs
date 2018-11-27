@@ -337,7 +337,7 @@ fn run_command(
             }
 
             // Internal commands
-            match run_internal_command(scope, argv[0].as_str(), &argv, stdin, stdout, stderr) {
+            match run_internal_command(scope, &argv, stdin, stdout, stderr) {
                 Ok(status) => {
                     return CommandResult::Internal { status };
                 }
