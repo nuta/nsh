@@ -409,7 +409,12 @@ named!(whitespaces<Input, ()>,
 );
 
 named!(var_name<Input, String>,
-    map!(recognize!(take_while1!(is_valid_var_name_char)), |name| name.to_string())
+    map!(recognize!(
+        alt!(
+            take_while1!(is_valid_var_name_char)
+            | tag!("?")
+        )
+    ), |name| name.to_string())
 );
 
 named!(comment<Input, ()>,
@@ -1912,6 +1917,29 @@ pub fn test_expansions() {
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::Parameter {
                                 name: "TERM".into(),
+                                op: ExpansionOp::GetOrEmpty,
+                            }],),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        }
+    );
+
+    assert_eq!(
+        parse_line("echo $?").unwrap(),
+        Ast {
+            terms: vec![Term {
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                            Word(vec![Span::Literal("echo".into())]),
+                            Word(vec![Span::Parameter {
+                                name: "?".into(),
                                 op: ExpansionOp::GetOrEmpty,
                             }],),
                         ],

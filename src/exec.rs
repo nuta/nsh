@@ -58,6 +58,7 @@ enum CommandResult {
 
 #[derive(Debug)]
 pub struct Scope {
+    last_status: i32,
     vars: HashMap<String, Arc<Variable>>,
     prev: Option<Arc<Scope>>,
     exported: HashSet<String>,
@@ -66,6 +67,7 @@ pub struct Scope {
 impl Scope {
     pub fn new() -> Scope {
         Scope {
+            last_status: 0,
             vars: HashMap::new(),
             prev: None,
             exported: HashSet::new(),
@@ -90,17 +92,24 @@ impl Scope {
 }
 
 fn expand_param(scope: &mut Scope, name: &str, op: &ExpansionOp) -> String {
-    if let Some(var) = scope.get(name) {
-        let string_value = match var.value {
-            Value::String(ref s) => s.clone(),
-            _ => panic!("TODO: cannot expand"),
-        };
+    match name {
+        "?" => {
+            return scope.last_status.to_string();
+        },
+        _ => {
+            if let Some(var) = scope.get(name) {
+                let string_value = match var.value {
+                    Value::String(ref s) => s.clone(),
+                    _ => panic!("TODO: cannot expand"),
+                };
 
-        // $<name> is defined and contains a string value.
-        return match op {
-            ExpansionOp::Length => string_value.len().to_string(),
-            _ => string_value,
-        };
+                // $<name> is defined and contains a string value.
+                return match op {
+                    ExpansionOp::Length => string_value.len().to_string(),
+                    _ => string_value,
+                };
+            }
+        }
     }
 
     // $<name> is not defined.
@@ -254,14 +263,19 @@ fn run_pipeline(
         }
     }
 
+    // Wait for the last command in the pipeline.
     let mut last_status = ExitStatus::ExitedWith(0);
     match last_command_result {
         None => {
             trace!("nothing to execute");
             last_status = ExitStatus::ExitedWith(0);
+            scope.last_status = 0;
         }
         Some(CommandResult::Internal { status }) => {
             last_status = status;
+            if let ExitStatus::ExitedWith(status) = status {
+                scope.last_status = status;
+            }
         }
         Some(CommandResult::External { pid: last_pid }) => {
             for child in childs {
@@ -282,6 +296,7 @@ fn run_pipeline(
 
                 if child == last_pid {
                     last_status = ExitStatus::ExitedWith(status);
+                    scope.last_status = status;
                 }
             }
         },
