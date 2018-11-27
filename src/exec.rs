@@ -6,10 +6,12 @@ use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{close, dup2, execv, fork, pipe, ForkResult, Pid};
 use std::collections::HashMap;
 use std::ffi::CString;
-use std::fs::OpenOptions;
+use std::fs::{File, OpenOptions};
+use std::path::PathBuf;
+use std::io::prelude::*;
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::io::RawFd;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum Value {
@@ -36,9 +38,13 @@ pub struct Scope {
     prev: Option<Arc<Scope>>,
 }
 
-#[derive(Debug)]
-pub struct ExecEnv {
-    scope: Scope,
+impl Scope {
+    pub fn new() -> Scope {
+        Scope {
+            vars: HashMap::new(),
+            prev: None,
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -56,15 +62,6 @@ enum CommandResult {
     Break,
     // continue command
     Continue,
-}
-
-lazy_static! {
-    static ref CONTEXT: Mutex<ExecEnv> = Mutex::new(ExecEnv {
-        scope: Scope {
-            vars: HashMap::new(),
-            prev: None,
-        },
-    });
 }
 
 pub fn set_var(scope: &mut Scope, key: &str, value: Variable) {
@@ -451,13 +448,33 @@ fn run_command(
     }
 }
 
-pub fn exec(ast: &Ast) {
+pub fn exec(scope: &mut Scope, ast: &Ast) {
     trace!("ast: {:#?}", ast);
-    let scope = &mut CONTEXT.lock().unwrap().scope;
 
     // Inherit shell's stdin/stdout/stderr.
     let stdin = 0;
     let stdout = 1;
     let stderr = 2;
     run_terms(scope, &ast.terms, stdin, stdout, stderr);
+}
+
+pub fn exec_file(scope: &mut Scope, script_file: PathBuf) {
+    let mut f = File::open(script_file).expect("failed to open a file");
+    let mut script = String::new();
+    f.read_to_string(&mut script)
+        .expect("failed to load a file");
+
+    exec_str(scope, script.as_str());
+}
+
+pub fn exec_str(scope: &mut Scope, script: &str) {
+    match parser::parse_line(script) {
+        Ok(cmd) => {
+            exec(scope, &cmd);
+        }
+        Err(parser::SyntaxError::Empty) => (), // Just ignore.
+        Err(err) => {
+            eprintln!("nsh: parse error: {:?}", err);
+        }
+    }
 }

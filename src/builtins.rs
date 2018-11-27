@@ -1,5 +1,5 @@
 use crate::alias::alias_command;
-use crate::exec::{ExitStatus, Scope};
+use crate::exec::{ExitStatus, Scope, exec_file};
 use crate::utils::FdFile;
 use dirs;
 use std::collections::BTreeMap;

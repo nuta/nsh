@@ -32,31 +32,10 @@ mod history;
 mod fuzzy;
 
 use std::fs::File;
-use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
+use std::sync::Mutex;
 use structopt::StructOpt;
-
-fn exec_file(script_file: PathBuf) {
-    let mut f = File::open(script_file).expect("failed to open a file");
-    let mut script = String::new();
-    f.read_to_string(&mut script)
-        .expect("failed to load a file");
-
-    exec_str(script.as_str());
-}
-
-fn exec_str(script: &str) {
-    match parser::parse_line(script) {
-        Ok(cmd) => {
-            exec::exec(&cmd);
-        }
-        Err(parser::SyntaxError::Empty) => (), // Just ignore.
-        Err(err) => {
-            eprintln!("nsh: parse error: {:?}", err);
-        }
-    }
-}
 
 fn resolve_and_create_history_file() -> Option<PathBuf> {
     if let Some(home_dir) = dirs::home_dir() {
@@ -73,12 +52,12 @@ fn resolve_and_create_history_file() -> Option<PathBuf> {
     None
 }
 
-fn interactive_mode() {
+fn interactive_mode(scope: &mut exec::Scope) {
     // Eval nshrc.
     if let Some(home_dir) = dirs::home_dir() {
         let nshrc_path = Path::new(&home_dir).join(".nshrc");
         if nshrc_path.exists() {
-            exec_file(nshrc_path);
+            exec::exec_file(scope, nshrc_path);
         }
     }
 
@@ -102,15 +81,7 @@ fn interactive_mode() {
             }
         };
 
-        match parser::parse_line(line.as_str()) {
-            Ok(cmd) => {
-                exec::exec(&cmd);
-            }
-            Err(parser::SyntaxError::Empty) => (), // Just ignore.
-            Err(err) => {
-                eprintln!("nsh: parse error: {:?}", err);
-            }
-        };
+        exec::exec_str(scope, &line);
     }
 }
 
@@ -151,6 +122,10 @@ struct Opt {
 
 pub static mut TIME_STARTED: Option<SystemTime> = None;
 
+lazy_static! {
+    static ref CONTEXT: Mutex<exec::Scope> = Mutex::new(exec::Scope::new());
+}
+
 fn main() {
     unsafe {
         TIME_STARTED = Some(SystemTime::now());
@@ -162,9 +137,10 @@ fn main() {
     history::init();
     let opt = Opt::from_args();
 
+    let scope = &mut CONTEXT.lock().unwrap();
     match (opt.command, opt.file) {
-        (Some(command), _) => exec_str(&command),
-        (_, Some(file)) => exec_file(file),
-        (_, _) => interactive_mode(),
+        (Some(command), _) => exec::exec_str(scope, &command),
+        (_, Some(file)) => exec::exec_file(scope, file),
+        (_, _) => interactive_mode(scope),
     }
 }
