@@ -19,6 +19,7 @@ syntect = "3"
 crossbeam = "0.5"
 crossbeam-channel = "0.3"
 structopt = "0.2"
+glob = "0.2"
 
 # The latest version published to the crates.io does not include
 # a bug fix to DetectCursorPos: https://github.com/redox-os/termion/pull/145

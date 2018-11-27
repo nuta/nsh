@@ -13,6 +13,7 @@ use std::os::unix::io::IntoRawFd;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
+use glob::glob;
 
 #[derive(Debug)]
 pub enum Value {
@@ -179,6 +180,27 @@ fn expand_param(scope: &mut Scope, name: &str, op: &ExpansionOp) -> String {
     }
 }
 
+fn expand_glob(pattern: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    for entry in glob(pattern).expect("failed to glob") {
+        match entry {
+            Ok(path) => {
+                words.push(path.to_str().unwrap().to_string());
+            },
+            Err(e) => trace!("glob error: {:?}", e),
+        }
+    }
+
+    if words.len() == 0 {
+        // TODO: return Result and abort the command instead
+        eprintln!("nsh: no glob matches");
+        return vec![pattern.to_string()];
+    }
+
+    words
+}
+
+
 fn evaluate_word(scope: &mut Scope, word: &Word) -> String {
     let mut buf = String::new();
     for span in &word.0 {
@@ -218,10 +240,10 @@ fn evaluate_word(scope: &mut Scope, word: &Word) -> String {
                 buf += &s.trim_end_matches('\n');
             },
             Span::AnyChar => {
-                unimplemented!();
+                buf.push('?');
             },
             Span::AnyString => {
-                unimplemented!();
+                buf.push('*');
             },
         }
     }
@@ -234,7 +256,12 @@ fn evaluate_words(scope: &mut Scope, words: &[Word]) -> Vec<String> {
     for word in words {
         let s = evaluate_word(scope, word);
         if !s.is_empty() {
-            evaluated.push(s);
+            // FIXME: Support file path which contains '*'.
+            if s.contains('*') || s.contains('?') {
+                evaluated.extend(expand_glob(&s));
+            } else {
+                evaluated.push(s);
+            }
         }
     }
 

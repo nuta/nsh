@@ -213,7 +213,7 @@ pub fn extract_completion_context(user_input: &str, user_cursor: usize) -> Compl
     //     echo $(read-file -avh --from-stdin --other-opt < hello.bin) | hexdump -C
     //                                 ^ cursor is here
 
-    // 1. Until the cursor:
+    // Before the cursor:
     //     words = ['read-file", "-avh"]
     //     word = "--from-"
     let mut words = Vec::new();
@@ -235,7 +235,7 @@ pub fn extract_completion_context(user_input: &str, user_cursor: usize) -> Compl
                 word = String::new();
                 current_word_offset = offset + 1;
             }
-            (false, _, ch) if !parser::is_valid_word_char(ch) => {
+            (false, _, ch) if !parser::is_valid_word_char(ch) && ch != '*' && ch != '?' => {
                 words = Vec::new();
                 word = String::new();
                 current_word_offset = offset + 1;
@@ -253,7 +253,7 @@ pub fn extract_completion_context(user_input: &str, user_cursor: usize) -> Compl
     let mut current_word_index = words.len() as isize;
     let mut current_word_len = 0;
 
-    // 1. After the cursor:
+    // After the cursor:
     //     words = ['read-file", "-avh", "--form-stdin"]
     //     word = ""
     for ch in line.chars().skip(user_cursor) {
@@ -264,7 +264,7 @@ pub fn extract_completion_context(user_input: &str, user_cursor: usize) -> Compl
             }
             (true, _, '"') => in_string = false,
             (false, _, '"') => in_string = true,
-            (false, _, ch) if !parser::is_valid_word_char(ch) => break,
+            (false, _, ch) if !parser::is_valid_word_char(ch) && ch != '*' && ch != '?' => break,
             (_, _, ch) => word.push(ch),
         }
     }

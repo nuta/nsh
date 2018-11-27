@@ -17,6 +17,7 @@ extern crate syntect;
 extern crate termion;
 extern crate crossbeam;
 extern crate crossbeam_channel;
+extern crate glob;
 
 mod alias;
 mod builtins;

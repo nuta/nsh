@@ -305,7 +305,7 @@ pub fn render_prompt(
                 write!(
                     buf,
                     "\n{}{}{}{}{}no candidates{}",
-                    termion::cursor::Goto(1, 1 + prompt_base_y + 1),
+                    termion::cursor::Goto(1, 1 + prompt_base_y + prompt_lines),
                     termion::clear::CurrentLine,
                     termion::style::Bold,
                     termion::color::Fg(termion::color::White),
