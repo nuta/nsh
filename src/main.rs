@@ -19,7 +19,6 @@ extern crate crossbeam;
 extern crate crossbeam_channel;
 extern crate glob;
 
-mod alias;
 mod builtins;
 mod completion;
 mod exec;
@@ -55,7 +54,7 @@ fn resolve_and_create_history_file() -> Option<PathBuf> {
     None
 }
 
-fn interactive_mode(scope: &mut exec::Scope) -> ExitStatus {
+fn interactive_mode(scope: &mut exec::Env) -> ExitStatus {
     // Eval nshrc.
     if let Some(home_dir) = dirs::home_dir() {
         let nshrc_path = Path::new(&home_dir).join(".nshrc");
@@ -126,7 +125,7 @@ struct Opt {
 pub static mut TIME_STARTED: Option<SystemTime> = None;
 
 lazy_static! {
-    static ref CONTEXT: Mutex<exec::Scope> = Mutex::new(exec::Scope::new());
+    static ref CONTEXT: Mutex<exec::Env> = Mutex::new(exec::Env::new());
 }
 
 fn main() {

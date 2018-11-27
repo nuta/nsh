@@ -1,4 +1,3 @@
-use crate::alias::lookup_alias;
 use crate::builtins::{run_internal_command, InternalCommandError};
 use crate::parser::{self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer};
 use crate::path::lookup_external_command;
@@ -50,7 +49,7 @@ impl Variable {
     }
 
     // References value as `$foo[expr]`.
-    pub fn value_at<'a>(&'a self, scope: &Scope, index: &Expr) -> &'a str {
+    pub fn value_at<'a>(&'a self, scope: &Env, index: &Expr) -> &'a str {
         match &self.value {
             Value::Array(elems) => {
                 let index = evaluate_expr(scope, index);
@@ -86,20 +85,22 @@ enum CommandResult {
 }
 
 #[derive(Debug)]
-pub struct Scope {
+pub struct Env {
+    prev: Option<Arc<Env>>,
     last_status: i32,
     vars: HashMap<String, Arc<Variable>>,
-    prev: Option<Arc<Scope>>,
     exported: HashSet<String>,
+    aliases: HashMap<String, Vec<Word>>,
 }
 
-impl Scope {
-    pub fn new() -> Scope {
-        Scope {
+impl Env {
+    pub fn new() -> Env {
+        Env {
             last_status: 0,
             vars: HashMap::new(),
             prev: None,
             exported: HashSet::new(),
+            aliases: HashMap::new(),
         }
     }
 
@@ -118,9 +119,17 @@ impl Scope {
     pub fn exported_names(&self) -> std::collections::hash_set::Iter<String> {
         self.exported.iter()
     }
+
+    pub fn add_alias(&mut self, name: &str, words: Vec<Word>) {
+        self.aliases.insert(name.to_string(), words);
+    }
+
+    pub fn lookup_alias(&self, alias: &str) -> Option<Vec<Word>> {
+        self.aliases.get(&alias.to_string()).cloned()
+    }
 }
 
-fn evaluate_expr(scope: &Scope, expr: &Expr) -> i32 {
+fn evaluate_expr(scope: &Env, expr: &Expr) -> i32 {
     match expr {
         Expr::Expr(sub_expr) => evaluate_expr(scope, sub_expr),
         Expr::Literal(value) => *value,
@@ -149,7 +158,7 @@ fn evaluate_expr(scope: &Scope, expr: &Expr) -> i32 {
     }
 }
 
-fn expand_param(scope: &mut Scope, name: &str, op: &ExpansionOp) -> String {
+fn expand_param(scope: &mut Env, name: &str, op: &ExpansionOp) -> String {
     match name {
         "?" => {
             return scope.last_status.to_string();
@@ -201,7 +210,7 @@ fn expand_glob(pattern: &str) -> Vec<String> {
 }
 
 
-fn evaluate_word(scope: &mut Scope, word: &Word) -> String {
+fn evaluate_word(scope: &mut Env, word: &Word) -> String {
     let mut buf = String::new();
     for span in &word.0 {
         match span {
@@ -251,7 +260,7 @@ fn evaluate_word(scope: &mut Scope, word: &Word) -> String {
     buf
 }
 
-fn evaluate_words(scope: &mut Scope, words: &[Word]) -> Vec<String> {
+fn evaluate_words(scope: &mut Env, words: &[Word]) -> Vec<String> {
     let mut evaluated = Vec::new();
     for word in words {
         let s = evaluate_word(scope, word);
@@ -275,7 +284,7 @@ fn move_fd(src: RawFd, dst: RawFd) {
     }
 }
 
-fn exec_command(scope: &Scope, argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> {
+fn exec_command(scope: &Env, argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> {
     let argv0 = match lookup_external_command(&argv[0]) {
         Some(argv0) => CString::new(argv0).unwrap(),
         None => {
@@ -312,7 +321,7 @@ fn exec_command(scope: &Scope, argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> R
     }
 }
 
-pub fn exec_in_subshell(scope: &mut Scope, terms: &[parser::Term]) -> Vec<u8> {
+pub fn exec_in_subshell(scope: &mut Env, terms: &[parser::Term]) -> Vec<u8> {
     let (pipe_out, pipe_in) = pipe().unwrap();
     match fork().expect("failed to fork") {
         ForkResult::Parent { child } => {
@@ -337,7 +346,7 @@ pub fn exec_in_subshell(scope: &mut Scope, terms: &[parser::Term]) -> Vec<u8> {
 }
 
 pub fn run_terms(
-    scope: &mut Scope,
+    scope: &mut Env,
     terms: &[parser::Term],
     stdin: RawFd,
     stdout: RawFd,
@@ -363,7 +372,7 @@ pub fn run_terms(
 }
 
 fn run_pipeline(
-    scope: &mut Scope,
+    scope: &mut Env,
     pipeline: &parser::Pipeline,
     pipeline_stdin: RawFd,
     pipeline_stdout: RawFd,
@@ -449,7 +458,7 @@ fn run_pipeline(
 }
 
 fn run_command(
-    scope: &mut Scope,
+    scope: &mut Env,
     command: &parser::Command,
     stdin: RawFd,
     stdout: RawFd,
@@ -468,12 +477,12 @@ fn run_command(
                 return CommandResult::Internal { status: ExitStatus::ExitedWith(0) };
             }
 
-            // FIXME:
+            // FIXME: refactor
             let Word(ref spans) = ref_wargv[0];
             let wargv = if !spans.is_empty() {
                 match spans[0] {
                     Span::Literal(ref lit) => {
-                        if let Some(alias_argv) = lookup_alias(lit.as_str()) {
+                        if let Some(alias_argv) = scope.lookup_alias(lit.as_str()) {
                             let mut new_wargv = Vec::new();
                             new_wargv.extend(alias_argv);
                             new_wargv.extend(ref_wargv.iter().skip(1).cloned());
@@ -632,7 +641,7 @@ fn run_command(
     }
 }
 
-pub fn exec(scope: &mut Scope, ast: &Ast) -> ExitStatus {
+pub fn exec(scope: &mut Env, ast: &Ast) -> ExitStatus {
     trace!("ast: {:#?}", ast);
 
     // Inherit shell's stdin/stdout/stderr.
@@ -642,7 +651,7 @@ pub fn exec(scope: &mut Scope, ast: &Ast) -> ExitStatus {
     run_terms(scope, &ast.terms, stdin, stdout, stderr)
 }
 
-pub fn exec_file(scope: &mut Scope, script_file: PathBuf) -> ExitStatus {
+pub fn exec_file(scope: &mut Env, script_file: PathBuf) -> ExitStatus {
     let mut f = File::open(script_file).expect("failed to open a file");
     let mut script = String::new();
     f.read_to_string(&mut script)
@@ -651,7 +660,7 @@ pub fn exec_file(scope: &mut Scope, script_file: PathBuf) -> ExitStatus {
     exec_str(scope, script.as_str())
 }
 
-pub fn exec_str(scope: &mut Scope, script: &str) -> ExitStatus {
+pub fn exec_str(scope: &mut Env, script: &str) -> ExitStatus {
     match parser::parse_line(script) {
         Ok(cmd) => {
             exec(scope, &cmd)
@@ -669,7 +678,7 @@ pub fn exec_str(scope: &mut Scope, script: &str) -> ExitStatus {
 
 #[test]
 fn test_expr() {
-    let mut scope = Scope::new();
+    let mut scope = Env::new();
     assert_eq!(
         evaluate_expr(&scope, &Expr::Mul(BinaryExpr {
             lhs: Box::new(Expr::Literal(2)),
