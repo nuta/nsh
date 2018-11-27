@@ -9,6 +9,8 @@ use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 use termion;
+use nix::unistd;
+use libc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Prompt {
@@ -71,6 +73,39 @@ fn parse_prompt(prompt: &str) -> Result<Prompt, ()> {
     }
 }
 
+// FIXME: remove unsafe or use external crate
+fn get_current_username() -> String {
+    let mut passwd_buf = Vec::with_capacity(512);
+    let mut passwd: libc::passwd = unsafe { std::mem::zeroed() };
+    let mut result = std::ptr::null_mut();
+    unsafe {
+        libc::getpwuid_r(
+            libc::getuid(),
+            &mut passwd,
+            passwd_buf.as_mut_ptr(),
+            passwd_buf.capacity(),
+            &mut result
+        );
+    }
+
+    if result.is_null() {
+        "".to_owned()
+    } else {
+        let ptr = passwd.pw_name as *const _;
+        unsafe {
+            let cstr = std::ffi::CStr::from_ptr(ptr);
+            cstr.to_string_lossy().into_owned()
+        }
+    }
+}
+
+fn get_hostname() -> String {
+    let mut hostname_buf = [0u8; 128];
+    let hostname_cstr = unistd::gethostname(&mut hostname_buf).expect("failed to get hostname");
+    let hostname = hostname_cstr.to_str().expect("Hostname is not valid utf-8 string");
+    hostname.to_owned()
+}
+
 /// Returns the length of the last line excluding escape sequences.
 fn draw_prompt(prompt: &Prompt) -> (String, usize) {
     let mut len = 0;
@@ -96,24 +131,30 @@ fn draw_prompt(prompt: &Prompt) -> (String, usize) {
                 len = 0;
                 buf.push_str("\n")
             }
-            // TODO:
             Span::Username => {
-                let username = "spam";
+                let username = get_current_username();
                 len += username.len();
-                buf.push_str(username)
+                buf.push_str(&username)
             }
-            // TODO:
             Span::Hostname => {
-                let hostname = "egg";
+                let hostname = get_hostname();
                 len += hostname.len();
-                buf.push_str(hostname)
+                buf.push_str(&hostname)
             }
-            // TODO:
             Span::CurrentDir => {
                 if let Ok(current_dir) = env::current_dir() {
-                    let path = current_dir.to_str().unwrap();
+                    let mut path = current_dir.to_str().unwrap().to_string();
+
+                    // "/Users/chandler/games/doom" -> "~/venus/games/doom"
+                    if let Some(home_dir) = dirs::home_dir() {
+                        let home_dir = home_dir.to_str().unwrap();
+                        if path.starts_with(&home_dir) {
+                            path = path.replace(home_dir, "~");
+                        }
+                    }
+
                     len += path.len();
-                    buf.push_str(path);
+                    buf.push_str(&path);
                 }
             }
         }
