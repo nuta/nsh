@@ -2,7 +2,6 @@ use crate::completion::Completions;
 use crate::input::InputMode;
 use crate::utils::get_env;
 use nom::types::CompleteStr as Input;
-use std::env;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::Style;
 use syntect::highlighting::ThemeSet;
@@ -142,7 +141,7 @@ fn draw_prompt(prompt: &Prompt) -> (String, usize) {
                 buf.push_str(&hostname)
             }
             Span::CurrentDir => {
-                if let Ok(current_dir) = env::current_dir() {
+                if let Ok(current_dir) = std::env::current_dir() {
                     let mut path = current_dir.to_str().unwrap().to_string();
 
                     // "/Users/chandler/games/doom" -> "~/venus/games/doom"

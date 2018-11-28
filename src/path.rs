@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::env;
 use std::fs::read_dir;
 use std::sync::Mutex;
 use crate::worker::Work;
@@ -23,7 +22,7 @@ pub fn lookup_external_command(cmd: &str) -> Option<String> {
 
 fn reload_paths() {
     let mut table = PATH_TABLE.lock().unwrap();
-    let path = env::var("PATH").unwrap_or_else(|_| DEFAULT_PATH.to_owned());
+    let path = std::env::var("PATH").unwrap_or_else(|_| DEFAULT_PATH.to_owned());
 
     // Look for all executables in $PATH.
     for bin_dir in path.split(':') {

@@ -1,10 +1,9 @@
-use std::env;
 use nix::unistd;
 use std::io::Write;
 use std::os::unix::io::RawFd;
 
 pub fn get_env(name: &str, default: &str) -> String {
-    env::var(name).unwrap_or_else(|_| default.to_string())
+    std::env::var(name).unwrap_or_else(|_| default.to_string())
 }
 
 /// `File`-like object but does not close the `fd`.

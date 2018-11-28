@@ -56,12 +56,12 @@ fn resolve_and_create_history_file() -> Option<PathBuf> {
     None
 }
 
-fn interactive_mode(scope: &mut exec::Env) -> ExitStatus {
+fn interactive_mode(env: &mut exec::Env) -> ExitStatus {
     // Eval nshrc.
     if let Some(home_dir) = dirs::home_dir() {
         let nshrc_path = Path::new(&home_dir).join(".nshrc");
         if nshrc_path.exists() {
-            exec::exec_file(scope, nshrc_path);
+            exec::exec_file(env, nshrc_path);
         }
     }
 
@@ -85,7 +85,7 @@ fn interactive_mode(scope: &mut exec::Env) -> ExitStatus {
             }
         };
 
-        exec::exec_str(scope, &line);
+        exec::exec_str(env, &line);
     }
 }
 
@@ -146,11 +146,11 @@ fn main() {
     history::init();
     let opt = Opt::from_args();
 
-    let scope = &mut CONTEXT.lock().unwrap();
+    let env = &mut CONTEXT.lock().unwrap();
     let status = match (opt.command, opt.file) {
-        (Some(command), _) => exec::exec_str(scope, &command),
-        (_, Some(file)) => exec::exec_file(scope, file),
-        (_, _) => interactive_mode(scope),
+        (Some(command), _) => exec::exec_str(env, &command),
+        (_, Some(file)) => exec::exec_file(env, file),
+        (_, _) => interactive_mode(env),
     };
 
     match status {

@@ -49,10 +49,10 @@ impl Variable {
     }
 
     // References value as `$foo[expr]`.
-    pub fn value_at<'a>(&'a self, scope: &Env, index: &Expr) -> &'a str {
+    pub fn value_at<'a>(&'a self, env: &Env, index: &Expr) -> &'a str {
         match &self.value {
             Value::Array(elems) => {
-                let index = evaluate_expr(scope, index);
+                let index = evaluate_expr(env, index);
                 if index < 0 {
                     return "";
                 }
@@ -129,12 +129,12 @@ impl Env {
     }
 }
 
-fn evaluate_expr(scope: &Env, expr: &Expr) -> i32 {
+fn evaluate_expr(env: &Env, expr: &Expr) -> i32 {
     match expr {
-        Expr::Expr(sub_expr) => evaluate_expr(scope, sub_expr),
+        Expr::Expr(sub_expr) => evaluate_expr(env, sub_expr),
         Expr::Literal(value) => *value,
         Expr::Parameter { name } => {
-            if let Some(var) = scope.get(name) {
+            if let Some(var) = env.get(name) {
                 match &var.value {
                     Value::String(s) => s.parse().unwrap_or(0),
                     _ => 0,
@@ -144,27 +144,27 @@ fn evaluate_expr(scope: &Env, expr: &Expr) -> i32 {
             }
         },
         Expr::Add(BinaryExpr { lhs, rhs }) => {
-            evaluate_expr(scope, lhs) + evaluate_expr(scope, rhs)
+            evaluate_expr(env, lhs) + evaluate_expr(env, rhs)
         },
         Expr::Sub(BinaryExpr { lhs, rhs }) => {
-            evaluate_expr(scope, lhs) - evaluate_expr(scope, rhs)
+            evaluate_expr(env, lhs) - evaluate_expr(env, rhs)
         },
         Expr::Mul(BinaryExpr { lhs, rhs }) => {
-            evaluate_expr(scope, lhs) * evaluate_expr(scope, rhs)
+            evaluate_expr(env, lhs) * evaluate_expr(env, rhs)
         },
         Expr::Div(BinaryExpr { lhs, rhs }) => {
-            evaluate_expr(scope, lhs) / evaluate_expr(scope, rhs)
+            evaluate_expr(env, lhs) / evaluate_expr(env, rhs)
         },
     }
 }
 
-fn expand_param(scope: &mut Env, name: &str, op: &ExpansionOp) -> String {
+fn expand_param(env: &mut Env, name: &str, op: &ExpansionOp) -> String {
     match name {
         "?" => {
-            return scope.last_status.to_string();
+            return env.last_status.to_string();
         },
         _ => {
-            if let Some(var) = scope.get(name) {
+            if let Some(var) = env.get(name) {
                 // $<name> is defined and contains a string value.
                 let value = var.value().to_string();
                 return match op {
@@ -179,10 +179,10 @@ fn expand_param(scope: &mut Env, name: &str, op: &ExpansionOp) -> String {
     match op {
         ExpansionOp::Length => "0".to_owned(),
         ExpansionOp::GetOrEmpty => "".to_owned(),
-        ExpansionOp::GetOrDefault(word) => evaluate_word(scope, word),
+        ExpansionOp::GetOrDefault(word) => evaluate_word(env, word),
         ExpansionOp::GetOrDefaultAndAssign(word) => {
-            let content = evaluate_word(scope, word);
-            scope.set(name, Variable::from_string(content.clone()));
+            let content = evaluate_word(env, word);
+            env.set(name, Variable::from_string(content.clone()));
             content
         }
         _ => panic!("TODO:"),
@@ -210,7 +210,7 @@ fn expand_glob(pattern: &str) -> Vec<String> {
 }
 
 
-fn evaluate_word(scope: &mut Env, word: &Word) -> String {
+fn evaluate_word(env: &mut Env, word: &Word) -> String {
     let mut buf = String::new();
     for span in &word.0 {
         match span {
@@ -218,15 +218,15 @@ fn evaluate_word(scope: &mut Env, word: &Word) -> String {
                 buf += s;
             },
             Span::Parameter { name, op } => {
-                buf += &expand_param(scope, name, op);
+                buf += &expand_param(env, name, op);
             },
             Span::ArrayParameter { name, index } => {
-                if let Some(var) = scope.get(name) {
-                    buf += var.value_at(scope, index);
+                if let Some(var) = env.get(name) {
+                    buf += var.value_at(env, index);
                 }
             },
             Span::ArithExpr { expr } => {
-                buf += &evaluate_expr(scope, expr).to_string();
+                buf += &evaluate_expr(env, expr).to_string();
             },
             Span::Tilde(user) => {
                 if user.is_some() {
@@ -243,7 +243,7 @@ fn evaluate_word(scope: &mut Env, word: &Word) -> String {
                 }
             },
             Span::Command { body } => {
-                let stdout = exec_in_subshell(scope, body);
+                let stdout = exec_in_subshell(env, body);
                 // TODO: support binary output
                 let s = std::str::from_utf8(&stdout).unwrap_or("").to_string();
                 buf += &s.trim_end_matches('\n');
@@ -260,10 +260,10 @@ fn evaluate_word(scope: &mut Env, word: &Word) -> String {
     buf
 }
 
-fn evaluate_words(scope: &mut Env, words: &[Word]) -> Vec<String> {
+fn evaluate_words(env: &mut Env, words: &[Word]) -> Vec<String> {
     let mut evaluated = Vec::new();
     for word in words {
-        let s = evaluate_word(scope, word);
+        let s = evaluate_word(env, word);
         if !s.is_empty() {
             // FIXME: Support file path which contains '*'.
             if s.contains('*') || s.contains('?') {
@@ -284,7 +284,7 @@ fn move_fd(src: RawFd, dst: RawFd) {
     }
 }
 
-fn exec_command(scope: &Env, argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> {
+fn exec_command(env: &Env, argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Result<Pid, ()> {
     let argv0 = match lookup_external_command(&argv[0]) {
         Some(argv0) => CString::new(argv0).unwrap(),
         None => {
@@ -308,8 +308,8 @@ fn exec_command(scope: &Env, argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Res
             }
 
             // Set exported variables.
-            for name in scope.exported_names() {
-                if let Some(var) = scope.get(name) {
+            for name in env.exported_names() {
+                if let Some(var) = env.get(name) {
                     std::env::set_var(name, var.value());
                 }
             }
@@ -321,7 +321,7 @@ fn exec_command(scope: &Env, argv: Vec<String>, fds: Vec<(RawFd, RawFd)>) -> Res
     }
 }
 
-pub fn exec_in_subshell(scope: &mut Env, terms: &[parser::Term]) -> Vec<u8> {
+pub fn exec_in_subshell(env: &mut Env, terms: &[parser::Term]) -> Vec<u8> {
     let (pipe_out, pipe_in) = pipe().unwrap();
     match fork().expect("failed to fork") {
         ForkResult::Parent { child } => {
@@ -335,7 +335,7 @@ pub fn exec_in_subshell(scope: &mut Env, terms: &[parser::Term]) -> Vec<u8> {
             let stdin = 0;
             let stdout = pipe_in;
             let stderr = 2;
-            let status = match run_terms(scope, terms, stdin, stdout, stderr) {
+            let status = match run_terms(env, terms, stdin, stdout, stderr) {
                 ExitStatus::ExitedWith(status) => status,
                 _ => 0,
             };
@@ -346,7 +346,7 @@ pub fn exec_in_subshell(scope: &mut Env, terms: &[parser::Term]) -> Vec<u8> {
 }
 
 pub fn run_terms(
-    scope: &mut Env,
+    env: &mut Env,
     terms: &[parser::Term],
     stdin: RawFd,
     stdout: RawFd,
@@ -365,14 +365,14 @@ pub fn run_terms(
                 _ => continue,
             }
 
-            last_status = run_pipeline(scope, pipeline, stdin, stdout, stderr);
+            last_status = run_pipeline(env, pipeline, stdin, stdout, stderr);
         }
     }
     last_status
 }
 
 fn run_pipeline(
-    scope: &mut Env,
+    env: &mut Env,
     pipeline: &parser::Pipeline,
     pipeline_stdin: RawFd,
     pipeline_stdout: RawFd,
@@ -397,7 +397,7 @@ fn run_pipeline(
             None
         };
 
-        last_command_result = Some(run_command(scope, command, stdin, stdout, stderr));
+        last_command_result = Some(run_command(env, command, stdin, stdout, stderr));
         if let CommandResult::External { pid } = last_command_result.unwrap() {
             childs.push(pid);
         }
@@ -415,12 +415,12 @@ fn run_pipeline(
         None => {
             trace!("nothing to execute");
             last_status = ExitStatus::ExitedWith(0);
-            scope.last_status = 0;
+            env.last_status = 0;
         }
         Some(CommandResult::Internal { status }) => {
             last_status = status;
             if let ExitStatus::ExitedWith(status) = status {
-                scope.last_status = status;
+                env.last_status = status;
             }
         }
         Some(CommandResult::External { pid: last_pid }) => {
@@ -442,7 +442,7 @@ fn run_pipeline(
 
                 if child == last_pid {
                     last_status = ExitStatus::ExitedWith(status);
-                    scope.last_status = status;
+                    env.last_status = status;
                 }
             }
         },
@@ -458,7 +458,7 @@ fn run_pipeline(
 }
 
 fn run_command(
-    scope: &mut Env,
+    env: &mut Env,
     command: &parser::Command,
     stdin: RawFd,
     stdout: RawFd,
@@ -482,7 +482,7 @@ fn run_command(
             let wargv = if !spans.is_empty() {
                 match spans[0] {
                     Span::Literal(ref lit) => {
-                        if let Some(alias_argv) = scope.lookup_alias(lit.as_str()) {
+                        if let Some(alias_argv) = env.lookup_alias(lit.as_str()) {
                             let mut new_wargv = Vec::new();
                             new_wargv.extend(alias_argv);
                             new_wargv.extend(ref_wargv.iter().skip(1).cloned());
@@ -497,23 +497,23 @@ fn run_command(
                 ref_wargv.clone()
             };
 
-            let argv = evaluate_words(scope, &wargv);
+            let argv = evaluate_words(env, &wargv);
             if argv.is_empty() {
                 return CommandResult::Internal { status: ExitStatus::ExitedWith(0) };
             }
 
             // Functions
-            if let Some(var) = scope.get(argv[0].as_str()) {
+            if let Some(var) = env.get(argv[0].as_str()) {
                 if let Variable {
                     value: Value::Function(body),
                 } = var.as_ref()
                 {
-                    return run_command(scope, &body, stdin, stdout, stderr);
+                    return run_command(env, &body, stdin, stdout, stderr);
                 }
             }
 
             // Internal commands
-            match run_internal_command(scope, &argv, stdin, stdout, stderr) {
+            match run_internal_command(env, &argv, stdin, stdout, stderr) {
                 Ok(status) => {
                     return CommandResult::Internal { status };
                 }
@@ -537,7 +537,7 @@ fn run_command(
                         };
 
                         trace!("redirection: options={:?}", options);
-                        let filepath = evaluate_word(scope, wfilepath);
+                        let filepath = evaluate_word(env, wfilepath);
                         if let Ok(file) = options.open(&filepath) {
                             fds.push((file.into_raw_fd(), r.fd as RawFd))
                         } else {
@@ -559,7 +559,7 @@ fn run_command(
                 fds.push((stderr, 2));
             }
 
-            match exec_command(scope, argv, fds) {
+            match exec_command(env, argv, fds) {
                 Ok(pid) => CommandResult::External { pid },
                 Err(_) => CommandResult::Internal { status: ExitStatus::ExitedWith(-1) },
             }
@@ -569,13 +569,13 @@ fn run_command(
                 let value = match assign.initializer {
                     Initializer::String(ref word) =>  {
                         Variable {
-                            value: Value::String(evaluate_word(scope, word)),
+                            value: Value::String(evaluate_word(env, word)),
                         }
                     },
                     Initializer::Array(ref words) =>  {
                         let mut elems = Vec::new();
                         for word in words {
-                            elems.push(evaluate_word(scope, word));
+                            elems.push(evaluate_word(env, word));
                         }
 
                         Variable {
@@ -584,7 +584,7 @@ fn run_command(
                     }
                 };
 
-                scope.set(&assign.name, value)
+                env.set(&assign.name, value)
             }
             CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
         }
@@ -592,7 +592,7 @@ fn run_command(
             let value = Variable {
                 value: Value::Function(body.clone()),
             };
-            scope.set(&name, value);
+            env.set(&name, value);
             CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
         }
         parser::Command::If {
@@ -601,24 +601,24 @@ fn run_command(
             ..
         } => {
             // TODO: else, elif
-            let result = run_terms(scope, condition, stdin, stdout, stderr);
+            let result = run_terms(env, condition, stdin, stdout, stderr);
             if result == ExitStatus::ExitedWith(0) {
                 CommandResult::Internal {
-                    status: run_terms(scope, then_part, stdin, stdout, stderr),
+                    status: run_terms(env, then_part, stdin, stdout, stderr),
                 }
             } else {
                 CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
             }
         }
         parser::Command::Group { terms } => CommandResult::Internal {
-            status: run_terms(scope, terms, stdin, stdout, stderr),
+            status: run_terms(env, terms, stdin, stdout, stderr),
         },
         parser::Command::For { var_name, words, body } => {
             for word in words {
-                let var = Variable::from_string(evaluate_word(scope, word));
-                scope.set(&var_name, var);
+                let var = Variable::from_string(evaluate_word(env, word));
+                env.set(&var_name, var);
 
-                let result = run_terms(scope, body, stdin, stdout, stderr);
+                let result = run_terms(env, body, stdin, stdout, stderr);
                 match result {
                     ExitStatus::Break => break,
                     ExitStatus::Continue => (),
@@ -641,29 +641,29 @@ fn run_command(
     }
 }
 
-pub fn exec(scope: &mut Env, ast: &Ast) -> ExitStatus {
+pub fn exec(env: &mut Env, ast: &Ast) -> ExitStatus {
     trace!("ast: {:#?}", ast);
 
     // Inherit shell's stdin/stdout/stderr.
     let stdin = 0;
     let stdout = 1;
     let stderr = 2;
-    run_terms(scope, &ast.terms, stdin, stdout, stderr)
+    run_terms(env, &ast.terms, stdin, stdout, stderr)
 }
 
-pub fn exec_file(scope: &mut Env, script_file: PathBuf) -> ExitStatus {
+pub fn exec_file(env: &mut Env, script_file: PathBuf) -> ExitStatus {
     let mut f = File::open(script_file).expect("failed to open a file");
     let mut script = String::new();
     f.read_to_string(&mut script)
         .expect("failed to load a file");
 
-    exec_str(scope, script.as_str())
+    exec_str(env, script.as_str())
 }
 
-pub fn exec_str(scope: &mut Env, script: &str) -> ExitStatus {
+pub fn exec_str(env: &mut Env, script: &str) -> ExitStatus {
     match parser::parse_line(script) {
         Ok(cmd) => {
-            exec(scope, &cmd)
+            exec(env, &cmd)
         }
         Err(parser::SyntaxError::Empty) => {
             // Just ignore.
@@ -678,9 +678,9 @@ pub fn exec_str(scope: &mut Env, script: &str) -> ExitStatus {
 
 #[test]
 fn test_expr() {
-    let mut scope = Env::new();
+    let mut env = Env::new();
     assert_eq!(
-        evaluate_expr(&scope, &Expr::Mul(BinaryExpr {
+        evaluate_expr(&env, &Expr::Mul(BinaryExpr {
             lhs: Box::new(Expr::Literal(2)),
             rhs: Box::new(Expr::Add(BinaryExpr {
                 lhs: Box::new(Expr::Literal(3)),
@@ -690,9 +690,9 @@ fn test_expr() {
         2 * (3 + 7)
     );
 
-    scope.set("x", Variable::from_string(3.to_string()));
+    env.set("x", Variable::from_string(3.to_string()));
     assert_eq!(
-        evaluate_expr(&scope, &Expr::Add(BinaryExpr {
+        evaluate_expr(&env, &Expr::Add(BinaryExpr {
             lhs: Box::new(Expr::Literal(1)),
             rhs: Box::new(Expr::Add(BinaryExpr {
                 lhs: Box::new(Expr::Mul(BinaryExpr {

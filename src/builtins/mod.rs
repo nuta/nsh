@@ -13,7 +13,7 @@ mod source;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
-    pub scope: &'a mut Env,
+    pub env: &'a mut Env,
     pub stdin: FdFile,
     pub stdout: FdFile,
     pub stderr: FdFile
@@ -51,7 +51,7 @@ lazy_static! {
 }
 
 pub fn run_internal_command(
-    scope: &mut Env,
+    env: &mut Env,
     argv: &[String],
     stdin: RawFd,
     stdout: RawFd,
@@ -60,7 +60,7 @@ pub fn run_internal_command(
 
     let mut ctx = InternalCommandContext {
         argv,
-        scope,
+        env,
         stdin: FdFile::new(stdin),
         stdout: FdFile::new(stdout),
         stderr: FdFile::new(stderr),
