@@ -477,8 +477,9 @@ named!(whitespaces<Input, ()>,
 named!(var_name<Input, String>,
     map!(recognize!(
         alt!(
-            take_while1!(is_valid_var_name_char)
-            | tag!("?")
+            tag!("?")
+            | take_while_m_n!(1, 1, is_digit)
+            | take_while1!(is_valid_var_name_char)
         )
     ), |name| name.to_string())
 );
@@ -2058,7 +2059,7 @@ pub fn test_expansions() {
     );
 
     assert_eq!(
-        parse_line("echo $?").unwrap(),
+        parse_line("echo $? $7").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2069,6 +2070,10 @@ pub fn test_expansions() {
                             Word(vec![Span::Literal("echo".into())]),
                             Word(vec![Span::Parameter {
                                 name: "?".into(),
+                                op: ExpansionOp::GetOrEmpty,
+                            }],),
+                            Word(vec![Span::Parameter {
+                                name: "7".into(),
                                 op: ExpansionOp::GetOrEmpty,
                             }],),
                         ],
