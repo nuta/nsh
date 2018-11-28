@@ -933,12 +933,14 @@ named!(func_def<Input, Command>,
     do_parse!(
         peek!(do_parse!(
             whitespaces >>
+            opt!(call!(keyword, "function")) >>
             var_name >>
             call!(keyword, "(") >>
             call!(keyword, ")") >>
             ( () )
         )) >>
         whitespaces >>
+        opt!(call!(keyword, "function")) >>
         name: var_name >>
         call!(keyword, "(") >>
         call!(keyword, ")") >>
