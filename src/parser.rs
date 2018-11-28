@@ -55,6 +55,15 @@ pub struct Assignment {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub enum LocalDeclaration {
+    // local foo=123
+    // local bar[0]=123 (same as `local bar=(123)`)
+    Assignment(Assignment),
+    // local foo
+    Name(String),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Command {
     SimpleCommand {
         argv: Vec<Word>,
@@ -87,6 +96,9 @@ pub enum Command {
     FunctionDef {
         name: String,
         body: Box<Command>, // Typically Command::Group.
+    },
+    LocalDef {
+        declarations: Vec<LocalDeclaration>,
     },
     Group {
         terms: Vec<Term>,
@@ -631,6 +643,7 @@ named!(nonreserved_word<Input, Word>,
         not!(peek!(call!(keyword, "case"))) >>
         not!(peek!(call!(keyword, "esac"))) >>
         not!(peek!(call!(keyword, "break"))) >>
+        not!(peek!(call!(keyword, "local"))) >>
         not!(peek!(call!(keyword, "{"))) >>
         not!(peek!(call!(keyword, "}"))) >>
         not!(peek!(call!(keyword, "("))) >>
@@ -950,6 +963,18 @@ named!(func_def<Input, Command>,
     )
 );
 
+named!(local_command<Input, Command>,
+    do_parse!(
+        call!(keyword, "local") >>
+        declarations: many1!(
+            alt!(
+                map!(assignment, LocalDeclaration::Assignment)
+            )
+        ) >>
+        ( Command::LocalDef { declarations } )
+    )
+);
+
 named!(assignment_command<Input, Command>,
     do_parse!(
         assignments: many1!(assignment) >>
@@ -964,6 +989,7 @@ named!(command<Input, Command>,
         case_command |
         break_command |
         continue_command |
+        local_command |
         group |
         func_def |
         do_parse!(
@@ -1925,6 +1951,74 @@ pub fn test_compound_commands() {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
                             argv: vec![lit!("func1")],
+                            redirects: vec![],
+                            assignments: vec![],
+                        }],
+                    }],
+                },
+            ],
+        },
+    );
+
+    assert_eq!(
+        parse_line("x=123; func2() { local x=456; }; echo $x").unwrap(),
+        Ast {
+            terms: vec![
+                Term {
+                    background: false,
+                    pipelines: vec![Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![Command::Assignment {
+                            assignments: vec![
+                                Assignment {
+                                    name: "x".into(),
+                                    initializer: Initializer::String(Word(vec![Span::Literal("123".into())])),
+                                    index: None,
+                                }
+                            ],
+                        }],
+                    }],
+                },
+                Term {
+                    background: false,
+                    pipelines: vec![Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![Command::FunctionDef {
+                            name: "func2".into(),
+                            body: Box::new(Command::Group {
+                                terms: vec![
+                                    Term {
+                                        background: false,
+                                        pipelines: vec![Pipeline {
+                                            run_if: RunIf::Always,
+                                            commands: vec![Command::LocalDef {
+                                                declarations: vec![
+                                                    LocalDeclaration::Assignment(Assignment {
+                                                        name: "x".into(),
+                                                        initializer: Initializer::String(Word(vec![Span::Literal("456".into())])),
+                                                        index: None,
+                                                    })
+                                                ]
+                                            }],
+                                        }],
+                                    },
+                                ],
+                            }),
+                        }],
+                    }],
+                },
+                Term {
+                    background: false,
+                    pipelines: vec![Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![Command::SimpleCommand {
+                            argv: vec![
+                                lit!("echo"),
+                                Word(vec![Span::Parameter {
+                                    name: "x".into(),
+                                    op: ExpansionOp::GetOrEmpty,
+                                }])
+                            ],
                             redirects: vec![],
                             assignments: vec![],
                         }],

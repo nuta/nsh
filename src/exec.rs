@@ -1,5 +1,8 @@
 use crate::builtins::{run_internal_command, InternalCommandError};
-use crate::parser::{self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer};
+use crate::parser::{
+    self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer,
+    LocalDeclaration, Assignment
+};
 use crate::path::lookup_external_command;
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::unistd::{close, dup2, execv, fork, pipe, ForkResult, Pid};
@@ -24,12 +27,14 @@ pub enum Value {
 #[derive(Debug)]
 pub struct Variable {
     value: Value,
+    is_local: bool,
 }
 
 impl Variable {
-    pub fn from_string(value: String) -> Variable {
+    pub fn new(value: Value, is_local: bool) -> Variable {
         Variable {
-            value: Value::String(value),
+            value,
+            is_local,
         }
     }
 
@@ -85,22 +90,14 @@ enum CommandResult {
 }
 
 #[derive(Debug)]
-pub struct Env {
-    prev: Option<Arc<Env>>,
-    last_status: i32,
+pub struct Frame {
     vars: HashMap<String, Arc<Variable>>,
-    exported: HashSet<String>,
-    aliases: HashMap<String, Vec<Word>>,
 }
 
-impl Env {
-    pub fn new() -> Env {
-        Env {
-            last_status: 0,
+impl Frame {
+    pub fn new() -> Frame {
+        Frame {
             vars: HashMap::new(),
-            prev: None,
-            exported: HashSet::new(),
-            aliases: HashMap::new(),
         }
     }
 
@@ -110,6 +107,72 @@ impl Env {
 
     pub fn get<'a, 'b>(&'a self, key: &'b str) -> Option<Arc<Variable>> {
         self.vars.get(key).cloned()
+    }
+}
+
+#[derive(Debug)]
+pub struct Env {
+    last_status: i32,
+    /// Global scope.
+    global: Frame,
+    /// Local scopes (variables declared with `local').
+    frames: Vec<Frame>,
+    exported: HashSet<String>,
+    aliases: HashMap<String, Vec<Word>>,
+}
+
+impl Env {
+    pub fn new() -> Env {
+        Env {
+            last_status: 0,
+            exported: HashSet::new(),
+            aliases: HashMap::new(),
+            global: Frame::new(),
+            frames: Vec::new(),
+        }
+    }
+
+    #[inline]
+    pub fn enter_frame(&mut self) {
+        self.frames.push(Frame::new());
+    }
+
+    #[inline]
+    pub fn leave_frame(&mut self) {
+        self.frames.pop();
+    }
+
+    #[inline]
+    pub fn in_global_frame(&self) -> bool {
+        self.frames.len() == 0
+    }
+
+    #[inline]
+    pub fn current_frame(&self) -> &Frame {
+        self.frames.last().unwrap_or(&self.global)
+    }
+
+    #[inline]
+    pub fn current_frame_mut(&mut self) -> &mut Frame {
+        self.frames.last_mut().unwrap_or(&mut self.global)
+    }
+
+    pub fn set(&mut self, key: &str, value: Value, is_local: bool) {
+        let frame = if is_local {
+            self.current_frame_mut()
+        } else {
+            &mut self.global
+        };
+
+        frame.set(key, Variable::new(value, is_local));
+    }
+
+    pub fn get<'a, 'b>(&'a self, key: &'b str) -> Option<Arc<Variable>> {
+        if let Some(var) = self.current_frame().get(key) {
+            Some(var)
+        } else {
+            self.global.get(key)
+        }
     }
 
     pub fn export(&mut self, name: &str) {
@@ -182,7 +245,7 @@ fn expand_param(env: &mut Env, name: &str, op: &ExpansionOp) -> String {
         ExpansionOp::GetOrDefault(word) => evaluate_word(env, word),
         ExpansionOp::GetOrDefaultAndAssign(word) => {
             let content = evaluate_word(env, word);
-            env.set(name, Variable::from_string(content.clone()));
+            env.set(name, Value::String(content.clone()), false);
             content
         }
         _ => panic!("TODO:"),
@@ -275,6 +338,19 @@ fn evaluate_words(env: &mut Env, words: &[Word]) -> Vec<String> {
     }
 
     evaluated
+}
+
+fn evaluate_initializer(env: &mut Env, initializer: &Initializer) -> Value {
+    match initializer {
+        Initializer::String(ref word) => Value::String(evaluate_word(env, word)),
+        Initializer::Array(ref words) =>  {
+            let mut elems = Vec::new();
+            for word in words {
+                elems.push(evaluate_word(env, word));
+            }
+            Value::Array(elems)
+        }
+    }
 }
 
 fn move_fd(src: RawFd, dst: RawFd) {
@@ -503,12 +579,17 @@ fn run_command(
             }
 
             // Functions
-            if let Some(var) = env.get(argv[0].as_str()) {
-                if let Variable {
-                    value: Value::Function(body),
-                } = var.as_ref()
-                {
-                    return run_command(env, &body, stdin, stdout, stderr);
+            if let Some(ref var) = env.get(argv[0].as_str()) {
+                match var.as_ref().value {
+                    Value::Function(ref body) => {
+                        env.enter_frame();
+                        let result = run_command(env, &body, stdin, stdout, stderr);
+                        env.leave_frame();
+                        return result;
+                    },
+                    // The variable is not a function. `argv[0]` is am internal or
+                    // external command.
+                    _ => (),
                 }
             }
 
@@ -566,33 +647,32 @@ fn run_command(
         }
         parser::Command::Assignment { assignments } => {
             for assign in assignments {
-                let value = match assign.initializer {
-                    Initializer::String(ref word) =>  {
-                        Variable {
-                            value: Value::String(evaluate_word(env, word)),
-                        }
-                    },
-                    Initializer::Array(ref words) =>  {
-                        let mut elems = Vec::new();
-                        for word in words {
-                            elems.push(evaluate_word(env, word));
-                        }
-
-                        Variable {
-                            value: Value::Array(elems),
-                        }
-                    }
-                };
-
-                env.set(&assign.name, value)
+                let value = evaluate_initializer(env, &assign.initializer);
+                env.set(&assign.name, value, false)
             }
             CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
+        },
+        parser::Command::LocalDef { declarations } => {
+            if env.in_global_frame() {
+                eprintln!("nsh: local variable can only be used in a function");
+                CommandResult::Internal { status: ExitStatus::ExitedWith(1) }
+            } else {
+                for decl in declarations {
+                    match decl {
+                        LocalDeclaration::Assignment(Assignment { name, initializer, .. }) => {
+                            let value = evaluate_initializer(env, &initializer);
+                            env.set(&name, value, true)
+                        },
+                        LocalDeclaration::Name(name) =>  {
+                            env.set(name, Value::String("".to_string()), true)
+                        }
+                    }
+                }
+                CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
+            }
         }
         parser::Command::FunctionDef { name, body } => {
-            let value = Variable {
-                value: Value::Function(body.clone()),
-            };
-            env.set(&name, value);
+            env.set(&name, Value::Function(body.clone()), true);
             CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
         }
         parser::Command::If {
@@ -615,8 +695,8 @@ fn run_command(
         },
         parser::Command::For { var_name, words, body } => {
             for word in words {
-                let var = Variable::from_string(evaluate_word(env, word));
-                env.set(&var_name, var);
+                let value = evaluate_word(env, word);
+                env.set(&var_name, Value::String(value), false);
 
                 let result = run_terms(env, body, stdin, stdout, stderr);
                 match result {
@@ -690,7 +770,7 @@ fn test_expr() {
         2 * (3 + 7)
     );
 
-    env.set("x", Variable::from_string(3.to_string()));
+    env.set("x", Value::String(3.to_string()), false);
     assert_eq!(
         evaluate_expr(&env, &Expr::Add(BinaryExpr {
             lhs: Box::new(Expr::Literal(1)),
