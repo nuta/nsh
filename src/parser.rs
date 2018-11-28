@@ -504,7 +504,7 @@ named!(comment<Input, ()>,
     )
 );
 
-named_args!(literal_span(in_quote: bool, in_expansion: bool)<Input, Span>,
+named_args!(literal_span(in_quote: bool, allowed_quote: Option<char>, in_expansion: bool)<Input, Span>,
     map!(
         take_while1!(|c| {
             if in_expansion {
@@ -513,6 +513,7 @@ named_args!(literal_span(in_quote: bool, in_expansion: bool)<Input, Span>,
                 || (in_quote && is_whitespace(c)))
             } else {
                 c == '}'
+                || (allowed_quote.is_some() && c == allowed_quote.unwrap())
                 || is_valid_word_char(c)
                 || (in_quote && is_whitespace(c))
             }
@@ -521,7 +522,7 @@ named_args!(literal_span(in_quote: bool, in_expansion: bool)<Input, Span>,
     )
 );
 
-fn parse_word(_buf: Input, in_expansion: bool, in_quote: bool) -> IResult<Input, Word> {
+fn parse_word(_buf: Input, in_expansion: bool, quote: Option<char>) -> IResult<Input, Word> {
     let first_len = _buf.len();
     let mut buf = _buf;
     let mut spans = Vec::new();
@@ -537,27 +538,42 @@ fn parse_word(_buf: Input, in_expansion: bool, in_quote: bool) -> IResult<Input,
     );
     loop {
         // Parse quoted strings.
-        for quote in &["\"", "'"] {
-            if let Ok((rest, _)) = tag!(buf, quote) {
-                if in_quote {
+        if let Ok((rest, matched)) = alt!(buf, tag!("\"") | tag!("'")) {
+            trace!("rest='{}', buf='{}'", rest, buf);
+            match (quote, matched) {
+                (Some('"'), Input("\"")) | (Some('\''), Input("'")) => {
                     // End of a string.
                     return Ok((buf, Word(spans)));
-                } else {
-                    let (rest2, word) = parse_word(rest, in_expansion, true)?;
+                },
+                (Some(_), _) => {
+                    // "Let's dance", 'ab"c'
+                    //     ^             ^
+
+                    // Do Nothing
+                },
+                (None, Input(matched)) => {
+                    let matched_char = matched.chars().nth(0).unwrap();
+                    let (rest2, word) = parse_word(rest, in_expansion, Some(matched_char))?;
                     spans.extend(word.0);
-                    let (rest3, _) = tag!(rest2, quote)?;
+                    let (rest3, _) = tag!(rest2, matched)?;
                     buf = rest3;
                 }
             }
         }
+
+        let allowed_quote = match quote {
+            Some('"') => Some('\''),
+            Some('\'') => Some('"'),
+            _ => None,
+        };
 
         match alt!(
             buf,
             pattern
                 | expansion
                 | backquoted_command_expansion
-                | call!(escape_sequence, in_quote)
-                | call!(literal_span, in_quote, in_expansion)
+                | call!(escape_sequence, quote.is_some())
+                | call!(literal_span, quote.is_some(), allowed_quote, in_expansion)
         ) {
             Ok((rest, span)) => {
                 trace!("rest='{}', span={:?}", rest, span);
@@ -621,7 +637,7 @@ named_args!(do_word(in_expansion: bool)<Input, Word>,
                 ( () )
             )) >>
             whitespaces >>
-            word: call!(parse_word, in_expansion, false) >>
+            word: call!(parse_word, in_expansion, None) >>
             ( word )
         )
     )
@@ -2538,14 +2554,14 @@ pub fn test_string_literal() {
     );
 
     assert_eq!(
-        parse_line("echo abc\"de\"fg"),
+        parse_line("echo abc\"de\"fg \"1'2''3\""),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
-                        argv: vec![lit!("echo"), lit!("abcdefg")],
+                        argv: vec![lit!("echo"), lit!("abcdefg"), lit!("1'2''3")],
                         assignments: vec![],
                         redirects: vec![],
                     }]
