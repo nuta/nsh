@@ -36,9 +36,10 @@ mod fuzzy;
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use std::sync::Mutex;
 use std::process;
 use structopt::StructOpt;
+use nix::unistd::{getpid, setpgid, tcsetpgrp};
+use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
 use crate::exec::ExitStatus;
 
 fn resolve_and_create_history_file() -> Option<PathBuf> {
@@ -129,11 +130,30 @@ struct Opt {
 
 pub static mut TIME_STARTED: Option<SystemTime> = None;
 
-lazy_static! {
-    static ref CONTEXT: Mutex<exec::Env> = Mutex::new(exec::Env::new());
-}
-
 fn main() {
+    let opt = Opt::from_args();
+    let interactive = opt.command.is_none() && opt.file.is_none();
+
+    if interactive {
+        // Create a process group.
+        let pid = getpid();
+        setpgid(pid, pid).expect("failed to setpgid");
+        tcsetpgrp(0 /* stdin */, pid).expect("failed to tcsetpgrp");
+
+        // Ignore job-control-related signals in order not to stop the shell.
+        // (refer https://www.gnu.org/software/libc/manual)
+        let action = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
+        unsafe {
+            sigaction(Signal::SIGINT, &action).expect("failed to sigaction");
+            sigaction(Signal::SIGQUIT, &action).expect("failed to sigaction");
+            sigaction(Signal::SIGTSTP, &action).expect("failed to sigaction");
+            sigaction(Signal::SIGTTIN, &action).expect("failed to sigaction");
+            sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
+            // Don't ignore SIGCHLD! If you do so waitpid(2) returns ECHILD.
+            // sigaction(Signal::SIGCHLD, &action).expect("failed to sigaction");
+        }
+    }
+
     unsafe {
         TIME_STARTED = Some(SystemTime::now());
     }
@@ -144,13 +164,12 @@ fn main() {
     worker::start_worker_threads();
     path::init();
     history::init();
-    let opt = Opt::from_args();
 
-    let env = &mut CONTEXT.lock().unwrap();
+    let mut isolate = exec::Env::new(getpid(), interactive);
     let status = match (opt.command, opt.file) {
-        (Some(command), _) => exec::exec_str(env, &command),
-        (_, Some(file)) => exec::exec_file(env, file),
-        (_, _) => interactive_mode(env),
+        (Some(command), _) => exec::exec_str(&mut isolate, &command),
+        (_, Some(file)) => exec::exec_file(&mut isolate, file),
+        (_, _) => interactive_mode(&mut isolate),
     };
 
     match status {
