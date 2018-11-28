@@ -14,6 +14,6 @@ $ ./tools/run-blackbox-tests.py test/if.sh test/for.sh
 
 ## Adding a new test
 Just add these files:
-- `<name>.sh`: A shell script run by nsh. It must exit with 0 on success.
+- `<name>.sh`: A shell script run by nsh.
 - `<name>.stdout`: The expected stdout from the script.
 - `<name>.stderr`: The expected stderr from the script (optional).

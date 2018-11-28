@@ -5,6 +5,7 @@ import sys
 import subprocess
 from pathlib import Path
 from termcolor import cprint
+import re
 
 def run_test(test):
     cprint(f"Running {test}...", attrs=["bold"], end="")
@@ -23,16 +24,37 @@ def run_test(test):
     except FileNotFoundError:
         expected_stderr = ""
 
-    # Before running nsh, make sure that bash outputs expected stdout.
     test_body = open(test).read()
     disable_output_check = "disable-output-check" in test_body
-    bash_stdout = subprocess.check_output(["bash", test], stderr=subprocess.PIPE).decode("utf-8")
+
+    m = re.search(r"exit-with=([0-9]+)", test_body)
+    if m is None:
+        expected_returncode = 0
+    else:
+        expected_returncode = int(m.groups()[0])
+
+    # Before running nsh, make sure that bash outputs expected stdout.
+    p = subprocess.Popen(["bash", test], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    bash_returncode = p.wait()
+    bash_stdout = p.stdout.read().decode("utf-8")
+    bash_stderr = p.stderr.read().decode("utf-8")
+
+    if bash_returncode != expected_returncode:
+        cprint(f"bash returned {bash_returncode} (expected {expected_returncode})", "red", attrs=["bold"])
+        print("bash stdout -------------------------")
+        print(bash_stdout)
+        print("bash stderr -------------------------")
+        print(bash_stderr)
+        return
+
     if disable_output_check == False and bash_stdout.rstrip() != expected_stdout.rstrip():
         cprint(f"unexpected bash output (fix {expected_stdout_path}!)", "red", attrs=["bold"])
         print("expected ----------------------------")
         print(expected_stdout)
         print("bash stdout -------------------------")
         print(bash_stdout)
+        print("bash stderr -------------------------")
+        print(bash_stderr)
         return
 
     # Run the test.
@@ -52,7 +74,7 @@ def run_test(test):
 
     if disable_output_check == False and stdout.rstrip() != expected_stdout.rstrip():
         cprint("unexpected stdout", "red", attrs=["bold"])
-        print("expected ----------------------------")
+        print("expected stdout ---------------------")
         print(expected_stdout)
         print("stdout ------------------------------")
         print(stdout)
@@ -62,13 +84,15 @@ def run_test(test):
 
     if disable_output_check == False and stderr.rstrip() != expected_stderr.rstrip():
         cprint("unexpected stderr", "red", attrs=["bold"])
-        print("expected ----------------------------")
+        print("expected stderr ---------------------")
         print(expected_stderr)
+        print("stdout ------------------------------")
+        print(stdout)
         print("stderr ------------------------------")
         print(stderr)
         return
 
-    if returncode != 0:
+    if returncode != expected_returncode:
         cprint(f"exited with {returncode}", "red", attrs=["bold"])
         return
 
