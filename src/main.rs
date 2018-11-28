@@ -1,6 +1,5 @@
 #![recursion_limit = "256"]
 
-#[cfg(build = "debug")]
 #[macro_use]
 extern crate slog;
 extern crate slog_scope;
@@ -90,10 +89,8 @@ fn interactive_mode(env: &mut exec::Env) -> ExitStatus {
     }
 }
 
-#[cfg(build = "debug")]
 static mut GLOBAL_LOGGER: Option<slog_scope::GlobalLoggerGuard> = None;
 
-#[cfg(build = "debug")]
 fn init_log() {
     use slog::Drain;
     use std::fs::OpenOptions;
@@ -158,7 +155,6 @@ fn main() {
         TIME_STARTED = Some(SystemTime::now());
     }
 
-    #[cfg(build = "debug")]
     init_log();
 
     worker::start_worker_threads();
