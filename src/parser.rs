@@ -618,6 +618,7 @@ named_args!(do_word(in_expansion: bool)<Input, Word>,
 named!(nonreserved_word<Input, Word>,
     do_parse!(
         whitespaces >>
+        not!(peek!(call!(keyword, "function"))) >>
         not!(peek!(call!(keyword, "if"))) >>
         not!(peek!(call!(keyword, "elif"))) >>
         not!(peek!(call!(keyword, "then"))) >>
