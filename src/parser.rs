@@ -969,6 +969,11 @@ named!(local_command<Input, Command>,
         declarations: many1!(
             alt!(
                 map!(assignment, LocalDeclaration::Assignment)
+                | do_parse!(
+                    name: var_name >>
+                    call!(whitespaces) >>
+                    ( LocalDeclaration::Name(name) )
+                )
             )
         ) >>
         ( Command::LocalDef { declarations } )
@@ -1961,7 +1966,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line("x=123; func2() { local x=456; }; echo $x").unwrap(),
+        parse_line("x=123; func2() { local x=456 y z; }; echo $x").unwrap(),
         Ast {
             terms: vec![
                 Term {
@@ -1997,7 +2002,9 @@ pub fn test_compound_commands() {
                                                         name: "x".into(),
                                                         initializer: Initializer::String(Word(vec![Span::Literal("456".into())])),
                                                         index: None,
-                                                    })
+                                                    }),
+                                                    LocalDeclaration::Name("y".into()),
+                                                    LocalDeclaration::Name("z".into())
                                                 ]
                                             }],
                                         }],
