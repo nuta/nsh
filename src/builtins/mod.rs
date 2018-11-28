@@ -10,6 +10,7 @@ mod echo;
 mod exit;
 mod export;
 mod source;
+mod set;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
@@ -34,6 +35,7 @@ pub fn xkcd_rand_command(ctx: &mut InternalCommandContext) -> ExitStatus {
 
 type InternalCommand = fn(&mut InternalCommandContext) -> ExitStatus;
 lazy_static! {
+    // TODO: Construct this map in compile time.
     static ref INTERNAL_COMMANDS: BTreeMap<&'static str, InternalCommand> = {
         let mut commands: BTreeMap<&'static str, InternalCommand> = BTreeMap::new();
         commands.insert("alias", crate::builtins::alias::command);
@@ -42,6 +44,7 @@ lazy_static! {
         commands.insert("source", crate::builtins::source::command);
         commands.insert("exit", crate::builtins::exit::command);
         commands.insert("export", crate::builtins::export::command);
+        commands.insert("set", crate::builtins::set::command);
         commands.insert(
             "get-xkcd-true-random-number-chosen-by-fair-dice-roll",
             xkcd_rand_command,

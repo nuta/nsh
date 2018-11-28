@@ -87,6 +87,8 @@ enum CommandResult {
     Break,
     // continue command
     Continue,
+    // The command is not executed because of `noexec`.
+    NoExec,
 }
 
 #[derive(Debug)]
@@ -119,6 +121,11 @@ pub struct Env {
     frames: Vec<Frame>,
     exported: HashSet<String>,
     aliases: HashMap<String, Vec<Word>>,
+
+    // Shell options.
+    pub errexit: bool,
+    pub nounset: bool,
+    pub noexec: bool,
 }
 
 impl Env {
@@ -129,6 +136,9 @@ impl Env {
             aliases: HashMap::new(),
             global: Frame::new(),
             frames: Vec::new(),
+            errexit: false,
+            nounset: false,
+            noexec: false,
         }
     }
 
@@ -240,8 +250,22 @@ fn expand_param(env: &mut Env, name: &str, op: &ExpansionOp) -> String {
 
     // $<name> is not defined.
     match op {
-        ExpansionOp::Length => "0".to_owned(),
-        ExpansionOp::GetOrEmpty => "".to_owned(),
+        ExpansionOp::Length => {
+            if env.nounset {
+                eprintln!("nsh: undefined variable `{}'", name);
+                std::process::exit(1);
+            }
+
+            "0".to_owned()
+        },
+        ExpansionOp::GetOrEmpty => {
+            if env.nounset {
+                eprintln!("nsh: undefined variable `{}'", name);
+                std::process::exit(1);
+            }
+
+            "".to_owned()
+        },
         ExpansionOp::GetOrDefault(word) => evaluate_word(env, word),
         ExpansionOp::GetOrDefaultAndAssign(word) => {
             let content = evaluate_word(env, word);
@@ -528,6 +552,15 @@ fn run_pipeline(
         Some(CommandResult::Continue) => {
             return ExitStatus::Continue;
         }
+        Some(CommandResult::NoExec) => (),
+    }
+
+    if env.errexit {
+        if let ExitStatus::ExitedWith(status) = last_status {
+            if status != 0 {
+                std::process::exit(status);
+            }
+        }
     }
 
     last_status
@@ -540,6 +573,11 @@ fn run_command(
     stdout: RawFd,
     stderr: RawFd,
 ) -> CommandResult {
+
+    if env.noexec {
+        return CommandResult::NoExec;
+    }
+
     trace!("run_command: {:?}", command);
     match command {
         parser::Command::SimpleCommand {
