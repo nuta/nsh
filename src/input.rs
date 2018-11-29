@@ -38,16 +38,26 @@ fn clear_n_lines(stdout: &mut Stdout, base: u16, n: u16) {
     }
 }
 
-fn get_current_y(stdout: &mut Stdout) -> u16 {
-    let (_, y) = stdout.cursor_pos().unwrap();
-    y - 1
+/// Returns the cursor position (0-origin).
+fn get_current_yx(stdout: &mut Stdout) -> (u16, u16) {
+    let (x, y) = stdout.cursor_pos().unwrap();
+    (y - 1, x - 1)
 }
 
 pub fn input() -> Result<String, InputError> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
+    let (_, current_x) = get_current_yx(&mut stdout);
+    if current_x != 0 {
+        // The prompt is not at the beginning of a line. This could be caused
+        // if the previous command didn't print the trailing newline
+        // (e.g. `echo -n hello`). Print a marker `%' and a newline.
+        write!(stdout, "{}%{}\n", termion::style::Invert, termion::style::Reset).ok();
+    }
+
+    let (mut prompt_base_y, _) = get_current_yx(&mut stdout);
+
     let mut user_input = String::new();
-    let mut prompt_base_y = get_current_y(&mut stdout); // 0-origin.
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
     let mut stdin_events = stdin.events();
     let current_theme = get_env("NSH_THEME", DEFAULT_THEME);
