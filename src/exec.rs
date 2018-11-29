@@ -309,6 +309,10 @@ impl Env {
                     trace!("nsh: pid={} status={}", pid, status);
                     self.set_process_state(pid, ProcessState::Completed(status));
                 },
+                Ok(WaitStatus::Signaled(pid, _signal, _)) => {
+                    // The `pid` process has been killed by `_signal`.
+                    self.set_process_state(pid, ProcessState::Completed(-1));
+                },
                 status => {
                     // TODO:
                     panic!("unexpected waitpid event: {:?}", status);
