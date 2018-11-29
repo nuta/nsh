@@ -1,6 +1,7 @@
 use crate::builtins::InternalCommandContext;
 use crate::exec::ExitStatus;
 use std::path::Path;
+use std::io::Write;
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("cd: {:?}", ctx.argv);
@@ -25,10 +26,13 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         }
     };
 
-    if std::env::set_current_dir(&dir).is_ok() {
-        ExitStatus::ExitedWith(0)
-    } else {
-        error!("failed to cd into {}", dir);
-        ExitStatus::ExitedWith(1)
+    match std::env::set_current_dir(&dir) {
+        Ok(_) => {
+            ExitStatus::ExitedWith(0)
+        },
+        Err(err) => {
+            write!(ctx.stderr, "nsh: cd: {}: `{}'\n", err, dir).ok();
+            ExitStatus::ExitedWith(1)
+        }
     }
 }
