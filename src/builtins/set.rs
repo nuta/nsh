@@ -26,7 +26,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             ExitStatus::ExitedWith(0)
         },
         Err(err) => {
-            write!(ctx.stdout, "set: {}", err).ok();
+            write!(ctx.stdout, "nsh: set: {}\n", err).ok();
             ExitStatus::ExitedWith(1)
         }
     }
