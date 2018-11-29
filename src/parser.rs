@@ -219,7 +219,6 @@ fn is_valid_var_name_char(ch: char) -> bool {
 }
 
 fn is_whitespace(ch: char) -> bool {
-    // TODO: $IFS
     " \t".to_owned().contains(ch)
 }
 
