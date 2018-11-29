@@ -503,16 +503,23 @@ named!(comment<Input, ()>,
     )
 );
 
-named_args!(literal_span(in_quote: bool, allowed_quote: Option<char>, in_expansion: bool)<Input, Span>,
+named_args!(literal_span(quote: Option<char>, in_expansion: bool)<Input, Span>,
     map!(
         take_while1!(|c| {
+            let in_quote = quote.is_some();
+            // TODO: refactoring
             if in_expansion {
                 c != '}' &&
                 (is_valid_word_char(c)
                 || (in_quote && is_whitespace(c)))
+            } else if let Some(quote) = quote {
+                match quote {
+                    '"' => c != quote && c != '\\' && c != '$',
+                    '\'' => c != quote && c != '\\',
+                    _ => unreachable!(),
+                }
             } else {
                 c == '}'
-                || (allowed_quote.is_some() && c == allowed_quote.unwrap())
                 || is_valid_word_char(c)
                 || (in_quote && is_whitespace(c))
             }
@@ -560,19 +567,13 @@ fn parse_word(_buf: Input, in_expansion: bool, quote: Option<char>) -> IResult<I
             }
         }
 
-        let allowed_quote = match quote {
-            Some('"') => Some('\''),
-            Some('\'') => Some('"'),
-            _ => None,
-        };
-
         match alt!(
             buf,
             pattern
                 | expansion
                 | backquoted_command_expansion
                 | call!(escape_sequence, quote.is_some())
-                | call!(literal_span, quote.is_some(), allowed_quote, in_expansion)
+                | call!(literal_span, quote, in_expansion)
         ) {
             Ok((rest, span)) => {
                 trace!("rest='{}', span={:?}", rest, span);
@@ -2590,14 +2591,14 @@ pub fn test_string_literal() {
 #[test]
 pub fn test_escape_sequences() {
     assert_eq!(
-        parse_line("echo \"\\e[1m\" a\"b\\\"c\"d \\this_\\i\\s_\\normal"),
+        parse_line("echo \"\\e[1m\" a\"b;\\\"c\"d \\this_\\i\\s_\\normal"),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
-                        argv: vec![lit!("echo"), lit!("\u{1b}[1m"), lit!("ab\"cd"), lit!("this_is_normal")],
+                        argv: vec![lit!("echo"), lit!("\u{1b}[1m"), lit!("ab;\"cd"), lit!("this_is_normal")],
                         assignments: vec![],
                         redirects: vec![],
                     }]
