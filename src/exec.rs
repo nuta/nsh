@@ -77,6 +77,7 @@ impl Variable {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ExitStatus {
     ExitedWith(i32),
+    Background(Pid /* pgid */),
     Break,
     Continue,
 }
@@ -280,6 +281,12 @@ impl Env {
         tcsetattr(0 /* stdin */, TCSADRAIN, termios).expect("failed to tcgetattr");
 
         status
+    }
+
+    pub fn bg(&mut self, _pgid: Pid, sigcont: bool) {
+        if sigcont {
+            unimplemented!();
+        }
     }
 
     /// Waits for all processes in the job to exit. Note that the job will be
@@ -918,7 +925,8 @@ fn run_pipeline(
                 let status = env.wait_for_job(pgid.unwrap());
                 last_status = ExitStatus::ExitedWith(status);
             } else if background {
-                unreachable!();
+                env.bg(pgid.unwrap(), false);
+                last_status = ExitStatus::Background(pgid.unwrap());
             } else {
                 let status = env.fg(pgid.unwrap(), false);
                 last_status = ExitStatus::ExitedWith(status);
