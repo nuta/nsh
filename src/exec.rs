@@ -6,6 +6,7 @@ use crate::parser::{
 use crate::path::lookup_external_command;
 use nix::sys::wait::{waitpid, WaitStatus};
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
+use nix::sys::termios::{tcgetattr, tcsetattr, Termios, SetArg::TCSADRAIN};
 use nix::unistd::{close, dup2, execv, fork, pipe, ForkResult, Pid, getpid, setpgid, tcsetpgrp};
 use std::collections::{HashMap, HashSet, LinkedList};
 use std::ffi::CString;
@@ -153,10 +154,10 @@ impl Frame {
     }
 }
 
-#[derive(Debug)]
 pub struct Env {
     shell_pgid: Pid,
     interactive: bool,
+    shell_termios: Option<Termios>,
 
     last_status: i32,
     /// Global scope.
@@ -178,9 +179,16 @@ pub struct Env {
 
 impl Env {
     pub fn new(shell_pgid: Pid, interactive: bool) -> Env {
+        let shell_termios = if interactive {
+            Some(tcgetattr(0 /* stdin */).expect("failed to tcgetattr"))
+        } else {
+            None
+        };
+
         Env {
             shell_pgid,
             interactive,
+            shell_termios,
             last_status: 0,
             exported: HashSet::new(),
             aliases: HashMap::new(),
@@ -265,7 +273,10 @@ impl Env {
         let status = self.wait_for_job(pgid);
 
         // Go back into the shell.
+        let termios = self.shell_termios.as_ref().unwrap();
         tcsetpgrp(0 /* stdin */, self.shell_pgid).expect("failed to tcsetpgrp");
+        tcsetattr(0 /* stdin */, TCSADRAIN, termios).expect("failed to tcgetattr");
+
         status
     }
 
