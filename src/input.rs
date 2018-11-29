@@ -172,6 +172,14 @@ pub fn input() -> Result<String, InputError> {
                             mode = InputMode::Normal;
                         }
                     }
+                    Event::Key(Key::Ctrl('a')) => {
+                        user_cursor = 0;
+                        mode = InputMode::Normal;
+                    },
+                    Event::Key(Key::Ctrl('e')) => {
+                        user_cursor = user_input.len() - 1;
+                        mode = InputMode::Normal;
+                    },
                     Event::Key(Key::Ctrl('c')) => match mode {
                         InputMode::Normal => return Ok("".to_owned()),
                         InputMode::Completion => {
