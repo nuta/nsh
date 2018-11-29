@@ -4,8 +4,9 @@ use crate::parser::{
     LocalDeclaration, Assignment
 };
 use crate::path::lookup_external_command;
-use nix::sys::wait::{waitpid, WaitStatus};
-use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
+use nix;
+use nix::sys::wait::{waitpid, WaitStatus, WaitPidFlag};
+use nix::sys::signal::{kill, SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
 use nix::sys::termios::{tcgetattr, tcsetattr, Termios, SetArg::TCSADRAIN};
 use nix::unistd::{close, dup2, execv, fork, pipe, ForkResult, Pid, getpid, setpgid, tcsetpgrp};
 use std::collections::{HashMap, HashSet};
@@ -17,7 +18,12 @@ use std::os::unix::io::IntoRawFd;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
+use std::cell::RefCell;
 use glob::glob;
+
+fn kill_process_group(pgid: Pid, signal: Signal) -> Result<(), nix::Error> {
+    kill(Pid::from_raw(-pgid.as_raw()), signal)
+}
 
 #[derive(Debug)]
 pub enum Value {
@@ -87,17 +93,45 @@ pub enum ProcessState {
     Running,
     /// Contains the exit status.
     Completed(i32),
+    Stopped(Pid),
 }
 
-#[derive(Debug)]
 pub struct Job {
+    id: usize,
+    pgid: Pid,
+    cmd: String,
     processes: Vec<Pid>,
+    termios: RefCell<Option<Termios>>,
 }
 
 impl Job {
-    pub fn new(processes: Vec<Pid>) -> Job {
+    pub fn new(id: usize, pgid: Pid, cmd: String, processes: Vec<Pid>) -> Job {
         Job {
+            id,
+            pgid,
+            cmd,
             processes,
+            termios: RefCell::new(None),
+        }
+    }
+
+    #[inline]
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    #[inline]
+    pub fn cmd(&self) -> &str {
+        self.cmd.as_str()
+    }
+
+    pub fn state(&self, env: &Env) -> &'static str {
+        if self.completed(env) {
+            "done"
+        } else if self.stopped(env) {
+            "stopped"
+        } else {
+            "running"
         }
     }
 
@@ -106,6 +140,16 @@ impl Job {
             let state = env.get_process_state(*pid).unwrap();
             match state {
                 ProcessState::Completed(_) => true,
+                _ => false,
+            }
+        })
+    }
+
+    pub fn stopped(&self, env: &Env) -> bool {
+        self.processes.iter().all(|pid| {
+            let state = env.get_process_state(*pid).unwrap();
+            match state {
+                ProcessState::Stopped(_) => true,
                 _ => false,
             }
         })
@@ -173,8 +217,9 @@ pub struct Env {
     pub nounset: bool,
     pub noexec: bool,
 
-    /// Key is a pgid.
-    jobs: HashMap<Pid, Arc<Job>>,
+    /// Key is the job ID.
+    jobs: HashMap<usize, Arc<Job>>,
+    last_fore_job: Option<Arc<Job>>,
     /// Key is a pid.
     states: HashMap<Pid, ProcessState>,
     pid_job_mapping: HashMap<Pid, Arc<Job>>,
@@ -203,6 +248,7 @@ impl Env {
             jobs: HashMap::new(),
             states: HashMap::new(),
             pid_job_mapping: HashMap::new(),
+            last_fore_job: None,
         }
     }
 
@@ -265,17 +311,69 @@ impl Env {
         self.aliases.get(&alias.to_string()).cloned()
     }
 
-    pub fn fg(&mut self, pgid: Pid, sigcont: bool) -> i32 {
+    #[inline]
+    pub fn jobs(&self) -> Vec<Arc<Job>> {
+        let mut jobs = Vec::new();
+        for job in self.jobs.values() {
+            jobs.push(job.clone());
+        }
+
+        jobs
+    }
+
+    pub fn alloc_job_id(&mut self) -> usize {
+        let mut id = 1;
+        while self.jobs.contains_key(&id) {
+            id += 1;
+        }
+
+        id
+    }
+
+    #[inline]
+    pub fn last_fore_job(&self) -> Option<Arc<Job>> {
+        self.last_fore_job.as_ref().map(|job| job.clone())
+    }
+
+    pub fn continue_job(&mut self, job_id: usize, background: bool) {
+        // Mark all stopped processes as running.
+        let job = self.jobs.get(&job_id).unwrap().clone();
+        for proc in &job.processes {
+            match self.get_process_state(*proc).unwrap() {
+                &ProcessState::Stopped(_) => {
+                    self.set_process_state(*proc, ProcessState::Running);
+                },
+                _ => (),
+            }
+        }
+
+        if background {
+            self.run_in_background(job_id, true);
+        } else {
+            self.run_in_foreground(job_id, true);
+        }
+    }
+
+    pub fn run_in_foreground(&mut self, job_id: usize, sigcont: bool) -> ProcessState {
+        let job = self.jobs.get(&job_id).unwrap().clone();
+        self.last_fore_job = Some(job.clone());
+
         // Put the job into the foreground.
-        tcsetpgrp(0 /* stdin */, pgid).expect("failed to tcsetpgrp");
+        tcsetpgrp(0 /* stdin */, job.pgid).expect("failed to tcsetpgrp");
+
         if sigcont {
-            unimplemented!();
+            if let Some(ref termios) = *job.termios.borrow() {
+                tcsetattr(0 /* stdout */, TCSADRAIN, termios).expect("failed to tcsetattr");
+            }
+            kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
+            trace!("sent sigcont");
         }
 
         // Wait for the job to exit.
-        let status = self.wait_for_job(pgid);
+        let status = self.wait_for_job(job.clone());
 
         // Go back into the shell.
+        job.termios.replace(Some(tcgetattr(0 /* stdin */).expect("failed to tcgetattr")));
         let termios = self.shell_termios.as_ref().unwrap();
         tcsetpgrp(0 /* stdin */, self.shell_pgid).expect("failed to tcsetpgrp");
         tcsetattr(0 /* stdin */, TCSADRAIN, termios).expect("failed to tcgetattr");
@@ -283,18 +381,18 @@ impl Env {
         status
     }
 
-    pub fn bg(&mut self, _pgid: Pid, sigcont: bool) {
+    pub fn run_in_background(&mut self, job_id: usize, sigcont: bool) {
+        let job = self.jobs.get(&job_id).unwrap().clone();
         if sigcont {
-            unimplemented!();
+            kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
         }
     }
 
     /// Waits for all processes in the job to exit. Note that the job will be
-    /// deleted from `Env`.
-    pub fn wait_for_job(&mut self, pgid: Pid) -> i32 {
+    /// deleted from `Env` if the process has exited.
+    pub fn wait_for_job(&mut self, job: Arc<Job>) -> ProcessState {
         loop {
-            let job = self.pid_job_mapping.get(&pgid).unwrap();
-            if job.completed(self) {
+            if job.completed(self) || job.stopped(self) {
                 break;
             }
 
@@ -302,17 +400,28 @@ impl Env {
         }
 
         // Get the exit status of the last process.
-        let job = self.pid_job_mapping.get(&pgid).unwrap().clone();
         let state = self.get_process_state(*job.processes.iter().last().unwrap()).cloned();
 
-        // Remove the job and processes from the list.
-        for proc in &*job.processes {
-            self.pid_job_mapping.remove(&proc);
-        }
-        self.jobs.remove(&pgid).unwrap();
-
         match state {
-            Some(ProcessState::Completed(status)) => status,
+            Some(ProcessState::Completed(_)) => {
+                // Remove the job and processes from the list.
+                for proc in &*job.processes {
+                    self.pid_job_mapping.remove(&proc);
+                }
+                self.jobs.remove(&job.id).unwrap();
+
+                if let Some(ref last_job) = self.last_fore_job {
+                    if job.id == last_job.id {
+                        self.last_fore_job = None;
+                    }
+                }
+
+                state.unwrap()
+            },
+            Some(ProcessState::Stopped(_)) => {
+                eprintln!("nsh: [{}] Stopped: {}", job.id, job.cmd);
+                state.unwrap()
+            },
             _ => unreachable!(),
         }
     }
@@ -330,24 +439,27 @@ impl Env {
     /// Waits for an *any* process, i.e. `waitpid(-1)` and updates
     /// the process state recorded in the `Env`.
     pub fn wait_for_any_process(&mut self) -> Pid {
-        let result = waitpid(None, None);
-
-        match result {
+        let result = waitpid(None, Some(WaitPidFlag::WUNTRACED));
+        let (pid, state) = match result {
             Ok(WaitStatus::Exited(pid, status)) => {
                 trace!("nsh: pid={} status={}", pid, status);
-                self.set_process_state(pid, ProcessState::Completed(status));
-                pid
+                (pid, ProcessState::Completed(status))
             },
             Ok(WaitStatus::Signaled(pid, _signal, _)) => {
                 // The `pid` process has been killed by `_signal`.
-                self.set_process_state(pid, ProcessState::Completed(-1));
-                pid
+                (pid, ProcessState::Completed(-1))
+            },
+            Ok(WaitStatus::Stopped(pid, _signal)) => {
+                (pid, ProcessState::Stopped(pid))
             },
             status => {
                 // TODO:
                 panic!("unexpected waitpid event: {:?}", status);
             }
-        }
+        };
+
+        self.set_process_state(pid, state);
+        pid
     }
 
     fn exec_external_command(&mut self, ctx: &Context, argv: Vec<String>, redirects: &[parser::Redirection]) -> CommandResult {
@@ -428,6 +540,10 @@ impl Env {
 
                     if !ctx.background {
                         tcsetpgrp(0 /* stdin */, pgid).expect("failed to tcsetpgrp");
+
+                        // Place the terminal out of raw mode.
+                        let termios = self.shell_termios.as_ref().unwrap();
+                        tcsetattr(0 /* stdin */, TCSADRAIN, termios).expect("tcsetattr");
                     }
 
                     // Accept job-control-related signals (refer https://www.gnu.org/software/libc/manual/html_node/Launching-Jobs.html)
@@ -867,7 +983,6 @@ fn run_pipeline(
             None
         };
 
-
         let ctx = Context { stdin, stdout, stderr, pgid, background, interactive: env.interactive };
         let result = env.run_command(command, &ctx);
         match result {
@@ -895,17 +1010,6 @@ fn run_pipeline(
         last_command_result = Some(result);
     }
 
-    // Create a new job.
-    let job = Arc::new(Job::new(childs.clone()));
-    for child in childs {
-        env.set_process_state(child, ProcessState::Running);
-        env.pid_job_mapping.insert(child, job.clone());
-    }
-
-    if let Some(pgid) = pgid {
-        env.jobs.insert(pgid, job);
-    }
-
     // Wait for the last command in the pipeline.
     // FIXME: needs refactoring: last_status should be immutable
     let mut last_status = ExitStatus::ExitedWith(0);
@@ -921,15 +1025,38 @@ fn run_pipeline(
             }
         }
         Some(CommandResult::External { .. }) => {
+            // Create a new job.
+            let cmd_name = String::new(); // TODO:
+            let job = Arc::new(Job::new(env.alloc_job_id(), pgid.unwrap(), cmd_name, childs.clone()));
+            for child in childs {
+                env.set_process_state(child, ProcessState::Running);
+                env.pid_job_mapping.insert(child, job.clone());
+            }
+            env.jobs.insert(job.id, job.clone());
+
             if !env.interactive {
-                let status = env.wait_for_job(pgid.unwrap());
-                last_status = ExitStatus::ExitedWith(status);
+                last_status = match env.wait_for_job(job.clone()) {
+                    ProcessState::Completed(status) => {
+                        ExitStatus::ExitedWith(status)
+                    },
+                    ProcessState::Stopped(_) => {
+                        ExitStatus::Background(pgid.unwrap())
+                    },
+                    _ => unreachable!(),
+                }
             } else if background {
-                env.bg(pgid.unwrap(), false);
+                env.run_in_background(job.id, false);
                 last_status = ExitStatus::Background(pgid.unwrap());
             } else {
-                let status = env.fg(pgid.unwrap(), false);
-                last_status = ExitStatus::ExitedWith(status);
+                last_status = match env.run_in_foreground(job.id, false) {
+                    ProcessState::Completed(status) => {
+                        ExitStatus::ExitedWith(status)
+                    },
+                    ProcessState::Stopped(_) => {
+                        ExitStatus::Background(pgid.unwrap())
+                    },
+                    _ => unreachable!(),
+                };
             }
         },
         Some(CommandResult::Break) => {

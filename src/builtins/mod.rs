@@ -11,6 +11,9 @@ mod exit;
 mod export;
 mod source;
 mod set;
+mod fg;
+mod bg;
+mod jobs;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
@@ -45,6 +48,9 @@ lazy_static! {
         commands.insert("exit", crate::builtins::exit::command);
         commands.insert("export", crate::builtins::export::command);
         commands.insert("set", crate::builtins::set::command);
+        commands.insert("fg", crate::builtins::fg::command);
+        commands.insert("bg", crate::builtins::bg::command);
+        commands.insert("jobs", crate::builtins::jobs::command);
         commands.insert(
             "get-xkcd-true-random-number-chosen-by-fair-dice-roll",
             xkcd_rand_command,
