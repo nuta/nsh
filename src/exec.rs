@@ -8,7 +8,7 @@ use nix::sys::wait::{waitpid, WaitStatus};
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
 use nix::sys::termios::{tcgetattr, tcsetattr, Termios, SetArg::TCSADRAIN};
 use nix::unistd::{close, dup2, execv, fork, pipe, ForkResult, Pid, getpid, setpgid, tcsetpgrp};
-use std::collections::{HashMap, HashSet, LinkedList};
+use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
@@ -172,7 +172,9 @@ pub struct Env {
     pub nounset: bool,
     pub noexec: bool,
 
-    jobs: LinkedList<Arc<Job>>,
+    /// Key is a pgid.
+    jobs: HashMap<Pid, Arc<Job>>,
+    /// Key is a pid.
     states: HashMap<Pid, ProcessState>,
     pid_job_mapping: HashMap<Pid, Arc<Job>>,
 }
@@ -197,7 +199,7 @@ impl Env {
             errexit: false,
             nounset: false,
             noexec: false,
-            jobs: LinkedList::new(),
+            jobs: HashMap::new(),
             states: HashMap::new(),
             pid_job_mapping: HashMap::new(),
         }
@@ -280,7 +282,8 @@ impl Env {
         status
     }
 
-    /// Waits for all processes in the job to exit.
+    /// Waits for all processes in the job to exit. Note that the job will be
+    /// deleted from `Env`.
     pub fn wait_for_job(&mut self, pgid: Pid) -> i32 {
         loop {
             let job = self.pid_job_mapping.get(&pgid).unwrap();
@@ -291,10 +294,18 @@ impl Env {
             self.wait_for_any_process();
         }
 
-        // Return the exit status of the last process.
-        let job = self.pid_job_mapping.get(&pgid).unwrap();
-        match self.get_process_state(*job.processes.iter().last().unwrap()) {
-            Some(ProcessState::Completed(status)) => *status,
+        // Get the exit status of the last process.
+        let job = self.pid_job_mapping.get(&pgid).unwrap().clone();
+        let state = self.get_process_state(*job.processes.iter().last().unwrap()).cloned();
+
+        // Remove the job and processes from the list.
+        for proc in &*job.processes {
+            self.pid_job_mapping.remove(&proc);
+        }
+        self.jobs.remove(&pgid).unwrap();
+
+        match state {
+            Some(ProcessState::Completed(status)) => status,
             _ => unreachable!(),
         }
     }
@@ -311,26 +322,24 @@ impl Env {
 
     /// Waits for an *any* process, i.e. `waitpid(-1)` and updates
     /// the process state recorded in the `Env`.
-    pub fn wait_for_any_process(&mut self) {
-        loop {
-            let result = waitpid(None, None);
+    pub fn wait_for_any_process(&mut self) -> Pid {
+        let result = waitpid(None, None);
 
-            match result {
-                Ok(WaitStatus::Exited(pid, status)) => {
-                    trace!("nsh: pid={} status={}", pid, status);
-                    self.set_process_state(pid, ProcessState::Completed(status));
-                },
-                Ok(WaitStatus::Signaled(pid, _signal, _)) => {
-                    // The `pid` process has been killed by `_signal`.
-                    self.set_process_state(pid, ProcessState::Completed(-1));
-                },
-                status => {
-                    // TODO:
-                    panic!("unexpected waitpid event: {:?}", status);
-                }
-            };
-
-            break;
+        match result {
+            Ok(WaitStatus::Exited(pid, status)) => {
+                trace!("nsh: pid={} status={}", pid, status);
+                self.set_process_state(pid, ProcessState::Completed(status));
+                pid
+            },
+            Ok(WaitStatus::Signaled(pid, _signal, _)) => {
+                // The `pid` process has been killed by `_signal`.
+                self.set_process_state(pid, ProcessState::Completed(-1));
+                pid
+            },
+            status => {
+                // TODO:
+                panic!("unexpected waitpid event: {:?}", status);
+            }
         }
     }
 
@@ -884,6 +893,10 @@ fn run_pipeline(
     for child in childs {
         env.set_process_state(child, ProcessState::Running);
         env.pid_job_mapping.insert(child, job.clone());
+    }
+
+    if let Some(pgid) = pgid {
+        env.jobs.insert(pgid, job);
     }
 
     // Wait for the last command in the pipeline.
