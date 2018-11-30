@@ -4,6 +4,7 @@ use crate::parser::{
     LocalDeclaration, Assignment
 };
 use crate::path::lookup_external_command;
+use crate::variable::{Variable, Value};
 use crate::utils::FdFile;
 use nix;
 use nix::sys::wait::{waitpid, WaitStatus, WaitPidFlag};
@@ -26,53 +27,30 @@ fn kill_process_group(pgid: Pid, signal: Signal) -> Result<(), nix::Error> {
     kill(Pid::from_raw(-pgid.as_raw()), signal)
 }
 
-#[derive(Debug)]
-pub enum Value {
-    String(String),
-    Array(Vec<String>),
-    Function(Box<parser::Command>),
-}
-
-#[derive(Debug)]
-pub struct Variable {
-    value: Value,
-    is_local: bool,
-}
-
-impl Variable {
-    pub fn new(value: Value, is_local: bool) -> Variable {
-        Variable {
-            value,
-            is_local,
-        }
-    }
-
-    // References value as `$foo`.
-    pub fn value<'a>(&'a self) -> &'a str {
-        match &self.value {
-            Value::String(value) => value,
-            Value::Function(_) => "(function)",
-            // Bash returns the first element in the array.
-            Value::Array(elems) => {
-                match elems.get(0) {
-                    Some(elem) => elem.as_str(),
-                    _ => "",
-                }
-            }
-        }
-    }
-
-    // References value as `$foo[expr]`.
-    pub fn value_at<'a>(&'a self, index: usize) -> &'a str {
-        match &self.value {
-            Value::Array(elems) => {
-                match elems.get(index) {
-                    Some(elem) => elem.as_str(),
-                    _ => "",
-                }
+fn expand_glob(pattern: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    for entry in glob(pattern).expect("failed to glob") {
+        match entry {
+            Ok(path) => {
+                words.push(path.to_str().unwrap().to_string());
             },
-            _ => "",
+            Err(e) => trace!("glob error: {:?}", e),
         }
+    }
+
+    if words.len() == 0 {
+        // TODO: return Result and abort the command instead
+        eprintln!("nsh: no glob matches");
+        return vec![pattern.to_string()];
+    }
+
+    words
+}
+
+fn move_fd(src: RawFd, dst: RawFd) {
+    if src != dst {
+        dup2(src, dst).expect("failed to dup2");
+        close(src).expect("failed to close");
     }
 }
 
@@ -85,12 +63,61 @@ pub enum ExitStatus {
     Return,
 }
 
+#[derive(Debug, Copy, Clone)]
+struct Context {
+    stdin: RawFd,
+    stdout: RawFd,
+    stderr: RawFd,
+    pgid: Option<Pid>,
+    background: bool,
+    interactive: bool,
+}
+
+#[derive(Debug, Copy, Clone)]
+enum CommandResult {
+    External { pid: Pid },
+    Internal { status: ExitStatus },
+    // break command
+    Break,
+    // continue command
+    Continue,
+    // return command
+    Return,
+    // The command is not executed because of `noexec`.
+    NoExec,
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ProcessState {
     Running,
     /// Contains the exit status.
     Completed(i32),
     Stopped(Pid),
+}
+
+#[derive(Debug)]
+pub struct Frame {
+    vars: HashMap<String, Arc<Variable>>,
+}
+
+impl Frame {
+    pub fn new() -> Frame {
+        Frame {
+            vars: HashMap::new(),
+        }
+    }
+
+    pub fn set(&mut self, key: &str, value: Variable) {
+        self.vars.insert(key.into(), Arc::new(value));
+    }
+
+    pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
+        self.vars.remove(key.into())
+    }
+
+    pub fn get<'a, 'b>(&'a self, key: &'b str) -> Option<Arc<Variable>> {
+        self.vars.get(key).cloned()
+    }
 }
 
 pub struct Job {
@@ -150,55 +177,6 @@ impl Job {
                 _ => false,
             }
         })
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-struct Context {
-    stdin: RawFd,
-    stdout: RawFd,
-    stderr: RawFd,
-    pgid: Option<Pid>,
-    background: bool,
-    interactive: bool,
-}
-
-#[derive(Debug, Copy, Clone)]
-enum CommandResult {
-    External { pid: Pid },
-    Internal { status: ExitStatus },
-    // break command
-    Break,
-    // continue command
-    Continue,
-    // return command
-    Return,
-    // The command is not executed because of `noexec`.
-    NoExec,
-}
-
-#[derive(Debug)]
-pub struct Frame {
-    vars: HashMap<String, Arc<Variable>>,
-}
-
-impl Frame {
-    pub fn new() -> Frame {
-        Frame {
-            vars: HashMap::new(),
-        }
-    }
-
-    pub fn set(&mut self, key: &str, value: Variable) {
-        self.vars.insert(key.into(), Arc::new(value));
-    }
-
-    pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
-        self.vars.remove(key.into())
-    }
-
-    pub fn get<'a, 'b>(&'a self, key: &'b str) -> Option<Arc<Variable>> {
-        self.vars.get(key).cloned()
     }
 }
 
@@ -314,7 +292,7 @@ impl Isolate {
     pub fn get_str<'a, 'b>(&'a self, key: &'a str) -> Option<String> {
         match self.get(key) {
             Some(var) => {
-                match var.value {
+                match var.value() {
                     Value::String(ref s) => Some(s.clone()),
                     _ => None,
                 }
@@ -337,6 +315,190 @@ impl Isolate {
 
     pub fn lookup_alias(&self, alias: &str) -> Option<Vec<Word>> {
         self.aliases.get(&alias.to_string()).cloned()
+    }
+
+    fn evaluate_expr(&self, expr: &Expr) -> i32 {
+        match expr {
+            Expr::Expr(sub_expr) => self.evaluate_expr(sub_expr),
+            Expr::Literal(value) => *value,
+            Expr::Parameter { name } => {
+                if let Some(var) = self.get(name) {
+                    match var.value() {
+                        Value::String(s) => s.parse().unwrap_or(0),
+                        _ => 0,
+                    }
+                } else {
+                    0
+                }
+            },
+            Expr::Add(BinaryExpr { lhs, rhs }) => {
+                self.evaluate_expr(lhs) + self.evaluate_expr(rhs)
+            },
+            Expr::Sub(BinaryExpr { lhs, rhs }) => {
+                self.evaluate_expr(lhs) - self.evaluate_expr(rhs)
+            },
+            Expr::Mul(BinaryExpr { lhs, rhs }) => {
+                self.evaluate_expr(lhs) * self.evaluate_expr(rhs)
+            },
+            Expr::Div(BinaryExpr { lhs, rhs }) => {
+                self.evaluate_expr(lhs) / self.evaluate_expr(rhs)
+            },
+        }
+    }
+
+    fn expand_param(&mut self, name: &str, op: &ExpansionOp) -> String {
+        match name {
+            "?" => {
+                return self.last_status.to_string();
+            },
+            _ => {
+                if let Some(var) = self.get(name) {
+                    // $<name> is defined and contains a string value.
+                    let value = var.as_str().to_string();
+                    return match op {
+                        ExpansionOp::Length => value.len().to_string(),
+                        _ => value,
+                    };
+                }
+            }
+        }
+
+        // $<name> is not defined.
+        match op {
+            ExpansionOp::Length => {
+                if self.nounset {
+                    eprintln!("nsh: undefined variable `{}'", name);
+                    std::process::exit(1);
+                }
+
+                "0".to_owned()
+            },
+            ExpansionOp::GetOrEmpty => {
+                if self.nounset {
+                    eprintln!("nsh: undefined variable `{}'", name);
+                    std::process::exit(1);
+                }
+
+                "".to_owned()
+            },
+            ExpansionOp::GetOrDefault(word) => self.expand_word_into_string(word),
+            ExpansionOp::GetOrDefaultAndAssign(word) => {
+                let content = self.expand_word_into_string(word);
+                self.set(name, Value::String(content.clone()), false);
+                content
+            }
+            _ => panic!("TODO:"),
+        }
+    }
+
+    fn expand_word_into_vec(&mut self, word: &Word, ifs: &str) -> Vec<String> {
+        let mut words = Vec::new();
+        for span in &word.0 {
+            let (frag, expand) = match span {
+                Span::Literal(s) => (s.clone(), false),
+                Span::Parameter { name, op, quoted } => {
+                    (self.expand_param(name, op), !quoted)
+                },
+                Span::ArrayParameter { name, index, quoted } => {
+                    let index = self.evaluate_expr(index);
+                    let frag = if index < 0 {
+                        // TODO: return Err instead.
+                        eprintln!("nsh: {}: the index must be larger than or equals 0", name);
+                        "".to_owned()
+                    } else {
+                        self
+                            .get(name)
+                            .map(|v| v.value_at(index as usize).to_string())
+                            .unwrap_or_else(|| "".to_owned())
+                    };
+
+                    (frag, !quoted)
+                },
+                Span::ArithExpr { expr } => {
+                    (self.evaluate_expr(expr).to_string(), false)
+                },
+                Span::Tilde(user) => {
+                    if user.is_some() {
+                        // TODO: e.g. ~mike, ~chandler/venus
+                        unimplemented!();
+                    }
+
+                    (dirs::home_dir().unwrap().to_str().unwrap().to_owned(), false)
+                },
+                Span::Command { body, quoted } => {
+                    let stdout = self.run_in_subshell(body);
+                    // TODO: support binary output
+                    let s = std::str::from_utf8(&stdout).unwrap_or("").to_string();
+                    (s.trim_end_matches('\n').to_string(), !quoted)
+                },
+                Span::AnyChar => {
+                    ("?".into(), false)
+                },
+                Span::AnyString => {
+                    ("*".into(), false)
+                },
+            };
+
+            // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo=123`.
+            if !frag.is_empty() {
+                if expand {
+                    for word in frag.split(|c| ifs.contains(c)) {
+                        words.push(word.to_string());
+                    }
+                } else {
+                    words.push(frag);
+                }
+            }
+        }
+
+        let mut glob_expanded = Vec::new();
+        for word in words {
+            // FIXME: Support file path which contains '*'.
+            if word.contains('*') || word.contains('?') {
+                glob_expanded.extend(expand_glob(&word))
+            } else {
+                glob_expanded.push(word);
+            };
+        }
+
+        glob_expanded
+    }
+
+    fn expand_word_into_string(&mut self, word: &Word) -> String {
+        let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
+        self.expand_word_into_vec(word, &ifs).join(" ")
+    }
+
+    fn expand_words(&mut self, words: &[Word]) -> Vec<String> {
+        let mut evaluated = Vec::new();
+        let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
+        for word in words {
+            evaluated.extend(self.expand_word_into_vec(word, &ifs));
+        }
+
+        evaluated
+    }
+
+    /// Evaluates a variable initializer.
+    ///
+    /// ```
+    /// this_is_string=hello_world
+    ///                ^^^^^^^^^^^ a string initializer
+    /// this_is_array=(a b c)
+    ///               ^^^^^^^ an array initializer
+    /// ```
+    ///
+    fn evaluate_initializer(&mut self, initializer: &Initializer) -> Value {
+        match initializer {
+            Initializer::String(ref word) => Value::String(self.expand_word_into_string(word)),
+            Initializer::Array(ref words) =>  {
+                let mut elems = Vec::new();
+                for word in words {
+                    elems.push(self.expand_word_into_string(word));
+                }
+                Value::Array(elems)
+            }
+        }
     }
 
     #[inline]
@@ -454,16 +616,6 @@ impl Isolate {
         }
     }
 
-    /// Updates the process state.
-    fn set_process_state(&mut self, pid: Pid, state: ProcessState) {
-        self.states.insert(pid, state);
-    }
-
-    /// Returns the process state.
-    fn get_process_state(&self, pid: Pid) -> Option<&ProcessState> {
-        self.states.get(&pid)
-    }
-
     /// Waits for an *any* process, i.e. `waitpid(-1)` and updates
     /// the process state recorded in the `Isolate`.
     pub fn wait_for_any_process(&mut self) -> Pid {
@@ -490,7 +642,18 @@ impl Isolate {
         pid
     }
 
-    fn exec_external_command(&mut self, ctx: &Context, argv: Vec<String>, redirects: &[parser::Redirection]) -> CommandResult {
+    /// Updates the process state.
+    fn set_process_state(&mut self, pid: Pid, state: ProcessState) {
+        self.states.insert(pid, state);
+    }
+
+    /// Returns the process state.
+    fn get_process_state(&self, pid: Pid) -> Option<&ProcessState> {
+        self.states.get(&pid)
+    }
+
+    /// Spawn a child process and execute a command.
+    fn run_external_command(&mut self, ctx: &Context, argv: Vec<String>, redirects: &[parser::Redirection]) -> CommandResult {
         let mut fds = Vec::new();
         for r in redirects {
             match r.target {
@@ -509,7 +672,7 @@ impl Isolate {
                     };
 
                     trace!("redirection: options={:?}", options);
-                    let filepath = self.evaluate_word_into_string(wfilepath);
+                    let filepath = self.expand_word_into_string(wfilepath);
                     if let Ok(file) = options.open(&filepath) {
                         fds.push((file.into_raw_fd(), r.fd as RawFd))
                     } else {
@@ -594,7 +757,7 @@ impl Isolate {
                 // Set exported variables.
                 for name in self.exported_names() {
                     if let Some(var) = self.get(name) {
-                        std::env::set_var(name, var.value());
+                        std::env::set_var(name, var.as_str());
                     }
                 }
 
@@ -605,6 +768,7 @@ impl Isolate {
         }
     }
 
+    /// Runs an internal (builtin) command.
     pub fn run_internal_command(
         &mut self,
         argv: &[String],
@@ -628,7 +792,24 @@ impl Isolate {
         }
     }
 
-    fn eval_simple_command(&mut self, ctx: &Context, argv: Vec<String>, redirects: &[parser::Redirection]) -> CommandResult {
+    fn expand_alias(&self, argv: &[Word]) -> Vec<Word> {
+        if let Some(word) = argv.iter().nth(0) {
+            if let Some(Span::Literal(lit)) = word.0.iter().nth(0) {
+                if let Some(alias) = self.lookup_alias(lit.as_str()) {
+                    let mut new_argv = Vec::new();
+                    new_argv.extend(alias);
+                    new_argv.extend(argv.iter().skip(1).cloned());
+                    return new_argv;
+                }
+            }
+        }
+
+        argv.to_vec()
+    }
+
+    fn run_simple_command(&mut self, ctx: &Context, argv: &[Word], redirects: &[parser::Redirection]) -> CommandResult {
+        let argv = self.expand_words(&self.expand_alias(argv));
+
         if argv.is_empty() {
             // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
             // named "foo.txt".
@@ -637,7 +818,7 @@ impl Isolate {
 
         // Functions
         if let Some(ref var) = self.get(argv[0].as_str()) {
-            match var.as_ref().value {
+            match var.value() {
                 Value::Function(ref body) => {
                     self.enter_frame();
 
@@ -669,7 +850,55 @@ impl Isolate {
         }
 
         // External commands
-        self.exec_external_command(&ctx, argv, redirects)
+        self.run_external_command(&ctx, argv, redirects)
+    }
+
+    fn run_local_command(&mut self, declarations: &[parser::LocalDeclaration]) -> CommandResult {
+        if self.in_global_frame() {
+            eprintln!("nsh: local variable can only be used in a function");
+            CommandResult::Internal { status: ExitStatus::ExitedWith(1) }
+        } else {
+            for decl in declarations {
+                match decl {
+                    LocalDeclaration::Assignment(Assignment { name, initializer, .. }) => {
+                        let value = self.evaluate_initializer(&initializer);
+                        self.set(&name, value, true)
+                    },
+                    LocalDeclaration::Name(name) =>  {
+                        self.set(name, Value::String("".to_string()), true)
+                    }
+                }
+            }
+            CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
+        }
+    }
+
+    fn run_if_command(&mut self, ctx: &Context, condition: &[parser::Term], then_part: &[parser::Term]) -> CommandResult {
+        // TODO: else, elif
+        let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr);
+        if result == ExitStatus::ExitedWith(0) {
+            CommandResult::Internal {
+                status: self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr),
+            }
+        } else {
+            CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
+        }
+    }
+    fn run_for_command(&mut self, ctx: &Context, var_name: &str, words: &[Word], body: &[parser::Term]) -> CommandResult {
+        for word in words {
+            let value = self.expand_word_into_string(word);
+            self.set(&var_name, Value::String(value), false);
+
+            let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
+            match result {
+                ExitStatus::Break => break,
+                ExitStatus::Continue => (),
+                ExitStatus::Return => return CommandResult::Internal { status: result },
+                _ => (),
+            }
+        }
+
+        CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
     }
 
     fn run_command(&mut self, command: &parser::Command, ctx: &Context) -> CommandResult {
@@ -679,33 +908,21 @@ impl Isolate {
 
         trace!("run_command: {:?}", command);
         match command {
-            parser::Command::SimpleCommand { argv: ref_wargv, redirects, ..} => {
-                // FIXME: refactor
-                let Word(ref spans) = ref_wargv[0];
-                let wargv = if !spans.is_empty() {
-                    match spans[0] {
-                        Span::Literal(ref lit) => {
-                            if let Some(alias_argv) = self.lookup_alias(lit.as_str()) {
-                                let mut new_wargv = Vec::new();
-                                new_wargv.extend(alias_argv);
-                                new_wargv.extend(ref_wargv.iter().skip(1).cloned());
-                                new_wargv
-                            } else {
-                                ref_wargv.clone()
-                            }
-                        }
-                        _ => ref_wargv.clone(),
-                    }
-                } else {
-                    ref_wargv.clone()
-                };
-
-                let argv = self.evaluate_words(&wargv);
-                if argv.is_empty() {
-                    return CommandResult::Internal { status: ExitStatus::ExitedWith(0) };
-                }
-
-                self.eval_simple_command(ctx, argv, redirects)
+            parser::Command::SimpleCommand { argv, redirects, ..} => {
+                self.run_simple_command(ctx, &argv, &redirects)
+            }
+            parser::Command::If { condition, then_part, .. } => {
+                self.run_if_command(ctx, &condition, &then_part)
+            }
+            parser::Command::For { var_name, words, body } => {
+                self.run_for_command(ctx, var_name, &words, &body)
+            },
+            parser::Command::LocalDef { declarations } => {
+                self.run_local_command(&declarations)
+            }
+            parser::Command::FunctionDef { name, body } => {
+                self.set(name, Value::Function(body.clone()), true);
+                CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
             }
             parser::Command::Assignment { assignments } => {
                 for assign in assignments {
@@ -714,62 +931,9 @@ impl Isolate {
                 }
                 CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
             },
-            parser::Command::LocalDef { declarations } => {
-                if self.in_global_frame() {
-                    eprintln!("nsh: local variable can only be used in a function");
-                    CommandResult::Internal { status: ExitStatus::ExitedWith(1) }
-                } else {
-                    for decl in declarations {
-                        match decl {
-                            LocalDeclaration::Assignment(Assignment { name, initializer, .. }) => {
-                                let value = self.evaluate_initializer(&initializer);
-                                self.set(&name, value, true)
-                            },
-                            LocalDeclaration::Name(name) =>  {
-                                self.set(name, Value::String("".to_string()), true)
-                            }
-                        }
-                    }
-                    CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
-                }
-            }
-            parser::Command::FunctionDef { name, body } => {
-                self.set(&name, Value::Function(body.clone()), true);
-                CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
-            }
-            parser::Command::If {
-                condition,
-                then_part,
-                ..
-            } => {
-                // TODO: else, elif
-                let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr);
-                if result == ExitStatus::ExitedWith(0) {
-                    CommandResult::Internal {
-                        status: self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr),
-                    }
-                } else {
-                    CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
-                }
-            }
-            parser::Command::Group { terms } => CommandResult::Internal {
-                status: self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr),
-            },
-            parser::Command::For { var_name, words, body } => {
-                for word in words {
-                    let value = self.evaluate_word_into_string(word);
-                    self.set(&var_name, Value::String(value), false);
-
-                    let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
-                    match result {
-                        ExitStatus::Break => break,
-                        ExitStatus::Continue => (),
-                        ExitStatus::Return => return CommandResult::Internal { status: result },
-                        _ => (),
-                    }
-                }
-
-                CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
+            parser::Command::Group { terms } => {
+                let status = self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr);
+                CommandResult::Internal { status }
             },
             parser::Command::Return => {
                 CommandResult::Return
@@ -787,184 +951,8 @@ impl Isolate {
         }
     }
 
-
-    fn evaluate_expr(&self, expr: &Expr) -> i32 {
-        match expr {
-            Expr::Expr(sub_expr) => self.evaluate_expr(sub_expr),
-            Expr::Literal(value) => *value,
-            Expr::Parameter { name } => {
-                if let Some(var) = self.get(name) {
-                    match &var.value {
-                        Value::String(s) => s.parse().unwrap_or(0),
-                        _ => 0,
-                    }
-                } else {
-                    0
-                }
-            },
-            Expr::Add(BinaryExpr { lhs, rhs }) => {
-                self.evaluate_expr(lhs) + self.evaluate_expr(rhs)
-            },
-            Expr::Sub(BinaryExpr { lhs, rhs }) => {
-                self.evaluate_expr(lhs) - self.evaluate_expr(rhs)
-            },
-            Expr::Mul(BinaryExpr { lhs, rhs }) => {
-                self.evaluate_expr(lhs) * self.evaluate_expr(rhs)
-            },
-            Expr::Div(BinaryExpr { lhs, rhs }) => {
-                self.evaluate_expr(lhs) / self.evaluate_expr(rhs)
-            },
-        }
-    }
-
-    fn expand_param(&mut self, name: &str, op: &ExpansionOp) -> String {
-        match name {
-            "?" => {
-                return self.last_status.to_string();
-            },
-            _ => {
-                if let Some(var) = self.get(name) {
-                    // $<name> is defined and contains a string value.
-                    let value = var.value().to_string();
-                    return match op {
-                        ExpansionOp::Length => value.len().to_string(),
-                        _ => value,
-                    };
-                }
-            }
-        }
-
-        // $<name> is not defined.
-        match op {
-            ExpansionOp::Length => {
-                if self.nounset {
-                    eprintln!("nsh: undefined variable `{}'", name);
-                    std::process::exit(1);
-                }
-
-                "0".to_owned()
-            },
-            ExpansionOp::GetOrEmpty => {
-                if self.nounset {
-                    eprintln!("nsh: undefined variable `{}'", name);
-                    std::process::exit(1);
-                }
-
-                "".to_owned()
-            },
-            ExpansionOp::GetOrDefault(word) => self.evaluate_word_into_string(word),
-            ExpansionOp::GetOrDefaultAndAssign(word) => {
-                let content = self.evaluate_word_into_string(word);
-                self.set(name, Value::String(content.clone()), false);
-                content
-            }
-            _ => panic!("TODO:"),
-        }
-    }
-
-
-    fn evaluate_word_into_vec(&mut self, word: &Word, ifs: &str) -> Vec<String> {
-        let mut words = Vec::new();
-        for span in &word.0 {
-            let (frag, expand) = match span {
-                Span::Literal(s) => (s.clone(), false),
-                Span::Parameter { name, op, quoted } => {
-                    (self.expand_param(name, op), !quoted)
-                },
-                Span::ArrayParameter { name, index, quoted } => {
-                    let index = self.evaluate_expr(index);
-                    let frag = if index < 0 {
-                        // TODO: return Err instead.
-                        eprintln!("nsh: {}: the index must be larger than or equals 0", name);
-                        "".to_owned()
-                    } else {
-                        self
-                            .get(name)
-                            .map(|v| v.value_at(index as usize).to_string())
-                            .unwrap_or_else(|| "".to_owned())
-                    };
-
-                    (frag, !quoted)
-                },
-                Span::ArithExpr { expr } => {
-                    (self.evaluate_expr(expr).to_string(), false)
-                },
-                Span::Tilde(user) => {
-                    if user.is_some() {
-                        // TODO: e.g. ~mike, ~chandler/venus
-                        unimplemented!();
-                    }
-
-                    (dirs::home_dir().unwrap().to_str().unwrap().to_owned(), false)
-                },
-                Span::Command { body, quoted } => {
-                    let stdout = self.exec_in_subshell(body);
-                    // TODO: support binary output
-                    let s = std::str::from_utf8(&stdout).unwrap_or("").to_string();
-                    (s.trim_end_matches('\n').to_string(), !quoted)
-                },
-                Span::AnyChar => {
-                    ("?".into(), false)
-                },
-                Span::AnyString => {
-                    ("*".into(), false)
-                },
-            };
-
-            // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo=123`.
-            if !frag.is_empty() {
-                if expand {
-                    for word in frag.split(|c| ifs.contains(c)) {
-                        words.push(word.to_string());
-                    }
-                } else {
-                    words.push(frag);
-                }
-            }
-        }
-
-        let mut glob_expanded = Vec::new();
-        for word in words {
-            // FIXME: Support file path which contains '*'.
-            if word.contains('*') || word.contains('?') {
-                glob_expanded.extend(expand_glob(&word))
-            } else {
-                glob_expanded.push(word);
-            };
-        }
-
-        glob_expanded
-    }
-
-    fn evaluate_word_into_string(&mut self, word: &Word) -> String {
-        let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
-        self.evaluate_word_into_vec(word, &ifs).join(" ")
-    }
-
-    fn evaluate_words(&mut self, words: &[Word]) -> Vec<String> {
-        let mut evaluated = Vec::new();
-        let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
-        for word in words {
-            evaluated.extend(self.evaluate_word_into_vec(word, &ifs));
-        }
-
-        evaluated
-    }
-
-    fn evaluate_initializer(&mut self, initializer: &Initializer) -> Value {
-        match initializer {
-            Initializer::String(ref word) => Value::String(self.evaluate_word_into_string(word)),
-            Initializer::Array(ref words) =>  {
-                let mut elems = Vec::new();
-                for word in words {
-                    elems.push(self.evaluate_word_into_string(word));
-                }
-                Value::Array(elems)
-            }
-        }
-    }
-
-    pub fn exec_in_subshell(&mut self, terms: &[parser::Term]) -> Vec<u8> {
+    /// Runs commands in a subshell (`$()`).
+    pub fn run_in_subshell(&mut self, terms: &[parser::Term]) -> Vec<u8> {
         let (pipe_out, pipe_in) = pipe().unwrap();
         match fork().expect("failed to fork") {
             ForkResult::Parent { child } => {
@@ -988,33 +976,7 @@ impl Isolate {
         }
     }
 
-    pub fn run_terms(
-        &mut self,
-        terms: &[parser::Term],
-        stdin: RawFd,
-        stdout: RawFd,
-        stderr: RawFd,
-    ) -> ExitStatus {
-        let mut last_status = ExitStatus::ExitedWith(0);
-        for term in terms {
-            for pipeline in &term.pipelines {
-                // Should we execute the pipline?
-                match (last_status, &pipeline.run_if) {
-                    (ExitStatus::ExitedWith(0), RunIf::Success) => (),
-                    (ExitStatus::ExitedWith(_), RunIf::Failure) => (),
-                    (ExitStatus::Break, _) => return ExitStatus::Break,
-                    (ExitStatus::Continue, _) => return ExitStatus::Continue,
-                    (ExitStatus::Return, _) => return ExitStatus::Return,
-                    (_, RunIf::Always) => (),
-                    _ => continue,
-                }
-
-                last_status = self.run_pipeline(pipeline, stdin, stdout, stderr, term.background);
-            }
-        }
-        last_status
-    }
-
+    // Creates a pipeline and runs commands.
     fn run_pipeline(
         &mut self,
         pipeline: &parser::Pipeline,
@@ -1142,7 +1104,36 @@ impl Isolate {
         last_status
     }
 
-    pub fn exec(&mut self, ast: &Ast) -> ExitStatus {
+    /// Runs pipelines.
+    pub fn run_terms(
+        &mut self,
+        terms: &[parser::Term],
+        stdin: RawFd,
+        stdout: RawFd,
+        stderr: RawFd,
+    ) -> ExitStatus {
+        let mut last_status = ExitStatus::ExitedWith(0);
+        for term in terms {
+            for pipeline in &term.pipelines {
+                // Should we execute the pipline?
+                match (last_status, &pipeline.run_if) {
+                    (ExitStatus::ExitedWith(0), RunIf::Success) => (),
+                    (ExitStatus::ExitedWith(_), RunIf::Failure) => (),
+                    (ExitStatus::Break, _) => return ExitStatus::Break,
+                    (ExitStatus::Continue, _) => return ExitStatus::Continue,
+                    (ExitStatus::Return, _) => return ExitStatus::Return,
+                    (_, RunIf::Always) => (),
+                    _ => continue,
+                }
+
+                last_status = self.run_pipeline(pipeline, stdin, stdout, stderr, term.background);
+            }
+        }
+        last_status
+    }
+
+    /// Runs commands.
+    pub fn eval(&mut self, ast: &Ast) -> ExitStatus {
         trace!("ast: {:#?}", ast);
 
         // Inherit shell's stdin/stdout/stderr.
@@ -1152,19 +1143,21 @@ impl Isolate {
         self.run_terms(&ast.terms, stdin, stdout, stderr)
     }
 
-    pub fn exec_file(&mut self, script_file: PathBuf) -> ExitStatus {
+    /// Parses and runs a shell script file.
+    pub fn run_file(&mut self, script_file: PathBuf) -> ExitStatus {
         let mut f = File::open(script_file).expect("failed to open a file");
         let mut script = String::new();
         f.read_to_string(&mut script)
             .expect("failed to load a file");
 
-        self.exec_str(script.as_str())
+        self.run_str(script.as_str())
     }
 
-    pub fn exec_str(&mut self, script: &str) -> ExitStatus {
+    /// Parses and runs a script.
+    pub fn run_str(&mut self, script: &str) -> ExitStatus {
         match parser::parse_line(script) {
-            Ok(cmd) => {
-                self.exec(&cmd)
+            Ok(ast) => {
+                self.eval(&ast)
             }
             Err(parser::SyntaxError::Empty) => {
                 // Just ignore.
@@ -1177,37 +1170,6 @@ impl Isolate {
         }
     }
 }
-
-
-fn expand_glob(pattern: &str) -> Vec<String> {
-    let mut words = Vec::new();
-    for entry in glob(pattern).expect("failed to glob") {
-        match entry {
-            Ok(path) => {
-                words.push(path.to_str().unwrap().to_string());
-            },
-            Err(e) => trace!("glob error: {:?}", e),
-        }
-    }
-
-    if words.len() == 0 {
-        // TODO: return Result and abort the command instead
-        eprintln!("nsh: no glob matches");
-        return vec![pattern.to_string()];
-    }
-
-    words
-}
-
-
-
-fn move_fd(src: RawFd, dst: RawFd) {
-    if src != dst {
-        dup2(src, dst).expect("failed to dup2");
-        close(src).expect("failed to close");
-    }
-}
-
 
 #[test]
 fn test_expr() {

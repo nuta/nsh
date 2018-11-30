@@ -31,6 +31,7 @@ mod prompt;
 mod utils;
 mod history;
 mod fuzzy;
+mod variable;
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -45,7 +46,7 @@ fn interactive_mode(isolate: &mut exec::Isolate) -> ExitStatus {
     if let Some(home_dir) = dirs::home_dir() {
         let nshrc_path = Path::new(&home_dir).join(".nshrc");
         if nshrc_path.exists() {
-            isolate.exec_file(nshrc_path);
+            isolate.run_file(nshrc_path);
         }
     }
 
@@ -61,7 +62,7 @@ fn interactive_mode(isolate: &mut exec::Isolate) -> ExitStatus {
             }
         };
 
-        isolate.exec_str(&line);
+        isolate.run_str(&line);
     }
 }
 
@@ -139,8 +140,8 @@ fn main() {
 
     let mut isolate = exec::Isolate::new(getpid(), interactive);
     let status = match (opt.command, opt.file) {
-        (Some(command), _) => isolate.exec_str(&command),
-        (_, Some(file)) => isolate.exec_file(file),
+        (Some(command), _) => isolate.run_str(&command),
+        (_, Some(file)) => isolate.run_file(file),
         (_, _) => interactive_mode(&mut isolate),
     };
 

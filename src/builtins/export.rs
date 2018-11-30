@@ -9,7 +9,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     } else {
         for name in ctx.isolate.exported_names() {
             if let Some(var) = ctx.isolate.get(name) {
-                write!(ctx.stdout, "{}={}\n", name, var.value()).ok();
+                write!(ctx.stdout, "{}={}\n", name, var.as_str()).ok();
             }
         }
     }

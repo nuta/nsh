@@ -1,5 +1,6 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::{ExitStatus, Value};
+use crate::exec::ExitStatus;
+use crate::variable::Value;
 use structopt::StructOpt;
 use std::io::Write;
 
@@ -26,7 +27,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             }
 
             for (i, var) in args.iter().skip(opts.n.unwrap_or(1)).enumerate() {
-                ctx.isolate.set(&i.to_string(), Value::String(var.value().to_string()), true);
+                ctx.isolate.set(&i.to_string(), Value::String(var.as_str().to_string()), true);
             }
 
             ExitStatus::ExitedWith(0)
