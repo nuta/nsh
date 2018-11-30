@@ -13,13 +13,13 @@ function func2 () {
 func2
 echo $var2
 
-# FIXME: fix parse error
 # recursion
 fib() {
     if [ $1 -lt 2 ]; then
         echo $1
         return
     fi
+
     x=$(( $1 - 1 ))
     y=$(( $1 - 2 ))
     a=$(fib $x)

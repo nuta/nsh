@@ -318,9 +318,9 @@ named!(command_expansion<Input, Span>,
     do_parse!(
         // Use tag! here instead of keyword because `(' must comes
         // right after `$'.
-        tag!("(") >>
+        call!(symbol, "(") >>
         body: compound_list >>
-        call!(keyword, ")") >>
+        call!(symbol, ")") >>
         ( Span::Command { body } )
     )
 );
@@ -454,11 +454,9 @@ named!(expr<Input, Expr>,
 // TODO: implement <<, >>, %, ==, !=, &&, ||, ?:
 named!(arith_expr<Input, Span>,
     do_parse!(
-        tag!("((") >>
-        opt!(whitespaces) >>
+        call!(symbol, "((") >>
         expr: expr >>
-        opt!(whitespaces) >>
-        call!(keyword, "))") >>
+        call!(symbol, "))") >>
         ( Span::ArithExpr { expr } )
     )
 );
@@ -520,9 +518,7 @@ named_args!(literal_span(quote: Option<char>, in_expansion: bool)<Input, Span>,
                     _ => unreachable!(),
                 }
             } else {
-                c == '}'
-                || is_valid_word_char(c)
-                || (in_quote && is_whitespace(c))
+                is_valid_word_char(c)
             }
         }),
         |s| Span::Literal(s.to_string())
@@ -781,7 +777,6 @@ named!(simple_command<Input, Command>,
 
 named_args!(symbol<'a>(symbol: &'static str)<Input<'a>, ()>,
     do_parse!(
-        // Peek first not to comsume whitespace/semilocon/newline.
         peek!(
             do_parse!(
                 take_while!(|c| is_whitespace(c) || c == '\n') >>
@@ -792,7 +787,7 @@ named_args!(symbol<'a>(symbol: &'static str)<Input<'a>, ()>,
 
         take_while!(|c| is_whitespace(c) || c == '\n') >>
         tag!(symbol) >>
-        take_while!(|c| is_whitespace(c) || c == '\n') >>
+        take_while!(|c| is_whitespace(c)) >>
         ( () )
     )
 );
@@ -1999,7 +1994,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line("x=123; func2() { local x=456 y z; }; echo $x").unwrap(),
+        parse_line("x=$((123)); func2() { local x=456 y z; echo $((x * 2))\n }; echo $x").unwrap(),
         Ast {
             terms: vec![
                 Term {
@@ -2010,7 +2005,11 @@ pub fn test_compound_commands() {
                             assignments: vec![
                                 Assignment {
                                     name: "x".into(),
-                                    initializer: Initializer::String(Word(vec![Span::Literal("123".into())])),
+                                    initializer: Initializer::String(Word(vec![
+                                        Span::ArithExpr {
+                                            expr: Expr::Literal(123)
+                                        }
+                                    ])),
                                     index: None,
                                 }
                             ],
@@ -2039,6 +2038,25 @@ pub fn test_compound_commands() {
                                                     LocalDeclaration::Name("y".into()),
                                                     LocalDeclaration::Name("z".into())
                                                 ]
+                                            }],
+                                        }],
+                                    },
+                                    Term {
+                                        background: false,
+                                        pipelines: vec![Pipeline {
+                                            run_if: RunIf::Always,
+                                            commands: vec![Command::SimpleCommand {
+                                                argv: vec![
+                                                    lit!("echo"),
+                                                    Word(vec![Span::ArithExpr {
+                                                        expr: Expr::Mul(BinaryExpr {
+                                                            lhs: Box::new(Expr::Parameter { name: "x".into() }),
+                                                            rhs: Box::new(Expr::Literal(2)),
+                                                        })
+                                                    }])
+                                                ],
+                                                redirects: vec![],
+                                                assignments: vec![],
                                             }],
                                         }],
                                     },
