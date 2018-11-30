@@ -825,7 +825,13 @@ impl Isolate {
         argv.to_vec()
     }
 
-    fn run_simple_command(&mut self, ctx: &Context, argv: &[Word], redirects: &[parser::Redirection]) -> ExitStatus {
+    fn run_simple_command(
+        &mut self,
+        ctx: &Context,
+        argv: &[Word],
+        redirects: &[parser::Redirection],
+        _assignments: &[parser::Assignment], /* TODO: */
+    ) -> ExitStatus {
         let argv = self.expand_words(&self.expand_alias(argv));
 
         if argv.is_empty() {
@@ -943,8 +949,8 @@ impl Isolate {
 
         trace!("run_command: {:?}", command);
         match command {
-            parser::Command::SimpleCommand { argv, redirects, ..} => {
-                self.run_simple_command(ctx, &argv, &redirects)
+            parser::Command::SimpleCommand { argv, redirects, assignments } => {
+                self.run_simple_command(ctx, &argv, &redirects, &assignments)
             }
             parser::Command::If { condition, then_part, elif_parts, else_part, redirects } => {
                 self.run_if_command(ctx, &condition, &then_part, &elif_parts, &else_part, &redirects)
