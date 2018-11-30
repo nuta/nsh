@@ -20,9 +20,9 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
 
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
-            ctx.env.errexit = opts.errexit;
-            ctx.env.nounset = opts.nounset;
-            ctx.env.noexec = opts.noexec;
+            ctx.isolate.errexit = opts.errexit;
+            ctx.isolate.nounset = opts.nounset;
+            ctx.isolate.noexec = opts.noexec;
             ExitStatus::ExitedWith(0)
         },
         Err(err) => {

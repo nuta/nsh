@@ -40,12 +40,12 @@ use nix::unistd::{getpid, setpgid, tcsetpgrp};
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
 use crate::exec::ExitStatus;
 
-fn interactive_mode(env: &mut exec::Env) -> ExitStatus {
+fn interactive_mode(isolate: &mut exec::Isolate) -> ExitStatus {
     // Eval nshrc.
     if let Some(home_dir) = dirs::home_dir() {
         let nshrc_path = Path::new(&home_dir).join(".nshrc");
         if nshrc_path.exists() {
-            env.exec_file(nshrc_path);
+            isolate.exec_file(nshrc_path);
         }
     }
 
@@ -61,7 +61,7 @@ fn interactive_mode(env: &mut exec::Env) -> ExitStatus {
             }
         };
 
-        env.exec_str(&line);
+        isolate.exec_str(&line);
     }
 }
 
@@ -137,7 +137,7 @@ fn main() {
     path::init();
     history::init();
 
-    let mut isolate = exec::Env::new(getpid(), interactive);
+    let mut isolate = exec::Isolate::new(getpid(), interactive);
     let status = match (opt.command, opt.file) {
         (Some(command), _) => isolate.exec_str(&command),
         (_, Some(file)) => isolate.exec_file(file),

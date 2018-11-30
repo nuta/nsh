@@ -17,7 +17,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         Ok(opts) => {
             match parse_job_id(ctx, opts.job_id) {
                 Ok(job_id) => {
-                    ctx.env.continue_job(job_id, true);
+                    ctx.isolate.continue_job(job_id, true);
                     ExitStatus::ExitedWith(0)
                 },
                 Err(status) => status,

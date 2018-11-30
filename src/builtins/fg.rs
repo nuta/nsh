@@ -29,7 +29,7 @@ pub(super) fn parse_job_id(ctx: &mut InternalCommandContext, job_id: Option<Stri
             }
         },
         None => {
-            match ctx.env.last_fore_job() {
+            match ctx.isolate.last_fore_job() {
                 Some(job) => Ok(job.id()),
                 None => {
                     write!(ctx.stdout, "nsh: fg: no jobs to run\n").ok();
@@ -46,7 +46,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         Ok(opts) => {
             match parse_job_id(ctx, opts.job_id) {
                 Ok(job_id) => {
-                    ctx.env.continue_job(job_id, false);
+                    ctx.isolate.continue_job(job_id, false);
                     ExitStatus::ExitedWith(0)
                 },
                 Err(status) => status,

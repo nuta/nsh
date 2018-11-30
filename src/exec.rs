@@ -122,19 +122,19 @@ impl Job {
         self.cmd.as_str()
     }
 
-    pub fn state(&self, env: &Env) -> &'static str {
-        if self.completed(env) {
+    pub fn state(&self, isolate: &Isolate) -> &'static str {
+        if self.completed(isolate) {
             "done"
-        } else if self.stopped(env) {
+        } else if self.stopped(isolate) {
             "stopped"
         } else {
             "running"
         }
     }
 
-    pub fn completed(&self, env: &Env) -> bool {
+    pub fn completed(&self, isolate: &Isolate) -> bool {
         self.processes.iter().all(|pid| {
-            let state = env.get_process_state(*pid).unwrap();
+            let state = isolate.get_process_state(*pid).unwrap();
             match state {
                 ProcessState::Completed(_) => true,
                 _ => false,
@@ -142,9 +142,9 @@ impl Job {
         })
     }
 
-    pub fn stopped(&self, env: &Env) -> bool {
+    pub fn stopped(&self, isolate: &Isolate) -> bool {
         self.processes.iter().all(|pid| {
-            let state = env.get_process_state(*pid).unwrap();
+            let state = isolate.get_process_state(*pid).unwrap();
             match state {
                 ProcessState::Stopped(_) => true,
                 _ => false,
@@ -202,7 +202,7 @@ impl Frame {
     }
 }
 
-pub struct Env {
+pub struct Isolate {
     shell_pgid: Pid,
     interactive: bool,
     shell_termios: Option<Termios>,
@@ -228,15 +228,15 @@ pub struct Env {
     pid_job_mapping: HashMap<Pid, Arc<Job>>,
 }
 
-impl Env {
-    pub fn new(shell_pgid: Pid, interactive: bool) -> Env {
+impl Isolate {
+    pub fn new(shell_pgid: Pid, interactive: bool) -> Isolate {
         let shell_termios = if interactive {
             Some(tcgetattr(0 /* stdin */).expect("failed to tcgetattr"))
         } else {
             None
         };
 
-        Env {
+        Isolate {
             shell_pgid,
             interactive,
             shell_termios,
@@ -417,7 +417,7 @@ impl Env {
     }
 
     /// Waits for all processes in the job to exit. Note that the job will be
-    /// deleted from `Env` if the process has exited.
+    /// deleted from `Isolate` if the process has exited.
     pub fn wait_for_job(&mut self, job: Arc<Job>) -> ProcessState {
         loop {
             if job.completed(self) || job.stopped(self) {
@@ -465,7 +465,7 @@ impl Env {
     }
 
     /// Waits for an *any* process, i.e. `waitpid(-1)` and updates
-    /// the process state recorded in the `Env`.
+    /// the process state recorded in the `Isolate`.
     pub fn wait_for_any_process(&mut self) -> Pid {
         let result = waitpid(None, Some(WaitPidFlag::WUNTRACED));
         let (pid, state) = match result {
@@ -615,7 +615,7 @@ impl Env {
 
         let mut ctx = InternalCommandContext {
             argv,
-            env: self,
+            isolate: self,
             stdin: FdFile::new(stdin),
             stdout: FdFile::new(stdout),
             stderr: FdFile::new(stderr),
@@ -1211,9 +1211,9 @@ fn move_fd(src: RawFd, dst: RawFd) {
 
 #[test]
 fn test_expr() {
-    let mut env = Env::new(getpid(), false);
+    let mut isolate = Isolate::new(getpid(), false);
     assert_eq!(
-        env.evaluate_expr(&&Expr::Mul(BinaryExpr {
+        isolate.evaluate_expr(&&Expr::Mul(BinaryExpr {
             lhs: Box::new(Expr::Literal(2)),
             rhs: Box::new(Expr::Add(BinaryExpr {
                 lhs: Box::new(Expr::Literal(3)),
@@ -1223,9 +1223,9 @@ fn test_expr() {
         2 * (3 + 7)
     );
 
-    env.set("x", Value::String(3.to_string()), false);
+    isolate.set("x", Value::String(3.to_string()), false);
     assert_eq!(
-        env.evaluate_expr(&&Expr::Add(BinaryExpr {
+        isolate.evaluate_expr(&&Expr::Add(BinaryExpr {
             lhs: Box::new(Expr::Literal(1)),
             rhs: Box::new(Expr::Add(BinaryExpr {
                 lhs: Box::new(Expr::Mul(BinaryExpr {

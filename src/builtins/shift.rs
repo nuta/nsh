@@ -17,16 +17,16 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             let mut args = Vec::new();
             for i in 0.. {
                 let name = &i.to_string();
-                if let Some(var) = ctx.env.get(&name) {
+                if let Some(var) = ctx.isolate.get(&name) {
                     args.push(var);
-                    ctx.env.remove(&name);
+                    ctx.isolate.remove(&name);
                 } else {
                     break;
                 }
             }
 
             for (i, var) in args.iter().skip(opts.n.unwrap_or(1)).enumerate() {
-                ctx.env.set(&i.to_string(), Value::String(var.value().to_string()), true);
+                ctx.isolate.set(&i.to_string(), Value::String(var.value().to_string()), true);
             }
 
             ExitStatus::ExitedWith(0)

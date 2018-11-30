@@ -1,4 +1,4 @@
-use crate::exec::{ExitStatus, Env};
+use crate::exec::{ExitStatus, Isolate};
 use crate::utils::FdFile;
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -17,7 +17,7 @@ mod shift;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
-    pub env: &'a mut Env,
+    pub isolate: &'a mut Isolate,
     pub stdin: FdFile,
     pub stdout: FdFile,
     pub stderr: FdFile

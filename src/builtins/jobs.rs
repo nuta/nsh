@@ -12,9 +12,9 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("jobs: {:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(_) => {
-            for job in ctx.env.jobs() {
+            for job in ctx.isolate.jobs() {
                 write!(ctx.stdout, "[{}] {}: {}\n",
-                    job.id(), job.state(ctx.env), job.cmd()).ok();
+                    job.id(), job.state(ctx.isolate), job.cmd()).ok();
             }
             ExitStatus::ExitedWith(0)
         },
