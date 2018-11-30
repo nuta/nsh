@@ -889,14 +889,35 @@ impl Isolate {
         }
     }
 
-    fn run_if_command(&mut self, ctx: &Context, condition: &[parser::Term], then_part: &[parser::Term]) -> ExitStatus {
-        // TODO: else, elif
+    fn run_if_command(
+        &mut self,
+        ctx: &Context,
+        condition: &[parser::Term],
+        then_part: &[parser::Term],
+        elif_parts: &[parser::ElIf],
+        else_part: &Option<Vec<parser::Term>>,
+        _redirections: &[parser::Redirection]
+    ) -> ExitStatus {
+        // then
         let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr);
         if result == ExitStatus::ExitedWith(0) {
-            self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr)
-        } else {
-            ExitStatus::ExitedWith(0)
+            return self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr);
         }
+
+        // elif
+        for elif in elif_parts {
+            let result = self.run_terms(&elif.condition, ctx.stdin, ctx.stdout, ctx.stderr);
+            if result == ExitStatus::ExitedWith(0) {
+                return self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr);
+            }
+        }
+
+        // else
+        if let Some(else_part) = else_part {
+            return self.run_terms(else_part, ctx.stdin, ctx.stdout, ctx.stderr);
+        }
+
+        ExitStatus::ExitedWith(0)
     }
     fn run_for_command(&mut self, ctx: &Context, var_name: &str, words: &[Word], body: &[parser::Term]) -> ExitStatus {
         for word in words {
@@ -925,8 +946,8 @@ impl Isolate {
             parser::Command::SimpleCommand { argv, redirects, ..} => {
                 self.run_simple_command(ctx, &argv, &redirects)
             }
-            parser::Command::If { condition, then_part, .. } => {
-                self.run_if_command(ctx, &condition, &then_part)
+            parser::Command::If { condition, then_part, elif_parts, else_part, redirects } => {
+                self.run_if_command(ctx, &condition, &then_part, &elif_parts, &else_part, &redirects)
             }
             parser::Command::For { var_name, words, body } => {
                 self.run_for_command(ctx, var_name, &words, &body)

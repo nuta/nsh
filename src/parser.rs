@@ -37,8 +37,8 @@ pub struct CaseItem {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ElIf {
-    condition: Vec<Term>,
-    then_part: Vec<Term>,
+    pub condition: Vec<Term>,
+    pub then_part: Vec<Term>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
