@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+#
+#  The blackbox test runner. Write this script in Python 3.5 to run
+#  on Travis CI.
+#
 import argparse
 import os
 import sys
@@ -34,7 +38,7 @@ def run_test(test):
         expected_returncode = int(m.groups()[0])
 
     # Before running nsh, make sure that bash outputs expected stdout.
-    p = subprocess.Popen(["bash", test], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    p = subprocess.Popen(["bash", str(test)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     bash_returncode = p.wait()
     bash_stdout = p.stdout.read().decode("utf-8")
     bash_stderr = p.stderr.read().decode("utf-8")
@@ -59,7 +63,7 @@ def run_test(test):
 
     # Run the test.
     p = subprocess.Popen(
-        ["./target/debug/nsh", test],
+        ["./target/debug/nsh", str(test)],
         env={
             "RUST_BACKTRACE": "1",
             "RUST_LOG": "nsh=trace",
