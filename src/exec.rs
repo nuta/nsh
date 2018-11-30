@@ -839,8 +839,8 @@ impl Isolate {
                     self.enter_frame();
 
                     // Set $1, $2, ...
-                    for (i, arg) in argv.iter().enumerate() {
-                        self.set(&i.to_string(), Value::String(arg.clone()), true);
+                    for (i, arg) in argv.iter().skip(1).enumerate() {
+                        self.set(&(i + 1).to_string(), Value::String(arg.clone()), true);
                     }
 
                     let result = match self.run_command(&body, ctx) {
