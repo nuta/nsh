@@ -19,6 +19,7 @@ extern crate termion;
 extern crate crossbeam;
 extern crate crossbeam_channel;
 extern crate glob;
+extern crate globset;
 
 mod builtins;
 mod completion;

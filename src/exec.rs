@@ -23,29 +23,31 @@ use std::os::unix::io::RawFd;
 use std::sync::Arc;
 use std::cell::RefCell;
 use glob::glob;
+use globset;
 
 fn kill_process_group(pgid: Pid, signal: Signal) -> Result<(), nix::Error> {
     kill(Pid::from_raw(-pgid.as_raw()), signal)
 }
 
-fn expand_glob(pattern: &str) -> Vec<String> {
-    let mut words = Vec::new();
-    for entry in glob(pattern).expect("failed to glob") {
-        match entry {
-            Ok(path) => {
-                words.push(path.to_str().unwrap().to_string());
-            },
-            Err(e) => trace!("glob error: {:?}", e),
-        }
+fn expand_glob(words: Vec<String>) -> Vec<String> {
+    let mut glob_expanded = Vec::new();
+    for word in words {
+        // FIXME: Support file path which contains '*'.
+        if word.contains('*') || word.contains('?') {
+            for entry in glob(&word).expect("failed to glob") {
+                match entry {
+                    Ok(path) => {
+                        glob_expanded.push(path.to_str().unwrap().to_string());
+                    },
+                    Err(e) => trace!("glob error: {:?}", e),
+                }
+            }
+        } else {
+            glob_expanded.push(word);
+        };
     }
 
-    if words.len() == 0 {
-        // TODO: return Result and abort the command instead
-        eprintln!("nsh: no glob matches");
-        return vec![pattern.to_string()];
-    }
-
-    words
+    glob_expanded
 }
 
 fn move_fd(src: RawFd, dst: RawFd) {
@@ -456,22 +458,12 @@ impl Isolate {
             }
         }
 
-        let mut glob_expanded = Vec::new();
-        for word in words {
-            // FIXME: Support file path which contains '*'.
-            if word.contains('*') || word.contains('?') {
-                glob_expanded.extend(expand_glob(&word))
-            } else {
-                glob_expanded.push(word);
-            };
-        }
-
-        glob_expanded
+        words
     }
 
     fn expand_word_into_string(&mut self, word: &Word) -> String {
         let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
-        self.expand_word_into_vec(word, &ifs).join(" ")
+        self.expand_word_into_vec(word, &ifs).join("")
     }
 
     fn expand_words(&mut self, words: &[Word]) -> Vec<String> {
@@ -832,7 +824,7 @@ impl Isolate {
         redirects: &[parser::Redirection],
         _assignments: &[parser::Assignment], /* TODO: */
     ) -> ExitStatus {
-        let argv = self.expand_words(&self.expand_alias(argv));
+        let argv = expand_glob(self.expand_words(&self.expand_alias(argv)));
 
         if argv.is_empty() {
             // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
@@ -925,6 +917,39 @@ impl Isolate {
 
         ExitStatus::ExitedWith(0)
     }
+
+    fn match_pattern(&self, pattern: &str, text: &str) -> bool {
+        match globset::GlobBuilder::new(pattern).build() {
+            Ok(matcher) => {
+                matcher.compile_matcher().is_match(text)
+            },
+            Err(err) => {
+                // FIXME: return an Result instead
+                panic!("failed to construct globset matcher: {}", err);
+            }
+        }
+    }
+
+    fn run_case_command(
+        &mut self,
+        ctx: &Context,
+        word: &parser::Word,
+        cases: &[parser::CaseItem],
+    ) -> ExitStatus {
+
+        let word = self.expand_word_into_string(word);
+        for case in cases {
+            for pattern in &case.patterns {
+                let pattern = self.expand_word_into_string(pattern);
+                if self.match_pattern(&pattern, &word) {
+                    return self.run_terms(&case.body, ctx.stdin, ctx.stdout, ctx.stderr);
+                }
+            }
+        }
+
+        ExitStatus::ExitedWith(0)
+    }
+
     fn run_for_command(&mut self, ctx: &Context, var_name: &str, words: &[Word], body: &[parser::Term]) -> ExitStatus {
         for word in words {
             let value = self.expand_word_into_string(word);
@@ -955,6 +980,9 @@ impl Isolate {
             parser::Command::If { condition, then_part, elif_parts, else_part, redirects } => {
                 self.run_if_command(ctx, &condition, &then_part, &elif_parts, &else_part, &redirects)
             }
+            parser::Command::Case { word, cases } => {
+                self.run_case_command(ctx, &word, &cases)
+            }
             parser::Command::For { var_name, words, body } => {
                 self.run_for_command(ctx, var_name, &words, &body)
             },
@@ -983,10 +1011,6 @@ impl Isolate {
             }
             parser::Command::Continue => {
                 ExitStatus::Continue
-            }
-            parser::Command::Case {..} => {
-                // TODO:
-                unimplemented!();
             }
         }
     }

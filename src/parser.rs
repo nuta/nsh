@@ -31,8 +31,8 @@ pub enum RunIf {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CaseItem {
-    patterns: Vec<Word>,
-    body: Vec<Term>,
+    pub patterns: Vec<Word>,
+    pub body: Vec<Term>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -92,7 +92,7 @@ pub enum Command {
     Return,
     Case {
         word: Word,
-        items: Vec<CaseItem>,
+        cases: Vec<CaseItem>,
     },
     FunctionDef {
         name: String,
@@ -929,14 +929,20 @@ named!(case_item_patterns<Input, Vec<Word>>,
 
 named!(case_item<Input, CaseItem>,
     do_parse!(
+        peek!(do_parse!(
+            opt!(call!(keyword, "(")) >>
+            case_item_patterns >>
+            call!(keyword, ")") >>
+            ( () )
+        )) >>
         opt!(call!(keyword, "(")) >>
         patterns: case_item_patterns >>
         call!(keyword, ")") >>
         body: compound_list >>
-        // We cannot use call!(keyword) here; it ignores semicolons.
-        take_while!(is_whitespace) >>
+        // We can't use keyword for `;;` since it skips `;'.
+        take_while!(|c| c == '\n' || is_whitespace(c)) >>
         tag!(";;") >>
-        take_while!(is_whitespace) >>
+        take_while!(|c| c == '\n' || is_whitespace(c)) >>
         ({
             CaseItem {
                 patterns,
@@ -951,12 +957,12 @@ named!(case_command<Input, Command>,
         call!(keyword, "case") >>
         word: word >>
         call!(keyword, "in") >>
-        items: many0!(call!(case_item)) >>
+        cases: many0!(call!(case_item)) >>
         call!(keyword, "esac") >>
         ({
             Command::Case {
                 word,
-                items,
+                cases,
             }
         })
     )
@@ -1879,9 +1885,9 @@ pub fn test_compound_commands() {
 
     assert_eq!(
         parse_line(concat!(
-            "case $action in ",
-            "echo) echo action is echo ;;",
-            "date | time) echo action is date; date ;;",
+            "case $action in\n",
+            "echo) echo action is echo ;;\n",
+            "date | time) echo action is date; date ;;\n",
             "esac"
         ))
         .unwrap(),
@@ -1892,7 +1898,7 @@ pub fn test_compound_commands() {
                     run_if: RunIf::Always,
                     commands: vec![Command::Case {
                         word: param!("action", ExpansionOp::GetOrEmpty, false),
-                        items: vec![
+                        cases: vec![
                             CaseItem {
                                 patterns: vec![lit!("echo")],
                                 body: vec![Term {
