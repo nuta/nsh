@@ -15,16 +15,16 @@ def run_test(test):
     expected_stderr_path = Path(test).with_suffix(".stderr")
 
     try:
-        expected_stdout = open(expected_stdout_path).read()
+        expected_stdout = expected_stdout_path.open().read()
     except FileNotFoundError:
         expected_stdout = ""
 
     try:
-        expected_stderr = open(expected_stderr_path).read()
+        expected_stderr = expected_stderr_path.open().read()
     except FileNotFoundError:
         expected_stderr = ""
 
-    test_body = open(test).read()
+    test_body = test.open().read()
     disable_output_check = "disable-output-check" in test_body
 
     m = re.search(r"exit-with=([0-9]+)", test_body)
