@@ -8,6 +8,12 @@ rust:
 # Rust Edition 2018 is not yet stable.
 #  - stable
 
+addons:
+  apt:
+    packages:
+      - "python3"
+      - "python3-pip"
+
 before_install:
   - cargo --version
   - bash --version
