@@ -8,6 +8,12 @@ rust:
 # Rust Edition 2018 is not yet stable.
 #  - stable
 
+before_install:
+  - cargo --version
+  - bash --version
+  - python --version
+  - python3 --version
+
 script:
   - cargo build
   - cargo build --release
