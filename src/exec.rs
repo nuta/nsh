@@ -86,6 +86,7 @@ pub enum ExitStatus {
     Background(Pid /* pgid */),
     Break,
     Continue,
+    Return,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -174,6 +175,8 @@ enum CommandResult {
     Break,
     // continue command
     Continue,
+    // return command
+    Return,
     // The command is not executed because of `noexec`.
     NoExec,
 }
@@ -589,7 +592,17 @@ impl Env {
             match var.as_ref().value {
                 Value::Function(ref body) => {
                     self.enter_frame();
-                    let result = self.run_command(&body, ctx);
+
+                    // Set $1, $2, ...
+                    for (i, arg) in argv.iter().enumerate() {
+                        self.set(&i.to_string(), Value::String(arg.clone()), true);
+                    }
+
+                    let result = match self.run_command(&body, ctx) {
+                        CommandResult::Return => CommandResult::Internal { status: ExitStatus::ExitedWith(0) },
+                        result => result,
+                    };
+
                     self.leave_frame();
                     return result;
                 },
@@ -703,12 +716,16 @@ impl Env {
                     match result {
                         ExitStatus::Break => break,
                         ExitStatus::Continue => (),
+                        ExitStatus::Return => return CommandResult::Internal { status: result },
                         _ => (),
                     }
                 }
 
                 CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
             },
+            parser::Command::Return => {
+                CommandResult::Return
+            }
             parser::Command::Break => {
                 CommandResult::Break
             }
@@ -945,6 +962,7 @@ pub fn run_terms(
                 (ExitStatus::ExitedWith(_), RunIf::Failure) => (),
                 (ExitStatus::Break, _) => return ExitStatus::Break,
                 (ExitStatus::Continue, _) => return ExitStatus::Continue,
+                (ExitStatus::Return, _) => return ExitStatus::Return,
                 (_, RunIf::Always) => (),
                 _ => continue,
             }
@@ -1064,6 +1082,9 @@ fn run_pipeline(
         }
         Some(CommandResult::Continue) => {
             return ExitStatus::Continue;
+        }
+        Some(CommandResult::Return) => {
+            return ExitStatus::Return;
         }
         Some(CommandResult::NoExec) => (),
     }

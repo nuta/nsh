@@ -89,6 +89,7 @@ pub enum Command {
     },
     Break,
     Continue,
+    Return,
     Case {
         word: Word,
         items: Vec<CaseItem>,
@@ -659,6 +660,7 @@ named!(nonreserved_word<Input, Word>,
         not!(peek!(call!(keyword, "case"))) >>
         not!(peek!(call!(keyword, "esac"))) >>
         not!(peek!(call!(keyword, "break"))) >>
+        not!(peek!(call!(keyword, "return"))) >>
         not!(peek!(call!(keyword, "local"))) >>
         not!(peek!(call!(keyword, "{"))) >>
         not!(peek!(call!(keyword, "}"))) >>
@@ -892,6 +894,13 @@ named!(continue_command<Input, Command>,
     )
 );
 
+named!(return_command<Input, Command>,
+    do_parse!(
+        call!(keyword, "return") >>
+        ( Command::Return )
+    )
+);
+
 named!(case_item_patterns<Input, Vec<Word>>,
     alt!(
         do_parse!(
@@ -1010,6 +1019,7 @@ named!(command<Input, Command>,
         case_command |
         break_command |
         continue_command |
+        return_command |
         local_command |
         group |
         func_def |
@@ -1928,7 +1938,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line("func1() { echo hello; echo world; }; func1").unwrap(),
+        parse_line("func1() { echo hello; echo world; return; }; func1").unwrap(),
         Ast {
             terms: vec![
                 Term {
@@ -1959,6 +1969,13 @@ pub fn test_compound_commands() {
                                                 redirects: vec![],
                                                 assignments: vec![],
                                             }],
+                                        }],
+                                    },
+                                    Term {
+                                        background: false,
+                                        pipelines: vec![Pipeline {
+                                            run_if: RunIf::Always,
+                                            commands: vec![Command::Return],
                                         }],
                                     },
                                 ],
