@@ -73,11 +73,14 @@ fn init_log() {
     use slog::Drain;
     use std::fs::OpenOptions;
 
+    let mut log_file_path = dirs::home_dir().unwrap();
+    log_file_path.push(".nsh.log");
+
     let file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .append(true)
-        .open("nsh.log")
+        .open(log_file_path)
         .unwrap();
 
     let decorator = slog_term::PlainSyncDecorator::new(file);
