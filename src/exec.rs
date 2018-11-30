@@ -197,6 +197,10 @@ impl Frame {
         self.vars.insert(key.into(), Arc::new(value));
     }
 
+    pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
+        self.vars.remove(key.into())
+    }
+
     pub fn get<'a, 'b>(&'a self, key: &'b str) -> Option<Arc<Variable>> {
         self.vars.get(key).cloned()
     }
@@ -288,6 +292,18 @@ impl Env {
         };
 
         frame.set(key, Variable::new(value, is_local));
+    }
+
+    pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
+        if let Some(var) = self.current_frame_mut().remove(key) {
+            return Some(var);
+        }
+
+        if let Some(var) = self.global.remove(key) {
+            return Some(var);
+        }
+
+        None
     }
 
     pub fn get<'a, 'b>(&'a self, key: &'b str) -> Option<Arc<Variable>> {

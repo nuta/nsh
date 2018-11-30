@@ -14,6 +14,7 @@ mod set;
 mod fg;
 mod bg;
 mod jobs;
+mod shift;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
@@ -41,6 +42,12 @@ lazy_static! {
     // TODO: Construct this map in compile time.
     static ref INTERNAL_COMMANDS: BTreeMap<&'static str, InternalCommand> = {
         let mut commands: BTreeMap<&'static str, InternalCommand> = BTreeMap::new();
+        // A hidden command which is quite useful for some cryptographers.
+        commands.insert(
+            "get-xkcd-true-random-number",
+            xkcd_rand_command
+        );
+
         commands.insert("alias", crate::builtins::alias::command);
         commands.insert("echo", crate::builtins::echo::command);
         commands.insert("cd", crate::builtins::cd::command);
@@ -51,10 +58,7 @@ lazy_static! {
         commands.insert("fg", crate::builtins::fg::command);
         commands.insert("bg", crate::builtins::bg::command);
         commands.insert("jobs", crate::builtins::jobs::command);
-        commands.insert(
-            "get-xkcd-true-random-number-chosen-by-fair-dice-roll",
-            xkcd_rand_command,
-        );
+        commands.insert("shift", crate::builtins::shift::command);
         commands
     };
 }
