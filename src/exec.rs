@@ -667,7 +667,13 @@ impl Isolate {
     }
 
     /// Spawn a child process and execute a command.
-    fn run_external_command(&mut self, ctx: &Context, argv: Vec<String>, redirects: &[parser::Redirection]) -> ExitStatus {
+    fn run_external_command(
+        &mut self,
+        ctx: &Context,
+        argv: Vec<String>,
+        redirects: &[parser::Redirection],
+        assignments: &[parser::Assignment]
+    ) -> ExitStatus {
         let mut fds = Vec::new();
         for r in redirects {
             match r.target {
@@ -775,6 +781,19 @@ impl Isolate {
                     }
                 }
 
+                // Load assignments.
+                for assignment in assignments {
+                    let value = self.evaluate_initializer(&assignment.initializer);
+                    match value {
+                        Value::String(s) => std::env::set_var(&assignment.name, s),
+                        Value::Array(_) => {
+                            eprintln!("nsh: Array assignments in a command is not supported.");
+                            std::process::exit(1);
+                        },
+                        Value::Function(_) => (),
+                    }
+                }
+
                 // TODO: inherit exported variables
                 execv(&argv0, &args).expect("failed to exec");
                 unreachable!();
@@ -826,7 +845,7 @@ impl Isolate {
         ctx: &Context,
         argv: &[Word],
         redirects: &[parser::Redirection],
-        _assignments: &[parser::Assignment], /* TODO: */
+        assignments: &[parser::Assignment],
     ) -> ExitStatus {
         let argv = expand_glob(self.expand_words(&self.expand_alias(argv)));
 
@@ -868,7 +887,7 @@ impl Isolate {
         }
 
         // External commands
-        self.run_external_command(&ctx, argv, redirects)
+        self.run_external_command(&ctx, argv, redirects, assignments)
     }
 
     fn run_local_command(&mut self, declarations: &[parser::LocalDeclaration]) -> ExitStatus {
