@@ -32,7 +32,6 @@ mod utils;
 mod history;
 mod fuzzy;
 
-use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use std::process;
@@ -41,36 +40,13 @@ use nix::unistd::{getpid, setpgid, tcsetpgrp};
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
 use crate::exec::ExitStatus;
 
-fn resolve_and_create_history_file() -> Option<PathBuf> {
-    if let Some(home_dir) = dirs::home_dir() {
-        let history_path = Path::new(&home_dir).join(".nsh_history");
-        if history_path.exists() {
-            return Some(history_path);
-        }
-
-        if File::create(&history_path).is_ok() {
-            return Some(history_path);
-        }
-    }
-
-    None
-}
-
 fn interactive_mode(env: &mut exec::Env) -> ExitStatus {
     // Eval nshrc.
     if let Some(home_dir) = dirs::home_dir() {
         let nshrc_path = Path::new(&home_dir).join(".nshrc");
         if nshrc_path.exists() {
-            exec::exec_file(env, nshrc_path);
+            env.exec_file(nshrc_path);
         }
-    }
-
-    // Load histories.
-    let history_path = resolve_and_create_history_file();
-    if let Some(ref _path) = history_path {
-        // TODO: load history
-    } else {
-        warn!("disabling history");
     }
 
     loop {
@@ -85,7 +61,7 @@ fn interactive_mode(env: &mut exec::Env) -> ExitStatus {
             }
         };
 
-        exec::exec_str(env, &line);
+        env.exec_str(&line);
     }
 }
 
@@ -163,8 +139,8 @@ fn main() {
 
     let mut isolate = exec::Env::new(getpid(), interactive);
     let status = match (opt.command, opt.file) {
-        (Some(command), _) => exec::exec_str(&mut isolate, &command),
-        (_, Some(file)) => exec::exec_file(&mut isolate, file),
+        (Some(command), _) => isolate.exec_str(&command),
+        (_, Some(file)) => isolate.exec_file(file),
         (_, _) => interactive_mode(&mut isolate),
     };
 

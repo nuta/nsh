@@ -2,7 +2,6 @@ use crate::exec::{ExitStatus, Env};
 use crate::utils::FdFile;
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::os::unix::io::RawFd;
 
 mod alias;
 mod cd;
@@ -40,7 +39,7 @@ pub fn xkcd_rand_command(ctx: &mut InternalCommandContext) -> ExitStatus {
 type InternalCommand = fn(&mut InternalCommandContext) -> ExitStatus;
 lazy_static! {
     // TODO: Construct this map in compile time.
-    static ref INTERNAL_COMMANDS: BTreeMap<&'static str, InternalCommand> = {
+    pub static ref INTERNAL_COMMANDS: BTreeMap<&'static str, InternalCommand> = {
         let mut commands: BTreeMap<&'static str, InternalCommand> = BTreeMap::new();
         // A hidden command which is quite useful for some cryptographers.
         commands.insert(
@@ -61,27 +60,4 @@ lazy_static! {
         commands.insert("shift", crate::builtins::shift::command);
         commands
     };
-}
-
-pub fn run_internal_command(
-    env: &mut Env,
-    argv: &[String],
-    stdin: RawFd,
-    stdout: RawFd,
-    stderr: RawFd
-) -> Result<ExitStatus, InternalCommandError> {
-
-    let mut ctx = InternalCommandContext {
-        argv,
-        env,
-        stdin: FdFile::new(stdin),
-        stdout: FdFile::new(stdout),
-        stderr: FdFile::new(stderr),
-    };
-
-    let cmd = argv[0].as_str();
-    match INTERNAL_COMMANDS.get(cmd) {
-        Some(func) => Ok(func(&mut ctx)),
-        _ => Err(InternalCommandError::NotFound),
-    }
 }
