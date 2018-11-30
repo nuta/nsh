@@ -28,7 +28,7 @@ def run_test(test):
     except FileNotFoundError:
         expected_stderr = ""
 
-    test_body = test.open().read()
+    test_body = Path(test).open().read()
     disable_output_check = "disable-output-check" in test_body
 
     m = re.search(r"exit-with=([0-9]+)", test_body)
