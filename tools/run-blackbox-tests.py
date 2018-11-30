@@ -8,7 +8,7 @@ from termcolor import cprint
 import re
 
 def run_test(test):
-    cprint(f"Running {test}...", attrs=["bold"], end="")
+    cprint("Running {}...".format(test), attrs=["bold"], end="")
     sys.stdout.flush()
 
     expected_stdout_path = Path(test).with_suffix(".stdout")
@@ -40,7 +40,7 @@ def run_test(test):
     bash_stderr = p.stderr.read().decode("utf-8")
 
     if bash_returncode != expected_returncode:
-        cprint(f"bash returned {bash_returncode} (expected {expected_returncode})", "red", attrs=["bold"])
+        cprint("bash returned {} (expected {})".format(bash_returncode, expected_returncode), "red", attrs=["bold"])
         print("bash stdout -------------------------")
         print(bash_stdout)
         print("bash stderr -------------------------")
@@ -48,7 +48,7 @@ def run_test(test):
         return
 
     if disable_output_check == False and bash_stdout.rstrip() != expected_stdout.rstrip():
-        cprint(f"unexpected bash output (fix {expected_stdout_path}!)", "red", attrs=["bold"])
+        cprint("unexpected bash output (fix {}!)".format(expected_stdout_path), "red", attrs=["bold"])
         print("expected ----------------------------")
         print(expected_stdout)
         print("bash stdout -------------------------")
@@ -93,7 +93,7 @@ def run_test(test):
         return
 
     if returncode != expected_returncode:
-        cprint(f"exited with {returncode}", "red", attrs=["bold"])
+        cprint("exited with {}".format(returncode), "red", attrs=["bold"])
         return
 
     cprint("ok", "green", attrs=["bold"])
