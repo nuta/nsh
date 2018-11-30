@@ -4,14 +4,14 @@ nsh
 
 **nsh** is a command-line shell that focuses on performance and productivity.
 
-**Currenly nsh is unstable. Succeeded in crashing nsh? [Let me know](https://github.com/seiyanuta/nsh/issues)!**
+**Currenly nsh is not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/seiyanuta/nsh/issues)!**
 
-Goals (not yet finished)
-------------------------
-- Aims to be a **Bash compatible** interactive shell.
-- **Tab compeltions** and **syntax highlighting** like fish.
+Goals
+-----
+- A **Bash compatible** interactive shell.
+- **Tab compeltions** and **syntax highlighting** like [fish](http://fishshell.com/).
 - **Blazing fast startup times** by asynchronous initialization.
-- **Zero configration** features out of the box and web-based configuration by `nshconfig` command.
+- **Zero configration** features out of the box and web-based configuration tool `nshconfig`.
 - **Written in Rust** :crab:.
 
 TODO: add a GIF video
