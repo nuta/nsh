@@ -6,8 +6,8 @@ nsh
 
 **Currenly nsh is unstable. Succeeded in crashing nsh? [Let me know](https://github.com/seiyanuta/nsh/issues)!**
 
-## Goals (not yet finished)
-----------------------------
+Goals (not yet finished)
+------------------------
 - Aims to be a **Bash compatible** interactive shell.
 - **Tab compeltions** and **syntax highlighting** like fish.
 - **Blazing fast startup times** by asynchronous initialization.
@@ -27,6 +27,8 @@ Future Plans
 - Smart fuzzy search in completion.
 - Auto correction as [fuck](https://github.com/nvbn/thefuck) does.
 - Plugins: Git information in prompt, rbenv, and more.
+
+----
 
 Building
 --------
