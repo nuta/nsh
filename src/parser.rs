@@ -840,7 +840,6 @@ named!(if_command<Input, Command>,
         call!(keyword, "if") >>
         condition: compound_list >>
         call!(keyword, "then") >>
-        opt!(tag!("\n")) >>
         then_part: compound_list >>
         elif_parts: many0!(do_parse!(
             call!(keyword, "elif") >>
@@ -854,7 +853,7 @@ named!(if_command<Input, Command>,
             body: compound_list >>
             ( body )
         )) >>
-        dbg_dmp!(call!(keyword, "fi")) >>
+        call!(keyword, "fi") >>
         ({
             Command::If {
                 condition,
@@ -877,7 +876,6 @@ named!(for_command<Input, Command>,
             ( words )
         )) >>
         call!(keyword, "do") >>
-        opt!(tag!("\n")) >>
         body: compound_list >>
         call!(keyword, "done") >>
         ({
