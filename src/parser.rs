@@ -2601,14 +2601,14 @@ pub fn test_string_literal() {
     );
 
     assert_eq!(
-        parse_line("echo \"hello world\""),
+        parse_line("echo \"\" \"hello world\""),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
-                        argv: vec![lit!("echo"), lit!("hello world")],
+                        argv: vec![lit!("echo"), Word(vec![]), lit!("hello world")],
                         assignments: vec![],
                         redirects: vec![],
                     }]

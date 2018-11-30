@@ -447,18 +447,22 @@ impl Isolate {
             };
 
             // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo=123`.
-            if !frag.is_empty() {
-                if expand {
-                    for word in frag.split(|c| ifs.contains(c)) {
-                        words.push(word.to_string());
-                    }
-                } else {
-                    words.push(frag);
+            if expand {
+                for word in frag.split(|c| ifs.contains(c)) {
+                    words.push(word.to_string());
                 }
+            } else {
+                words.push(frag);
             }
         }
 
-        words
+        if words.is_empty() {
+            // e.g. `echo ""`
+            vec!["".into()]
+        } else {
+            words
+        }
+
     }
 
     fn expand_word_into_string(&mut self, word: &Word) -> String {
