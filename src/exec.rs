@@ -13,6 +13,7 @@ use nix::sys::termios::{tcgetattr, tcsetattr, Termios, SetArg::TCSADRAIN};
 use nix::unistd::{close, dup2, execv, fork, pipe, ForkResult, Pid, getpid, setpgid, tcsetpgrp};
 use std::collections::{HashMap, HashSet};
 use std::ffi::CString;
+use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 use std::io::prelude::*;
@@ -57,10 +58,12 @@ fn move_fd(src: RawFd, dst: RawFd) {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ExitStatus {
     ExitedWith(i32),
-    Background(Pid /* pgid */),
+    Running(Pid /* pgid */),
     Break,
     Continue,
     Return,
+    // The command is not executed because of `noexec`.
+    NoExec,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -73,19 +76,6 @@ struct Context {
     interactive: bool,
 }
 
-#[derive(Debug, Copy, Clone)]
-enum CommandResult {
-    External { pid: Pid },
-    Internal { status: ExitStatus },
-    // break command
-    Break,
-    // continue command
-    Continue,
-    // return command
-    Return,
-    // The command is not executed because of `noexec`.
-    NoExec,
-}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ProcessState {
@@ -115,13 +105,28 @@ impl Frame {
         self.vars.remove(key.into())
     }
 
-    pub fn get<'a, 'b>(&'a self, key: &'b str) -> Option<Arc<Variable>> {
+    pub fn get(&self, key: &str) -> Option<Arc<Variable>> {
         self.vars.get(key).cloned()
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct JobId(usize);
+
+impl JobId {
+    pub fn new(id: usize) -> JobId {
+        JobId(id)
+    }
+}
+
+impl fmt::Display for JobId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
+
 pub struct Job {
-    id: usize,
+    id: JobId,
     pgid: Pid,
     cmd: String,
     processes: Vec<Pid>,
@@ -129,7 +134,7 @@ pub struct Job {
 }
 
 impl Job {
-    pub fn new(id: usize, pgid: Pid, cmd: String, processes: Vec<Pid>) -> Job {
+    pub fn new(id: JobId, pgid: Pid, cmd: String, processes: Vec<Pid>) -> Job {
         Job {
             id,
             pgid,
@@ -140,7 +145,7 @@ impl Job {
     }
 
     #[inline]
-    pub fn id(&self) -> usize {
+    pub fn id(&self) -> JobId {
         self.id
     }
 
@@ -183,6 +188,7 @@ impl Job {
 pub struct Isolate {
     shell_pgid: Pid,
     interactive: bool,
+    term_fd: RawFd,
     shell_termios: Option<Termios>,
 
     last_status: i32,
@@ -198,10 +204,8 @@ pub struct Isolate {
     pub nounset: bool,
     pub noexec: bool,
 
-    /// Key is the job ID.
-    jobs: HashMap<usize, Arc<Job>>,
+    jobs: HashMap<JobId, Arc<Job>>,
     last_fore_job: Option<Arc<Job>>,
-    /// Key is a pid.
     states: HashMap<Pid, ProcessState>,
     pid_job_mapping: HashMap<Pid, Arc<Job>>,
 }
@@ -217,6 +221,7 @@ impl Isolate {
         Isolate {
             shell_pgid,
             interactive,
+            term_fd: 0 /* stdin */,
             shell_termios,
             last_status: 0,
             exported: HashSet::new(),
@@ -280,7 +285,7 @@ impl Isolate {
         None
     }
 
-    pub fn get<'a, 'b>(&'a self, key: &'b str) -> Option<Arc<Variable>> {
+    pub fn get(&self, key: &str) -> Option<Arc<Variable>> {
         if let Some(var) = self.current_frame().get(key) {
             Some(var)
         } else {
@@ -289,7 +294,7 @@ impl Isolate {
     }
 
     #[inline]
-    pub fn get_str<'a, 'b>(&'a self, key: &'a str) -> Option<String> {
+    pub fn get_str(&self, key: &str) -> Option<String> {
         match self.get(key) {
             Some(var) => {
                 match var.value() {
@@ -393,7 +398,7 @@ impl Isolate {
 
     fn expand_word_into_vec(&mut self, word: &Word, ifs: &str) -> Vec<String> {
         let mut words = Vec::new();
-        for span in &word.0 {
+        for span in word.spans() {
             let (frag, expand) = match span {
                 Span::Literal(s) => (s.clone(), false),
                 Span::Parameter { name, op, quoted } => {
@@ -501,6 +506,18 @@ impl Isolate {
         }
     }
 
+    pub fn create_job(&mut self, name: String, pgid: Pid, childs: Vec<Pid>) -> Arc<Job> {
+        let id = self.alloc_job_id();
+        let job = Arc::new(Job::new(id.clone(), pgid, name, childs.clone()));
+        for child in childs {
+            self.set_process_state(child, ProcessState::Running);
+            self.pid_job_mapping.insert(child, job.clone());
+        }
+
+        self.jobs.insert(id, job.clone());
+        job
+    }
+
     #[inline]
     pub fn jobs(&self) -> Vec<Arc<Job>> {
         let mut jobs = Vec::new();
@@ -511,13 +528,13 @@ impl Isolate {
         jobs
     }
 
-    pub fn alloc_job_id(&mut self) -> usize {
+    pub fn alloc_job_id(&mut self) -> JobId {
         let mut id = 1;
-        while self.jobs.contains_key(&id) {
+        while self.jobs.contains_key(&JobId::new(id)) {
             id += 1;
         }
 
-        id
+        JobId::new(id)
     }
 
     #[inline]
@@ -525,9 +542,12 @@ impl Isolate {
         self.last_fore_job.as_ref().map(|job| job.clone())
     }
 
-    pub fn continue_job(&mut self, job_id: usize, background: bool) {
+    pub fn find_job_by_id(&self, id: JobId) -> Option<Arc<Job>> {
+        self.jobs.get(&id).cloned()
+    }
+
+    pub fn continue_job(&mut self, job: Arc<Job>, background: bool) {
         // Mark all stopped processes as running.
-        let job = self.jobs.get(&job_id).unwrap().clone();
         for proc in &job.processes {
             match self.get_process_state(*proc).unwrap() {
                 &ProcessState::Stopped(_) => {
@@ -538,14 +558,13 @@ impl Isolate {
         }
 
         if background {
-            self.run_in_background(job_id, true);
+            self.run_in_background(job, true);
         } else {
-            self.run_in_foreground(job_id, true);
+            self.run_in_foreground(job, true);
         }
     }
 
-    pub fn run_in_foreground(&mut self, job_id: usize, sigcont: bool) -> ProcessState {
-        let job = self.jobs.get(&job_id).unwrap().clone();
+    pub fn run_in_foreground(&mut self, job: Arc<Job>, sigcont: bool) -> ProcessState {
         self.last_fore_job = Some(job.clone());
 
         // Put the job into the foreground.
@@ -553,7 +572,7 @@ impl Isolate {
 
         if sigcont {
             if let Some(ref termios) = *job.termios.borrow() {
-                tcsetattr(0 /* stdout */, TCSADRAIN, termios).expect("failed to tcsetattr");
+                tcsetattr(self.term_fd, TCSADRAIN, termios).expect("failed to tcsetattr");
             }
             kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
             trace!("sent sigcont");
@@ -571,8 +590,7 @@ impl Isolate {
         status
     }
 
-    pub fn run_in_background(&mut self, job_id: usize, sigcont: bool) {
-        let job = self.jobs.get(&job_id).unwrap().clone();
+    pub fn run_in_background(&mut self, job: Arc<Job>, sigcont: bool) {
         if sigcont {
             kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
         }
@@ -653,7 +671,7 @@ impl Isolate {
     }
 
     /// Spawn a child process and execute a command.
-    fn run_external_command(&mut self, ctx: &Context, argv: Vec<String>, redirects: &[parser::Redirection]) -> CommandResult {
+    fn run_external_command(&mut self, ctx: &Context, argv: Vec<String>, redirects: &[parser::Redirection]) -> ExitStatus {
         let mut fds = Vec::new();
         for r in redirects {
             match r.target {
@@ -677,7 +695,7 @@ impl Isolate {
                         fds.push((file.into_raw_fd(), r.fd as RawFd))
                     } else {
                         warn!("nsh: failed to open file: `{}'", filepath);
-                        return CommandResult::Internal { status: ExitStatus::ExitedWith(1) };
+                        return ExitStatus::ExitedWith(1);
                     }
                 }
             }
@@ -699,14 +717,14 @@ impl Isolate {
             Some(argv0) => CString::new(argv0).unwrap(),
             None => {
                 eprintln!("nsh: command not found `{}'", argv[0]);
-                return CommandResult::Internal { status: ExitStatus::ExitedWith(1) };
+                return ExitStatus::ExitedWith(1);
             }
         };
 
         // Spawn a child.
         match fork().expect("failed to fork") {
             ForkResult::Parent { child } => {
-                CommandResult::External { pid: child }
+                ExitStatus::Running(child)
             },
             ForkResult::Child => {
                 // FIXME: CString::new() internally calls memchr(); it could be non-negligible cost.
@@ -794,7 +812,7 @@ impl Isolate {
 
     fn expand_alias(&self, argv: &[Word]) -> Vec<Word> {
         if let Some(word) = argv.iter().nth(0) {
-            if let Some(Span::Literal(lit)) = word.0.iter().nth(0) {
+            if let Some(Span::Literal(lit)) = word.spans().iter().nth(0) {
                 if let Some(alias) = self.lookup_alias(lit.as_str()) {
                     let mut new_argv = Vec::new();
                     new_argv.extend(alias);
@@ -807,13 +825,13 @@ impl Isolate {
         argv.to_vec()
     }
 
-    fn run_simple_command(&mut self, ctx: &Context, argv: &[Word], redirects: &[parser::Redirection]) -> CommandResult {
+    fn run_simple_command(&mut self, ctx: &Context, argv: &[Word], redirects: &[parser::Redirection]) -> ExitStatus {
         let argv = self.expand_words(&self.expand_alias(argv));
 
         if argv.is_empty() {
             // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
             // named "foo.txt".
-            return CommandResult::Internal { status: ExitStatus::ExitedWith(0) };
+            return ExitStatus::ExitedWith(0);
         }
 
         // Functions
@@ -828,7 +846,7 @@ impl Isolate {
                     }
 
                     let result = match self.run_command(&body, ctx) {
-                        CommandResult::Return => CommandResult::Internal { status: ExitStatus::ExitedWith(0) },
+                        ExitStatus::Return => ExitStatus::ExitedWith(0),
                         result => result,
                     };
 
@@ -843,9 +861,7 @@ impl Isolate {
 
         // Internal commands
         match self.run_internal_command(&argv, ctx.stdin, ctx.stdout, ctx.stderr) {
-            Ok(status) => {
-                return CommandResult::Internal { status };
-            }
+            Ok(status) => return status,
             Err(InternalCommandError::NotFound) => (), /* Try external command. */
         }
 
@@ -853,10 +869,10 @@ impl Isolate {
         self.run_external_command(&ctx, argv, redirects)
     }
 
-    fn run_local_command(&mut self, declarations: &[parser::LocalDeclaration]) -> CommandResult {
+    fn run_local_command(&mut self, declarations: &[parser::LocalDeclaration]) -> ExitStatus {
         if self.in_global_frame() {
             eprintln!("nsh: local variable can only be used in a function");
-            CommandResult::Internal { status: ExitStatus::ExitedWith(1) }
+            ExitStatus::ExitedWith(1)
         } else {
             for decl in declarations {
                 match decl {
@@ -869,22 +885,20 @@ impl Isolate {
                     }
                 }
             }
-            CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
+            ExitStatus::ExitedWith(0)
         }
     }
 
-    fn run_if_command(&mut self, ctx: &Context, condition: &[parser::Term], then_part: &[parser::Term]) -> CommandResult {
+    fn run_if_command(&mut self, ctx: &Context, condition: &[parser::Term], then_part: &[parser::Term]) -> ExitStatus {
         // TODO: else, elif
         let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr);
         if result == ExitStatus::ExitedWith(0) {
-            CommandResult::Internal {
-                status: self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr),
-            }
+            self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr)
         } else {
-            CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
+            ExitStatus::ExitedWith(0)
         }
     }
-    fn run_for_command(&mut self, ctx: &Context, var_name: &str, words: &[Word], body: &[parser::Term]) -> CommandResult {
+    fn run_for_command(&mut self, ctx: &Context, var_name: &str, words: &[Word], body: &[parser::Term]) -> ExitStatus {
         for word in words {
             let value = self.expand_word_into_string(word);
             self.set(&var_name, Value::String(value), false);
@@ -893,17 +907,17 @@ impl Isolate {
             match result {
                 ExitStatus::Break => break,
                 ExitStatus::Continue => (),
-                ExitStatus::Return => return CommandResult::Internal { status: result },
+                ExitStatus::Return => return result,
                 _ => (),
             }
         }
 
-        CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
+        ExitStatus::ExitedWith(0)
     }
 
-    fn run_command(&mut self, command: &parser::Command, ctx: &Context) -> CommandResult {
+    fn run_command(&mut self, command: &parser::Command, ctx: &Context) -> ExitStatus {
         if self.noexec {
-            return CommandResult::NoExec;
+            return ExitStatus::NoExec;
         }
 
         trace!("run_command: {:?}", command);
@@ -922,27 +936,26 @@ impl Isolate {
             }
             parser::Command::FunctionDef { name, body } => {
                 self.set(name, Value::Function(body.clone()), true);
-                CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
+                ExitStatus::ExitedWith(0)
             }
             parser::Command::Assignment { assignments } => {
                 for assign in assignments {
                     let value = self.evaluate_initializer(&assign.initializer);
                     self.set(&assign.name, value, false)
                 }
-                CommandResult::Internal { status: ExitStatus::ExitedWith(0) }
+                ExitStatus::ExitedWith(0)
             },
             parser::Command::Group { terms } => {
-                let status = self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr);
-                CommandResult::Internal { status }
+                self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr)
             },
             parser::Command::Return => {
-                CommandResult::Return
+                ExitStatus::Return
             }
             parser::Command::Break => {
-                CommandResult::Break
+                ExitStatus::Break
             }
             parser::Command::Continue => {
-                CommandResult::Continue
+                ExitStatus::Continue
             }
             parser::Command::Case {..} => {
                 // TODO:
@@ -986,7 +999,7 @@ impl Isolate {
         background: bool,
     ) -> ExitStatus {
         // Invoke commands in a pipeline.
-        let mut last_command_result = None;
+        let mut last_result = None;
         let mut iter = pipeline.commands.iter().peekable();
         let mut childs = Vec::new();
         let mut stdin = pipeline_stdin;
@@ -1005,22 +1018,26 @@ impl Isolate {
                 None
             };
 
-            let ctx = Context { stdin, stdout, stderr, pgid, background, interactive: self.interactive };
-            let result = self.run_command(command, &ctx);
-            match result {
-                CommandResult::External { pid } => {
-                    if pgid.is_none() {
-                        // The first child (the process group leader) pid is used for pgid.
-                        pgid = Some(pid);
-                    }
+            let result = self.run_command(command, &Context {
+                stdin,
+                stdout,
+                stderr,
+                pgid,
+                background,
+                interactive: self.interactive
+            });
 
-                    if self.interactive {
-                        setpgid(pid, pgid.unwrap()).expect("failed to setpgid");
-                    }
+            if let ExitStatus::Running(pid) = result {
+                if pgid.is_none() {
+                    // The first child (the process group leader) pid is used for pgid.
+                    pgid = Some(pid);
+                }
 
-                    childs.push(pid);
-                },
-                _ => ()
+                if self.interactive {
+                    setpgid(pid, pgid.unwrap()).expect("failed to setpgid");
+                }
+
+                childs.push(pid);
             }
 
             if let Some((pipe_out, pipe_in)) = pipes {
@@ -1029,69 +1046,62 @@ impl Isolate {
                 close(pipe_in).expect("failed to close pipe_in");
             }
 
-            last_command_result = Some(result);
+            last_result = Some(result);
         }
 
         // Wait for the last command in the pipeline.
         // FIXME: needs refactoring: last_status should be immutable
-        let mut last_status = ExitStatus::ExitedWith(0);
-        match last_command_result {
-            None => {
-                trace!("nothing to execute");
-                last_status = ExitStatus::ExitedWith(0);
-            }
-            Some(CommandResult::Internal { status }) => {
-                last_status = status;
-                if let ExitStatus::ExitedWith(status) = status {
-                    self.last_status = status;
-                }
-            }
-            Some(CommandResult::External { .. }) => {
-                // Create a new job.
+        let last_status = match last_result {
+            Some(ExitStatus::ExitedWith(status)) => {
+                self.last_status = status;
+                ExitStatus::ExitedWith(status)
+            },
+            Some(ExitStatus::Running(_)) => {
                 let cmd_name = String::new(); // TODO:
-                let job = Arc::new(Job::new(self.alloc_job_id(), pgid.unwrap(), cmd_name, childs.clone()));
-                for child in childs {
-                    self.set_process_state(child, ProcessState::Running);
-                    self.pid_job_mapping.insert(child, job.clone());
-                }
-                self.jobs.insert(job.id, job.clone());
+                let job = self.create_job(cmd_name, pgid.unwrap(), childs);
 
                 if !self.interactive {
-                    last_status = match self.wait_for_job(job.clone()) {
+                    match self.wait_for_job(job.clone()) {
                         ProcessState::Completed(status) => {
                             ExitStatus::ExitedWith(status)
                         },
                         ProcessState::Stopped(_) => {
-                            ExitStatus::Background(pgid.unwrap())
+                            ExitStatus::Running(pgid.unwrap())
                         },
                         _ => unreachable!(),
                     }
                 } else if background {
-                    self.run_in_background(job.id, false);
-                    last_status = ExitStatus::Background(pgid.unwrap());
+                    self.run_in_background(job, false);
+                    ExitStatus::Running(pgid.unwrap())
                 } else {
-                    last_status = match self.run_in_foreground(job.id, false) {
+                    match self.run_in_foreground(job, false) {
                         ProcessState::Completed(status) => {
                             ExitStatus::ExitedWith(status)
                         },
                         ProcessState::Stopped(_) => {
-                            ExitStatus::Background(pgid.unwrap())
+                            ExitStatus::Running(pgid.unwrap())
                         },
                         _ => unreachable!(),
-                    };
+                    }
                 }
             },
-            Some(CommandResult::Break) => {
+            Some(ExitStatus::Break) => {
                 return ExitStatus::Break;
-            }
-            Some(CommandResult::Continue) => {
+            },
+            Some(ExitStatus::Continue) => {
                 return ExitStatus::Continue;
-            }
-            Some(CommandResult::Return) => {
+            },
+            Some(ExitStatus::Return) => {
                 return ExitStatus::Return;
+            },
+            Some(ExitStatus::NoExec) => {
+                return ExitStatus::NoExec;
+            },
+            None => {
+                trace!("nothing to execute");
+                ExitStatus::ExitedWith(0)
             }
-            Some(CommandResult::NoExec) => (),
-        }
+        };
 
         if self.errexit {
             if let ExitStatus::ExitedWith(status) = last_status {

@@ -185,6 +185,13 @@ pub enum WordOrRedirection {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Word(pub Vec<Span>);
 
+impl Word {
+    #[inline]
+    pub fn spans(&self) -> &[Span] {
+        &self.0
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Alias {
     pub name: String,

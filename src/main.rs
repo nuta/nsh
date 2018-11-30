@@ -147,6 +147,7 @@ fn main() {
 
     match status {
         ExitStatus::ExitedWith(status) => process::exit(status),
-        _ => unreachable!(),
+        ExitStatus::NoExec=> process::exit(0),
+        _ => panic!("unexpected {:?}", status),
     }
 }
