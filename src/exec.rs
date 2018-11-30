@@ -298,6 +298,19 @@ impl Env {
         }
     }
 
+    #[inline]
+    pub fn get_str<'a, 'b>(&'a self, key: &'a str) -> Option<String> {
+        match self.get(key) {
+            Some(var) => {
+                match var.value {
+                    Value::String(ref s) => Some(s.clone()),
+                    _ => None,
+                }
+            },
+            _ => None,
+        }
+    }
+
     pub fn export(&mut self, name: &str) {
         self.exported.insert(name.to_string());
     }
@@ -484,7 +497,7 @@ impl Env {
                     };
 
                     trace!("redirection: options={:?}", options);
-                    let filepath = evaluate_word(self, wfilepath);
+                    let filepath = evaluate_word_into_string(self, wfilepath);
                     if let Ok(file) = options.open(&filepath) {
                         fds.push((file.into_raw_fd(), r.fd as RawFd))
                     } else {
@@ -709,7 +722,7 @@ impl Env {
             },
             parser::Command::For { var_name, words, body } => {
                 for word in words {
-                    let value = evaluate_word(self, word);
+                    let value = evaluate_word_into_string(self, word);
                     self.set(&var_name, Value::String(value), false);
 
                     let result = run_terms(self, body, ctx.stdin, ctx.stdout, ctx.stderr);
@@ -804,9 +817,9 @@ fn expand_param(env: &mut Env, name: &str, op: &ExpansionOp) -> String {
 
             "".to_owned()
         },
-        ExpansionOp::GetOrDefault(word) => evaluate_word(env, word),
+        ExpansionOp::GetOrDefault(word) => evaluate_word_into_string(env, word),
         ExpansionOp::GetOrDefaultAndAssign(word) => {
-            let content = evaluate_word(env, word);
+            let content = evaluate_word_into_string(env, word);
             env.set(name, Value::String(content.clone()), false);
             content
         }
@@ -835,23 +848,23 @@ fn expand_glob(pattern: &str) -> Vec<String> {
 }
 
 
-fn evaluate_word(env: &mut Env, word: &Word) -> String {
-    let mut buf = String::new();
+fn evaluate_word_into_vec(env: &mut Env, word: &Word, ifs: &str) -> Vec<String> {
+    let mut words = Vec::new();
     for span in &word.0 {
-        match span {
-            Span::Literal(s) => {
-                buf += s;
+        let (frag, expand) = match span {
+            Span::Literal(s) => (s.clone(), false),
+            Span::Parameter { name, op, quoted } => {
+                (expand_param(env, name, op), !quoted)
             },
-            Span::Parameter { name, op } => {
-                buf += &expand_param(env, name, op);
-            },
-            Span::ArrayParameter { name, index } => {
-                if let Some(var) = env.get(name) {
-                    buf += var.value_at(env, index);
-                }
+            Span::ArrayParameter { name, index, quoted } => {
+                let frag = env
+                    .get(name)
+                    .map(|v| v.value_at(env, index).to_string())
+                    .unwrap_or_else(|| "".to_owned());
+                (frag, !quoted)
             },
             Span::ArithExpr { expr } => {
-                buf += &evaluate_expr(env, expr).to_string();
+                (evaluate_expr(env, expr).to_string(), false)
             },
             Span::Tilde(user) => {
                 if user.is_some() {
@@ -859,44 +872,57 @@ fn evaluate_word(env: &mut Env, word: &Word) -> String {
                     unimplemented!();
                 }
 
-                if let Some(home_dir) = dirs::home_dir() {
-                    buf += home_dir.to_str().unwrap();
-                } else {
-                    // TODO: return an error instead
-                    eprintln!("nsh: failed to get home directory");
-                    buf += "./";
-                }
+                (dirs::home_dir().unwrap().to_str().unwrap().to_owned(), false)
             },
-            Span::Command { body } => {
+            Span::Command { body, quoted } => {
                 let stdout = exec_in_subshell(env, body);
                 // TODO: support binary output
                 let s = std::str::from_utf8(&stdout).unwrap_or("").to_string();
-                buf += &s.trim_end_matches('\n');
+                (s.trim_end_matches('\n').to_string(), !quoted)
             },
             Span::AnyChar => {
-                buf.push('?');
+                ("?".into(), false)
             },
             Span::AnyString => {
-                buf.push('*');
+                ("*".into(), false)
             },
+        };
+
+        // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo=123`.
+        if !frag.is_empty() {
+            if expand {
+                for word in frag.split(|c| ifs.contains(c)) {
+                    words.push(word.to_string());
+                }
+            } else {
+                words.push(frag);
+            }
         }
     }
 
-    buf
+    let mut glob_expanded = Vec::new();
+    for word in words {
+        // FIXME: Support file path which contains '*'.
+        if word.contains('*') || word.contains('?') {
+            glob_expanded.extend(expand_glob(&word))
+        } else {
+            glob_expanded.push(word);
+        };
+    }
+
+    glob_expanded
+}
+
+fn evaluate_word_into_string(env: &mut Env, word: &Word) -> String {
+    let ifs = env.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
+    evaluate_word_into_vec(env, word, &ifs).join(" ")
 }
 
 fn evaluate_words(env: &mut Env, words: &[Word]) -> Vec<String> {
     let mut evaluated = Vec::new();
+    let ifs = env.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
     for word in words {
-        let s = evaluate_word(env, word);
-        if !s.is_empty() {
-            // FIXME: Support file path which contains '*'.
-            if s.contains('*') || s.contains('?') {
-                evaluated.extend(expand_glob(&s));
-            } else {
-                evaluated.push(s);
-            }
-        }
+        evaluated.extend(evaluate_word_into_vec(env, word, &ifs));
     }
 
     evaluated
@@ -904,11 +930,11 @@ fn evaluate_words(env: &mut Env, words: &[Word]) -> Vec<String> {
 
 fn evaluate_initializer(env: &mut Env, initializer: &Initializer) -> Value {
     match initializer {
-        Initializer::String(ref word) => Value::String(evaluate_word(env, word)),
+        Initializer::String(ref word) => Value::String(evaluate_word_into_string(env, word)),
         Initializer::Array(ref words) =>  {
             let mut elems = Vec::new();
             for word in words {
-                elems.push(evaluate_word(env, word));
+                elems.push(evaluate_word_into_string(env, word));
             }
             Value::Array(elems)
         }

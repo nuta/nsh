@@ -163,11 +163,11 @@ pub enum Span {
     // ~, ~mike, ...
     Tilde(Option<String>),
     // $foo, ${foo}, ${foo:-default}, ...
-    Parameter { name: String, op: ExpansionOp },
+    Parameter { name: String, op: ExpansionOp, quoted: bool },
     // $${foo[1]} ...
-    ArrayParameter { name: String, index: Expr },
+    ArrayParameter { name: String, index: Expr, quoted: bool },
     // $(echo hello && echo world)
-    Command { body: Vec<Term> },
+    Command { body: Vec<Term>, quoted: bool },
     // $((1 + 2 * 3))
     ArithExpr { expr: Expr },
     // *
@@ -252,17 +252,18 @@ named!(pattern<Input, Span>,
     )
 );
 
-named!(parameter_wo_braces<Input, Span>,
+named_args!(parameter_wo_braces(quoted: bool)<Input, Span>,
     map!(recognize!(var_name),
         |name| {
             Span::Parameter {
                 name: name.to_string(),
-                op: ExpansionOp::GetOrEmpty
+                op: ExpansionOp::GetOrEmpty,
+                quoted,
             }
         })
 );
 
-named!(parameter_w_braces<Input, Span>,
+named_args!(parameter_w_braces(quoted: bool)<Input, Span>,
     do_parse!(
         tag!("{") >>
         length_op: opt!(tag!("#")) >>
@@ -287,66 +288,68 @@ named!(parameter_w_braces<Input, Span>,
             Span::Parameter {
                 name: name.to_string(),
                 op,
+                quoted,
             }
         })
     )
 );
 
 
-named!(array_parameter<Input, Span>,
+named_args!(array_parameter(quoted: bool)<Input, Span>,
     do_parse!(
         tag!("{") >>
         name: var_name >>
         tag!("[") >>
-        index: expr >>
+        index: call!(expr, quoted) >>
         tag!("]") >>
         tag!("}") >>
         ({
             Span::ArrayParameter {
                 name: name.to_string(),
                 index,
+                quoted,
             }
         })
     )
 );
 
-named!(parameter_expansion<Input, Span>,
-    alt!(array_parameter | parameter_w_braces | parameter_wo_braces)
+named_args!(parameter_expansion(quoted: bool)<Input, Span>,
+    alt!(call!(array_parameter, quoted) | call!(parameter_w_braces, quoted) | call!(parameter_wo_braces, quoted))
 );
 
-named!(command_expansion<Input, Span>,
+named_args!(command_expansion(quoted: bool)<Input, Span>,
     do_parse!(
         // Use tag! here instead of keyword because `(' must comes
         // right after `$'.
         call!(symbol, "(") >>
         body: compound_list >>
         call!(symbol, ")") >>
-        ( Span::Command { body } )
+        ( Span::Command { body, quoted } )
     )
 );
 
-named!(backquoted_command_expansion<Input, Span>,
+named_args!(backquoted_command_expansion(quoted: bool)<Input, Span>,
     do_parse!(
         tag!("`") >>
         body: compound_list >>
         call!(keyword, "`") >>
-        ( Span::Command { body } )
+        ( Span::Command { body, quoted } )
     )
 );
 
-named!(expansion<Input, Span>,
+named_args!(expansion(quoted: bool)<Input, Span>,
     do_parse!(
         tag!("$") >>
         span: alt!(
-            arith_expr |
-            command_expansion |
-            parameter_expansion
+            call!(arith_expr, quoted) |
+            call!(command_expansion, quoted) |
+            call!(parameter_expansion, quoted)
         ) >>
         ( span )
     )
 );
 
-named!(expr_factor<Input, Expr>,
+named_args!(expr_factor(quoted: bool)<Input, Expr>,
     alt!(
         // integer literal
         do_parse!(
@@ -363,14 +366,14 @@ named!(expr_factor<Input, Expr>,
         // $(( 7 * (8 + 9) ))
         | do_parse!(
             call!(symbol, "(") >>
-            expr: expr >>
+            expr: call!(expr, quoted) >>
             call!(symbol, ")") >>
             ( Expr::Expr(Box::new(expr)) )
         )
         // $(( $i ))
         | do_parse!(
             peek!(tag!("$")) >>
-            span: expansion >>
+            span: call!(expansion, quoted) >>
             ({
                 match span {
                     Span::Parameter {name, .. } => Expr::Parameter { name },
@@ -380,7 +383,7 @@ named!(expr_factor<Input, Expr>,
         )
         // $(( i ))
         | map!(
-            parameter_wo_braces,
+            call!(parameter_wo_braces, quoted),
             |span| {
                 match span {
                     Span::Parameter {name, .. } => Expr::Parameter { name },
@@ -391,14 +394,14 @@ named!(expr_factor<Input, Expr>,
     )
 );
 
-named!(expr_term<Input, Expr>,
+named_args!(expr_term(quoted: bool)<Input, Expr>,
     do_parse!(
-        lhs: expr_factor >>
+        lhs: call!(expr_factor, quoted) >>
         rest: opt!(do_parse!(
             opt!(whitespaces) >>
             op: alt!(tag!("*") | tag!("/")) >>
             opt!(whitespaces) >>
-            rhs: expr_term >>
+            rhs: call!(expr_term, quoted) >>
             ( (op, rhs) )
         )) >>
         ({
@@ -421,14 +424,14 @@ named!(expr_term<Input, Expr>,
     )
 );
 
-named!(expr<Input, Expr>,
+named_args!(expr(quoted: bool)<Input, Expr>,
     do_parse!(
-        lhs: expr_term >>
+        lhs: call!(expr_term, quoted) >>
         rest: opt!(do_parse!(
             opt!(whitespaces) >>
             op: alt!(tag!("+") | tag!("-")) >>
             opt!(whitespaces) >>
-            rhs: expr >>
+            rhs: call!(expr, quoted) >>
             ( (op, rhs) )
         )) >>
         ({
@@ -452,10 +455,10 @@ named!(expr<Input, Expr>,
 );
 
 // TODO: implement <<, >>, %, ==, !=, &&, ||, ?:
-named!(arith_expr<Input, Span>,
+named_args!(arith_expr(quoted: bool)<Input, Span>,
     do_parse!(
         call!(symbol, "((") >>
-        expr: expr >>
+        expr: call!(expr, quoted) >>
         call!(symbol, "))") >>
         ( Span::ArithExpr { expr } )
     )
@@ -567,8 +570,8 @@ fn parse_word(_buf: Input, in_expansion: bool, quote: Option<char>) -> IResult<I
         match alt!(
             buf,
             pattern
-                | expansion
-                | backquoted_command_expansion
+                | call!(expansion, quote.is_some())
+                | call!(backquoted_command_expansion, quote.is_some())
                 | call!(escape_sequence, quote.is_some())
                 | call!(literal_span, quote, in_expansion)
         ) {
@@ -706,7 +709,7 @@ named!(assignment<Input, Assignment>,
             opt!(
                 do_parse!(
                     tag!("[") >>
-                    expr >>
+                    call!(expr, false) >>
                     tag!("]") >>
                     ( () )
                 )
@@ -718,7 +721,7 @@ named!(assignment<Input, Assignment>,
         index: opt!(
             do_parse!(
                 tag!("[") >>
-                index: expr >>
+                index: call!(expr, false) >>
                 tag!("]") >>
                 ( index )
             )
@@ -1201,10 +1204,11 @@ macro_rules! lit {
 
 #[allow(unused)]
 macro_rules! param {
-    ($name:expr, $op:expr) => {
+    ($name:expr, $op:expr, $quoted:expr) => {
         Word(vec![Span::Parameter {
             name: $name.to_string(),
             op: $op,
+            quoted: $quoted,
         }])
     };
 }
@@ -1582,7 +1586,7 @@ pub fn test_compound_commands() {
                                 commands: vec![Command::SimpleCommand {
                                     argv: vec![
                                         lit!("["),
-                                        param!("name", ExpansionOp::GetOrEmpty),
+                                        param!("name", ExpansionOp::GetOrEmpty, false),
                                         lit!("="),
                                         lit!("john"),
                                         lit!("]"),
@@ -1612,7 +1616,7 @@ pub fn test_compound_commands() {
                                         commands: vec![Command::SimpleCommand {
                                             argv: vec![
                                                 lit!("["),
-                                                param!("name", ExpansionOp::GetOrEmpty),
+                                                param!("name", ExpansionOp::GetOrEmpty, false),
                                                 lit!("="),
                                                 lit!("mike"),
                                                 lit!("]"),
@@ -1642,7 +1646,7 @@ pub fn test_compound_commands() {
                                         commands: vec![Command::SimpleCommand {
                                             argv: vec![
                                                 lit!("["),
-                                                param!("name", ExpansionOp::GetOrEmpty),
+                                                param!("name", ExpansionOp::GetOrEmpty, false),
                                                 lit!("="),
                                                 lit!("emily"),
                                                 lit!("]"),
@@ -1714,7 +1718,7 @@ pub fn test_compound_commands() {
                                     commands: vec![Command::SimpleCommand {
                                         argv: vec![
                                             lit!("cowsay"),
-                                            param!("arg", ExpansionOp::GetOrEmpty),
+                                            param!("arg", ExpansionOp::GetOrEmpty, false),
                                         ],
                                         redirects: vec![],
                                         assignments: vec![],
@@ -1880,7 +1884,7 @@ pub fn test_compound_commands() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Case {
-                        word: param!("action", ExpansionOp::GetOrEmpty),
+                        word: param!("action", ExpansionOp::GetOrEmpty, false),
                         items: vec![
                             CaseItem {
                                 patterns: vec![lit!("echo")],
@@ -2075,6 +2079,7 @@ pub fn test_compound_commands() {
                                 Word(vec![Span::Parameter {
                                     name: "x".into(),
                                     op: ExpansionOp::GetOrEmpty,
+                                    quoted: false,
                                 }])
                             ],
                             redirects: vec![],
@@ -2100,6 +2105,7 @@ pub fn test_expansions() {
                         argv: vec![
                             Word(vec![Span::Literal("ls".into())]),
                             Word(vec![Span::Command {
+                                quoted: false,
                                 body: vec![Term {
                                     background: false,
                                     pipelines: vec![Pipeline {
@@ -2136,11 +2142,13 @@ pub fn test_expansions() {
                             lit!("foo"),
                             Word(vec![Span::Parameter {
                                 name: "var1".into(),
+                                quoted: false,
                                 op: ExpansionOp::GetOrDefault(Word(vec![
                                     Span::Literal("a".into()),
                                     Span::Parameter {
                                         name: "xyz".into(),
                                         op: ExpansionOp::GetOrEmpty,
+                                        quoted: false,
                                     },
                                     Span::Literal("b".into()),
                                 ])),
@@ -2166,6 +2174,7 @@ pub fn test_expansions() {
                         argv: vec![
                             Word(vec![Span::Literal("ls".into())]),
                             Word(vec![Span::Command {
+                                quoted: false,
                                 body: vec![Term {
                                     background: false,
                                     pipelines: vec![Pipeline {
@@ -2203,6 +2212,7 @@ pub fn test_expansions() {
                             Word(vec![Span::Parameter {
                                 name: "TERM".into(),
                                 op: ExpansionOp::GetOrEmpty,
+                                quoted: true,
                             }],),
                         ],
                         redirects: vec![],
@@ -2226,10 +2236,12 @@ pub fn test_expansions() {
                             Word(vec![Span::Parameter {
                                 name: "?".into(),
                                 op: ExpansionOp::GetOrEmpty,
+                                quoted: false,
                             }],),
                             Word(vec![Span::Parameter {
                                 name: "7".into(),
                                 op: ExpansionOp::GetOrEmpty,
+                                quoted: false,
                             }],),
                         ],
                         redirects: vec![],
@@ -2256,23 +2268,27 @@ pub fn test_expansions() {
                                 op: ExpansionOp::GetOrDefault(Word(vec![Span::Literal(
                                     "Current".into(),
                                 )])),
+                                quoted: false,
                             }]),
                             Word(vec![Span::Parameter {
                                 name: "undefined".into(),
                                 op: ExpansionOp::GetOrDefaultAndAssign(Word(vec![Span::Literal(
                                     "TERM".into(),
                                 )])),
+                                quoted: false,
                             }]),
                             Word(vec![
                                 Span::Literal("is ".into()),
                                 Span::Parameter {
                                     name: "TERM".into(),
                                     op: ExpansionOp::GetOrEmpty,
+                                    quoted: true,
                                 },
                                 Span::Literal(" len=".into()),
                                 Span::Parameter {
                                     name: "TERM".into(),
                                     op: ExpansionOp::Length,
+                                    quoted: true,
                                 },
                             ]),
                         ],
