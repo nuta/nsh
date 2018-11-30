@@ -954,6 +954,26 @@ impl Isolate {
         ExitStatus::ExitedWith(0)
     }
 
+    fn run_while_command(
+        &mut self,
+        ctx: &Context,
+        condition: &[parser::Term],
+        body: &[parser::Term],
+    ) -> ExitStatus {
+
+        let mut last_result = ExitStatus::ExitedWith(0);
+        loop {
+            let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr);
+            if result != ExitStatus::ExitedWith(0) {
+                break;
+            }
+
+            last_result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
+        }
+
+        last_result
+    }
+
     fn run_for_command(&mut self, ctx: &Context, var_name: &str, words: &[Word], body: &[parser::Term]) -> ExitStatus {
         for word in words {
             let value = self.expand_word_into_string(word);
@@ -983,6 +1003,9 @@ impl Isolate {
             }
             parser::Command::If { condition, then_part, elif_parts, else_part, redirects } => {
                 self.run_if_command(ctx, &condition, &then_part, &elif_parts, &else_part, &redirects)
+            }
+            parser::Command::While { condition, body } => {
+                self.run_while_command(ctx, &condition, &body)
             }
             parser::Command::Case { word, cases } => {
                 self.run_case_command(ctx, &word, &cases)

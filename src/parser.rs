@@ -82,6 +82,10 @@ pub enum Command {
         else_part: Option<Vec<Term>>,
         redirects: Vec<Redirection>,
     },
+    While {
+        condition: Vec<Term>,
+        body: Vec<Term>,
+    },
     For {
         var_name: String,
         words: Vec<Word>,
@@ -660,6 +664,7 @@ named!(nonreserved_word<Input, Word>,
         not!(peek!(call!(keyword, "else"))) >>
         not!(peek!(call!(keyword, "fi"))) >>
         not!(peek!(call!(keyword, "for"))) >>
+        not!(peek!(call!(keyword, "while"))) >>
         not!(peek!(call!(keyword, "in"))) >>
         not!(peek!(call!(keyword, "do"))) >>
         not!(peek!(call!(keyword, "done"))) >>
@@ -885,6 +890,22 @@ named!(for_command<Input, Command>,
     )
 );
 
+named!(while_command<Input, Command>,
+    do_parse!(
+        call!(keyword, "while") >>
+        condition: compound_list >>
+        call!(keyword, "do") >>
+        body: compound_list >>
+        call!(keyword, "done") >>
+        ({
+            Command:: While {
+                condition,
+                body,
+            }
+        })
+    )
+);
+
 named!(break_command<Input, Command>,
     do_parse!(
         call!(keyword, "break") >>
@@ -1027,6 +1048,7 @@ named!(command<Input, Command>,
     alt!(
         if_command |
         for_command |
+        while_command |
         case_command |
         break_command |
         continue_command |
@@ -1506,6 +1528,42 @@ pub fn test_compound_commands() {
                         elif_parts: vec![],
                         else_part: None,
                         redirects: vec![],
+                    }],
+                }],
+                background: false,
+            }],
+        })
+    );
+
+    assert_eq!(
+        parse_line("while maybe-true;\ndo\n echo \"while loop!\"; done"),
+        Ok(Ast {
+            terms: vec![Term {
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::While {
+                        condition: vec![Term {
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    argv: literal_word_vec!["maybe-true"],
+                                    redirects: vec![],
+                                    assignments: vec![],
+                                }],
+                            }],
+                            background: false,
+                        }],
+                        body: vec![Term {
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    argv: literal_word_vec!["echo", "while loop!"],
+                                    redirects: vec![],
+                                    assignments: vec![],
+                                }],
+                            }],
+                            background: false,
+                        }],
                     }],
                 }],
                 background: false,
