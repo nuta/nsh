@@ -2,17 +2,17 @@ nsh
 ====
 [![Build Status](https://travis-ci.com/seiyanuta/nsh.svg?branch=master)](https://travis-ci.com/seiyanuta/nsh)
 
-**nsh** is a command-line shell that focuses on performance and productivity.
+A command-line shell that focuses on performance and productivity.
 
-**Currenly nsh is not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/seiyanuta/nsh/issues)!**
+**Currently nsh is not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/seiyanuta/nsh/issues)!**
 
 Goals
------
+------
 - A **Bash compatible** interactive shell.
 - **Tab compeltions** and **syntax highlighting** like [fish](http://fishshell.com/).
 - **Blazing fast startup times** by asynchronous initialization.
 - **Zero configration** features out of the box and web-based configuration tool `nshconfig`.
-- **Written in Rust** :crab:.
+- **Written in Rust** :crab:
 
 TODO: add a GIF video
 
