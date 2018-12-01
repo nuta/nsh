@@ -3,7 +3,6 @@ use crate::completion::{
 };
 use crate::history::{HistorySelector, append_history};
 use crate::prompt::render_prompt;
-use crate::utils::get_env;
 use std::io::{self, prelude::*, Stdout};
 use termion;
 use termion::cursor::DetectCursorPos;
@@ -50,7 +49,7 @@ pub fn input() -> Result<String, InputError> {
         // The prompt is not at the beginning of a line. This could be caused
         // if the previous command didn't print the trailing newline
         // (e.g. `echo -n hello`). Print a marker `%' and a newline.
-        write!(stdout, "{}%{}\n", termion::style::Invert, termion::style::Reset).ok();
+        writeln!(stdout, "{}(no newline){}", termion::style::Invert, termion::style::Reset).ok();
     }
 
     let (mut prompt_base_y, _) = get_current_yx(&mut stdout);

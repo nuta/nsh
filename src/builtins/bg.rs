@@ -16,15 +16,15 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
             match parse_job_id(ctx, opts.job_id) {
-                Ok(job_id) => {
-                    ctx.isolate.continue_job(job_id, true);
+                Ok(job) => {
+                    ctx.isolate.continue_job(&job, true);
                     ExitStatus::ExitedWith(0)
                 },
                 Err(status) => status,
             }
         },
         Err(err) => {
-            write!(ctx.stdout, "bg: {}", err).ok();
+            writeln!(ctx.stdout, "bg: {}", err).ok();
             ExitStatus::ExitedWith(1)
         }
     }

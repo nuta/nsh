@@ -42,7 +42,7 @@ impl Variable {
     }
 
     // References value as `$foo[expr]`.
-    pub fn value_at<'a>(&'a self, index: usize) -> &'a str {
+    pub fn value_at(&self, index: usize) -> &str {
         match &self.value {
             Value::Array(elems) => {
                 match elems.get(index) {

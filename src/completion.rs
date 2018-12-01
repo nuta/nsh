@@ -106,8 +106,7 @@ pub struct CompletionContext {
 impl CompletionContext {
     pub fn current_word(&self) -> Option<Arc<String>> {
         self.words
-            .iter()
-            .nth(self.current_word_index as usize)
+            .get(self.current_word_index as usize)
             .cloned()
     }
 }
@@ -217,10 +216,9 @@ pub fn extract_completion_context(user_input: &str, user_cursor: usize) -> Compl
     let mut words = Vec::new();
     let mut word = String::new();
     let mut in_string = false;
-    let mut offset = 0;
     let mut prev_ch = '\x00';
     let mut current_word_offset = 0;
-    for ch in line.chars().take(user_cursor) {
+    for (offset, ch) in line.chars().take(user_cursor).enumerate() {
         match (in_string, prev_ch, ch) {
             (true, '\\', '"') => {
                 word = word.trim_matches('\\').to_owned();
@@ -241,7 +239,6 @@ pub fn extract_completion_context(user_input: &str, user_cursor: usize) -> Compl
             (_, _, ch) => word.push(ch),
         }
 
-        offset += 1;
         prev_ch = ch;
     }
 
@@ -270,7 +267,7 @@ pub fn extract_completion_context(user_input: &str, user_cursor: usize) -> Compl
     // Case #2:
     //   $ ls foo
     //         ^ user_cursor is here (within a word)
-    if word.len() > 0 {
+    if !word.is_empty() {
         let word_len = word.len();
         words.push(Arc::new(word));
         current_word_index = words.len() as isize - 1;

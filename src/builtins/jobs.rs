@@ -13,13 +13,13 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     match Opt::from_iter_safe(ctx.argv) {
         Ok(_) => {
             for job in ctx.isolate.jobs() {
-                write!(ctx.stdout, "[{}] {}: {}\n",
+                writeln!(ctx.stdout, "[{}] {}: {}",
                     job.id(), job.state(ctx.isolate), job.cmd()).ok();
             }
             ExitStatus::ExitedWith(0)
         },
         Err(err) => {
-            write!(ctx.stdout, "fg: {}", err).ok();
+            writeln!(ctx.stdout, "fg: {}", err).ok();
             ExitStatus::ExitedWith(1)
         }
     }

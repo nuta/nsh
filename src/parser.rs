@@ -285,7 +285,7 @@ named_args!(parameter_w_braces(quoted: bool)<Input, Span>,
         default: opt!(word_in_expansion) >>
         tag!("}") >>
         ({
-            let default_word = default.unwrap_or(Word(vec![]));
+            let default_word = default.unwrap_or_else(|| Word(vec![]));
             let op = match (length_op, modifier) {
                 (Some(_), _) => ExpansionOp::Length,
                 (None, Some(Input("-")))  => ExpansionOp::GetNullableOrDefault(default_word),

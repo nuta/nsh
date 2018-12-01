@@ -104,7 +104,7 @@ impl Frame {
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
-        self.vars.remove(key.into())
+        self.vars.remove(key)
     }
 
     pub fn get(&self, key: &str) -> Option<Arc<Variable>> {
@@ -252,7 +252,7 @@ impl Isolate {
 
     #[inline]
     pub fn in_global_frame(&self) -> bool {
-        self.frames.len() == 0
+        self.frames.is_empty()
     }
 
     #[inline]
@@ -504,7 +504,7 @@ impl Isolate {
 
     pub fn create_job(&mut self, name: String, pgid: Pid, childs: Vec<Pid>) -> Arc<Job> {
         let id = self.alloc_job_id();
-        let job = Arc::new(Job::new(id.clone(), pgid, name, childs.clone()));
+        let job = Arc::new(Job::new(id, pgid, name, childs.clone()));
         for child in childs {
             self.set_process_state(child, ProcessState::Running);
             self.pid_job_mapping.insert(child, job.clone());
@@ -535,32 +535,29 @@ impl Isolate {
 
     #[inline]
     pub fn last_fore_job(&self) -> Option<Arc<Job>> {
-        self.last_fore_job.as_ref().map(|job| job.clone())
+        self.last_fore_job.as_ref().cloned()
     }
 
     pub fn find_job_by_id(&self, id: JobId) -> Option<Arc<Job>> {
         self.jobs.get(&id).cloned()
     }
 
-    pub fn continue_job(&mut self, job: Arc<Job>, background: bool) {
+    pub fn continue_job(&mut self, job: &Arc<Job>, background: bool) {
         // Mark all stopped processes as running.
         for proc in &job.processes {
-            match self.get_process_state(*proc).unwrap() {
-                &ProcessState::Stopped(_) => {
-                    self.set_process_state(*proc, ProcessState::Running);
-                },
-                _ => (),
+            if let ProcessState::Stopped(_) = self.get_process_state(*proc).unwrap() {
+                self.set_process_state(*proc, ProcessState::Running);
             }
         }
 
         if background {
-            self.run_in_background(job, true);
+            self.run_in_background(&job, true);
         } else {
-            self.run_in_foreground(job, true);
+            self.run_in_foreground(&job, true);
         }
     }
 
-    pub fn run_in_foreground(&mut self, job: Arc<Job>, sigcont: bool) -> ProcessState {
+    pub fn run_in_foreground(&mut self, job: &Arc<Job>, sigcont: bool) -> ProcessState {
         self.last_fore_job = Some(job.clone());
 
         // Put the job into the foreground.
@@ -575,7 +572,7 @@ impl Isolate {
         }
 
         // Wait for the job to exit.
-        let status = self.wait_for_job(job.clone());
+        let status = self.wait_for_job(&job);
 
         // Go back into the shell.
         job.termios.replace(Some(tcgetattr(0 /* stdin */).expect("failed to tcgetattr")));
@@ -586,7 +583,7 @@ impl Isolate {
         status
     }
 
-    pub fn run_in_background(&mut self, job: Arc<Job>, sigcont: bool) {
+    pub fn run_in_background(&mut self, job: &Arc<Job>, sigcont: bool) {
         if sigcont {
             kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
         }
@@ -594,7 +591,7 @@ impl Isolate {
 
     /// Waits for all processes in the job to exit. Note that the job will be
     /// deleted from `Isolate` if the process has exited.
-    pub fn wait_for_job(&mut self, job: Arc<Job>) -> ProcessState {
+    pub fn wait_for_job(&mut self, job: &Arc<Job>) -> ProcessState {
         loop {
             if job.completed(self) || job.stopped(self) {
                 break;
@@ -826,8 +823,8 @@ impl Isolate {
     }
 
     fn expand_alias(&self, argv: &[Word]) -> Vec<Word> {
-        if let Some(word) = argv.iter().nth(0) {
-            if let Some(Span::Literal(lit)) = word.spans().iter().nth(0) {
+        if let Some(word) = argv.get(0) {
+            if let Some(Span::Literal(lit)) = word.spans().get(0) {
                 if let Some(alias) = self.lookup_alias(lit.as_str()) {
                     let mut new_argv = Vec::new();
                     new_argv.extend(alias);
@@ -857,26 +854,21 @@ impl Isolate {
 
         // Functions
         if let Some(ref var) = self.get(argv[0].as_str()) {
-            match var.value() {
-                Value::Function(ref body) => {
-                    self.enter_frame();
+            if let Value::Function(ref body) = var.value() {
+                self.enter_frame();
 
-                    // Set $1, $2, ...
-                    for (i, arg) in argv.iter().skip(1).enumerate() {
-                        self.set(&(i + 1).to_string(), Value::String(arg.clone()), true);
-                    }
+                // Set $1, $2, ...
+                for (i, arg) in argv.iter().skip(1).enumerate() {
+                    self.set(&(i + 1).to_string(), Value::String(arg.clone()), true);
+                }
 
-                    let result = match self.run_command(&body, ctx) {
-                        ExitStatus::Return => ExitStatus::ExitedWith(0),
-                        result => result,
-                    };
+                let result = match self.run_command(&body, ctx) {
+                    ExitStatus::Return => ExitStatus::ExitedWith(0),
+                    result => result,
+                };
 
-                    self.leave_frame();
-                    return result;
-                },
-                // The variable is not a function. `argv[0]` is am internal or
-                // external command.
-                _ => (),
+                self.leave_frame();
+                return result;
             }
         }
 
@@ -1158,7 +1150,7 @@ impl Isolate {
                 let job = self.create_job(cmd_name, pgid.unwrap(), childs);
 
                 if !self.interactive {
-                    match self.wait_for_job(job.clone()) {
+                    match self.wait_for_job(&job) {
                         ProcessState::Completed(status) => {
                             ExitStatus::ExitedWith(status)
                         },
@@ -1168,10 +1160,10 @@ impl Isolate {
                         _ => unreachable!(),
                     }
                 } else if background {
-                    self.run_in_background(job, false);
+                    self.run_in_background(&job, false);
                     ExitStatus::Running(pgid.unwrap())
                 } else {
-                    match self.run_in_foreground(job, false) {
+                    match self.run_in_foreground(&job, false) {
                         ProcessState::Completed(status) => {
                             ExitStatus::ExitedWith(status)
                         },

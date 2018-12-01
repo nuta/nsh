@@ -23,12 +23,12 @@ pub(super) fn parse_job_id(
                 match (&job_id[1..]).parse() {
                     Ok(job_id) => JobId::new(job_id),
                     Err(_) => {
-                        write!(ctx.stdout, "nsh: invalid job id `{}'\n", job_id).ok();
+                        writeln!(ctx.stdout, "nsh: invalid job id `{}'", job_id).ok();
                         return Err(ExitStatus::ExitedWith(1));
                     },
                 }
             } else {
-                write!(ctx.stdout, "nsh: invalid job id `{}'\n", job_id).ok();
+                writeln!(ctx.stdout, "nsh: invalid job id `{}'", job_id).ok();
                 return Err(ExitStatus::ExitedWith(1));
             }
         },
@@ -36,7 +36,7 @@ pub(super) fn parse_job_id(
             match ctx.isolate.last_fore_job() {
                 Some(job) => job.id(),
                 None => {
-                    write!(ctx.stdout, "nsh: no jobs to run\n").ok();
+                    writeln!(ctx.stdout, "nsh: no jobs to run").ok();
                     return Err(ExitStatus::ExitedWith(1));
                 }
             }
@@ -46,8 +46,8 @@ pub(super) fn parse_job_id(
     match ctx.isolate.find_job_by_id(id) {
         Some(job) => Ok(job),
         None => {
-            write!(ctx.stdout, "nsh: no such job `{}'\n", id).ok();
-            return Err(ExitStatus::ExitedWith(1));
+            writeln!(ctx.stdout, "nsh: no such job `{}'", id).ok();
+            Err(ExitStatus::ExitedWith(1))
         }
     }
 }
@@ -58,14 +58,14 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         Ok(opts) => {
             match parse_job_id(ctx, opts.job_id) {
                 Ok(job) => {
-                    ctx.isolate.continue_job(job, false);
+                    ctx.isolate.continue_job(&job, false);
                     ExitStatus::ExitedWith(0)
                 },
                 Err(status) => status,
             }
         },
         Err(err) => {
-            write!(ctx.stdout, "fg: {}", err).ok();
+            writeln!(ctx.stdout, "fg: {}", err).ok();
             ExitStatus::ExitedWith(1)
         }
     }

@@ -31,7 +31,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             ExitStatus::ExitedWith(0)
         },
         Err(err) => {
-            write!(ctx.stderr, "nsh: cd: {}: `{}'\n", err, dir).ok();
+            writeln!(ctx.stderr, "nsh: cd: {}: `{}'", err, dir).ok();
             ExitStatus::ExitedWith(1)
         }
     }

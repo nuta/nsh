@@ -17,7 +17,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     }
 
     if newline {
-        write!(ctx.stdout, "\n").ok();
+        writeln!(ctx.stdout).ok();
     }
     ctx.stdout.flush().ok();
     ExitStatus::ExitedWith(0)

@@ -64,7 +64,7 @@ fn fuzzy_search(entries: &[Arc<String>], query: &str) -> Vec<Arc<String>> {
 
             // The keys are sorted by `score`. Here we embed an unique number `i` in
             // lower 24 bits to make the key unique.
-            let key = ((score as u32) << 24) | i as u32;
+            let key = (u32::from(score) << 24) | i as u32;
             sorted_map.insert(key, entry.clone());
         }
 

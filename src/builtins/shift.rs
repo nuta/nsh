@@ -35,7 +35,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             ExitStatus::ExitedWith(0)
         },
         Err(err) => {
-            write!(ctx.stdout, "shift: {}", err).ok();
+            writeln!(ctx.stdout, "shift: {}", err).ok();
             ExitStatus::ExitedWith(1)
         }
     }

@@ -30,7 +30,7 @@ pub enum InternalCommandError {
 
 /// https://xkcd.com/221/
 pub fn xkcd_rand_command(ctx: &mut InternalCommandContext) -> ExitStatus {
-    write!(ctx.stdout, "4\n").ok();
+    writeln!(ctx.stdout, "4").ok();
     ctx.stdout.flush().ok();
 
     ExitStatus::ExitedWith(0)
