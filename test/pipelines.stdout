@@ -1,0 +1,5 @@
+foo
+bar
+00000000  77 6f 72 6c 64 0a                                 |world.|
+00000006
+THIS_IS_ENV_VAR=123
