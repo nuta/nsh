@@ -16,8 +16,6 @@ pub enum InputError {
     Eof,
 }
 
-static DEFAULT_THEME: &'static str = "base16-ocean.dark";
-
 #[derive(PartialEq, Eq, Copy, Clone)]
 pub enum InputMode {
     Normal,
@@ -60,7 +58,7 @@ pub fn input() -> Result<String, InputError> {
     let mut user_input = String::new();
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
     let mut stdin_events = stdin.events();
-    let current_theme = get_env("NSH_THEME", DEFAULT_THEME);
+    let current_theme = "Solarized (dark)";
     let mut mode = InputMode::Normal;
     let mut rendered_lines = 0;
     // TODO: move these variables into InputMode::Completion.
