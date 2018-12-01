@@ -167,12 +167,10 @@ fn path_completion(ctx: &CompletionContext) -> Completions {
 }
 
 fn cmd_completion(ctx: &CompletionContext) -> Completions {
-    let entries = vec![Arc::new("ls".to_owned()), Arc::new("cd".to_owned())];
-
-    CompGen::new()
-        .entries(entries)
-        .search(ctx.current_word())
-        .build()
+    match ctx.current_word() {
+        Some(query) => crate::path::complete(&query),
+        None => crate::path::complete(""),
+    }
 }
 
 type CompletionFunc = fn(&CompletionContext) -> Completions;
