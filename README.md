@@ -48,7 +48,7 @@ Contributing
 nsh is in *alpha* stage: there are many missing features which Bash provides, there are kludges in
 source code, and there must be bugs. To make nsh practical for daily use, I need your help!
 
-## How can I contribute?
+### How can I contribute?
 - **Report bugs** in [GitHub issues](https://github.com/seiyanuta/nsh/issues). Please attach
   a minimal reproducible example (e.g. a valid shell script which causes a parser error)
   *if possible*. It helps me to fix the bug easier.
