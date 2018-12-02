@@ -178,7 +178,7 @@ pub fn input() -> Result<String, InputError> {
                         mode = InputMode::Normal;
                     },
                     Event::Key(Key::Ctrl('e')) => {
-                        user_cursor = user_input.len() - 1;
+                        user_cursor = user_input.len();
                         mode = InputMode::Normal;
                     },
                     Event::Key(Key::Ctrl('c')) => match mode {
