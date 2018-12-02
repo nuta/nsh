@@ -113,12 +113,12 @@ pub enum Command {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Pipeline {
     pub run_if: RunIf,
-    pub commands: Vec<Command>,
+    pub commands: Vec<Command>, // Separated by `|'.
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Term {
-    pub pipelines: Vec<Pipeline>, // Separated by `&&', `||', or `;'.
+    pub pipelines: Vec<Pipeline>, // Separated by `&&' or `||'.
     pub background: bool,
 }
 
