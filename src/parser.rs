@@ -1,4 +1,4 @@
-use nom::types::CompleteStr as Input;
+pub use nom::types::CompleteStr as Input;
 use nom::{self, IResult};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -196,12 +196,6 @@ impl Word {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Alias {
-    pub name: String,
-    pub words: Vec<Word>,
-}
-
 fn is_digit(ch: char) -> bool {
     ch.is_ascii_digit()
 }
@@ -230,7 +224,7 @@ fn is_valid_var_name_char(ch: char) -> bool {
     }
 }
 
-fn is_whitespace(ch: char) -> bool {
+pub fn is_whitespace(ch: char) -> bool {
     " \t".to_owned().contains(ch)
 }
 
@@ -485,7 +479,7 @@ named!(tilde_expansion<Input, Span>,
     )
 );
 
-named!(whitespaces<Input, ()>,
+named!(pub whitespaces<Input, ()>,
     do_parse!(
         take_while!(|c| c != '\n' && is_whitespace(c)) >>
         opt!(do_parse!(
@@ -631,7 +625,7 @@ fn parse_word(_buf: Input, in_expansion: bool, quote: Option<char>) -> IResult<I
     }
 }
 
-named!(word<Input, Word>,
+named!(pub word<Input, Word>,
     call!(do_word, false)
 );
 
@@ -1185,16 +1179,6 @@ named!(parse_script<Input, Ast>,
     )
 );
 
-named!(parse_alias_line<Input, Alias>,
-    do_parse!(
-        name: take_while1!(|c| !is_whitespace(c) && c != '=') >>
-        tag!("=") >>
-        words: many0!(word) >>
-        whitespaces >>
-        ( Alias { name: name.to_string(), words } )
-    )
-);
-
 pub fn parse(script: &str) -> Result<Ast, SyntaxError> {
     // Remove trailig backslashes.
     let merged_script = script.to_string().replace("\\\n", "");
@@ -1207,16 +1191,6 @@ pub fn parse(script: &str) -> Result<Ast, SyntaxError> {
                 Ok(tree)
             }
         }
-        Err(err) => {
-            trace!("parse error: '{}'", &err);
-            Err(SyntaxError::Fatal(err.to_string()))
-        }
-    }
-}
-
-pub fn parse_alias(line: &str) -> Result<Alias, SyntaxError> {
-    match parse_alias_line(Input(line)) {
-        Ok((_, alias)) => Ok(alias),
         Err(err) => {
             trace!("parse error: '{}'", &err);
             Err(SyntaxError::Fatal(err.to_string()))
