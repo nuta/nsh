@@ -1254,7 +1254,7 @@ impl Isolate {
 
     /// Parses and runs a script.
     pub fn run_str(&mut self, script: &str) -> ExitStatus {
-        match parser::parse_line(script) {
+        match parser::parse(script) {
             Ok(ast) => {
                 self.eval(&ast)
             }

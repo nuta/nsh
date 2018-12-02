@@ -1195,7 +1195,7 @@ named!(parse_alias_line<Input, Alias>,
     )
 );
 
-pub fn parse_line(script: &str) -> Result<Ast, SyntaxError> {
+pub fn parse(script: &str) -> Result<Ast, SyntaxError> {
     // Remove trailig backslashes.
     let merged_script = script.to_string().replace("\\\n", "");
 
@@ -1252,7 +1252,7 @@ macro_rules! param {
 #[test]
 pub fn test_simple_commands() {
     assert_eq!(
-        parse_line("ls -G /tmp\n"),
+        parse("ls -G /tmp\n"),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
@@ -1269,7 +1269,7 @@ pub fn test_simple_commands() {
     );
 
     assert_eq!(
-        parse_line("echo hello | hexdump -C | date"),
+        parse("echo hello | hexdump -C | date"),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
@@ -1298,7 +1298,7 @@ pub fn test_simple_commands() {
     );
 
     assert_eq!(
-        parse_line("false || false && echo unreachable; echo reachable"),
+        parse("false || false && echo unreachable; echo reachable"),
         Ok(Ast {
             terms: vec![
                 Term {
@@ -1346,7 +1346,7 @@ pub fn test_simple_commands() {
     );
 
     assert_eq!(
-        parse_line("echo -n \"Hello world\" from; echo nsh").unwrap(),
+        parse("echo -n \"Hello world\" from; echo nsh").unwrap(),
         Ast {
             terms: vec![
                 Term {
@@ -1376,7 +1376,7 @@ pub fn test_simple_commands() {
     );
 
     assert_eq!(
-        parse_line("echo foo & sleep 1 &\n echo bar; echo baz & echo foo2 &").unwrap(),
+        parse("echo foo & sleep 1 &\n echo bar; echo baz & echo foo2 &").unwrap(),
         Ast {
             terms: vec![
                 Term {
@@ -1439,7 +1439,7 @@ pub fn test_simple_commands() {
     );
 
     assert_eq!(
-        parse_line("PORT=1234 RAILS_ENV=production rails s").unwrap(),
+        parse("PORT=1234 RAILS_ENV=production rails s").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -1467,7 +1467,7 @@ pub fn test_simple_commands() {
     );
 
     assert_eq!(
-        parse_line("ls -G <foo.txt 2> bar.txt").unwrap(),
+        parse("ls -G <foo.txt 2> bar.txt").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -1498,7 +1498,7 @@ pub fn test_simple_commands() {
 #[test]
 pub fn test_compound_commands() {
     assert_eq!(
-        parse_line("if true; then echo it works; fi"),
+        parse("if true; then echo it works; fi"),
         Ok(Ast {
             terms: vec![Term {
                 pipelines: vec![Pipeline {
@@ -1537,7 +1537,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line("while maybe-true;\ndo\n echo \"while loop!\"; done"),
+        parse("while maybe-true;\ndo\n echo \"while loop!\"; done"),
         Ok(Ast {
             terms: vec![Term {
                 pipelines: vec![Pipeline {
@@ -1573,7 +1573,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line(concat!(
+        parse(concat!(
             "if [ foo = \"foo\" ];\n",
             "then\n",
             "    echo hello\n",
@@ -1632,7 +1632,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line(concat!(
+        parse(concat!(
             "if [ $name = \"john\" ];",
             "then;",
             "    echo Hello, John!;",
@@ -1762,7 +1762,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line("for arg in hello world do echo ---------; cowsay $arg; done").unwrap(),
+        parse("for arg in hello world do echo ---------; cowsay $arg; done").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -1805,7 +1805,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line(concat!(
+        parse(concat!(
             "for arg in hello world do",
             "   if sometimes-true; then\n",
             "       break\n",
@@ -1905,7 +1905,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line("{ echo hello; echo world; }").unwrap(),
+        parse("{ echo hello; echo world; }").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -1943,7 +1943,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line(concat!(
+        parse(concat!(
             "case $action in\n",
             "echo) echo action is echo ;;\n",
             "date | time) echo action is date; date ;;\n",
@@ -2009,7 +2009,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line("func1() { echo hello; echo world; return; }; func1").unwrap(),
+        parse("func1() { echo hello; echo world; return; }; func1").unwrap(),
         Ast {
             terms: vec![
                 Term {
@@ -2070,7 +2070,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse_line("x=$((123)); func2() { local x=456 y z; echo $((x * 2))\n }; echo $x").unwrap(),
+        parse("x=$((123)); func2() { local x=456 y z; echo $((x * 2))\n }; echo $x").unwrap(),
         Ast {
             terms: vec![
                 Term {
@@ -2167,7 +2167,7 @@ pub fn test_compound_commands() {
 #[test]
 pub fn test_expansions() {
     assert_eq!(
-        parse_line("ls `echo -l`").unwrap(),
+        parse("ls `echo -l`").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2203,7 +2203,7 @@ pub fn test_expansions() {
     );
 
     assert_eq!(
-        parse_line("foo ${var1:-a${xyz}b} bar").unwrap(),
+        parse("foo ${var1:-a${xyz}b} bar").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2236,7 +2236,7 @@ pub fn test_expansions() {
     );
 
     assert_eq!(
-        parse_line("ls $(echo -l)").unwrap(),
+        parse("ls $(echo -l)").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2272,7 +2272,7 @@ pub fn test_expansions() {
     );
 
     assert_eq!(
-        parse_line("echo \"$TERM\"").unwrap(),
+        parse("echo \"$TERM\"").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2296,7 +2296,7 @@ pub fn test_expansions() {
     );
 
     assert_eq!(
-        parse_line("echo $? $7").unwrap(),
+        parse("echo $? $7").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2325,7 +2325,7 @@ pub fn test_expansions() {
     );
 
     assert_eq!(
-        parse_line("echo ${undefined:-Current} ${undefined:=TERM} \"is $TERM len=${#TERM}\"")
+        parse("echo ${undefined:-Current} ${undefined:=TERM} \"is $TERM len=${#TERM}\"")
             .unwrap(),
         Ast {
             terms: vec![Term {
@@ -2376,7 +2376,7 @@ pub fn test_expansions() {
 #[test]
 pub fn test_assignments() {
     assert_eq!(
-        parse_line("foo=bar").unwrap(),
+        parse("foo=bar").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2397,7 +2397,7 @@ pub fn test_assignments() {
     );
 
     assert_eq!(
-        parse_line("foo=('I wanna quit gym' 'holy moly' egg 'spam spam beans spam')").unwrap(),
+        parse("foo=('I wanna quit gym' 'holy moly' egg 'spam spam beans spam')").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2423,7 +2423,7 @@ pub fn test_assignments() {
     );
 
     assert_eq!(
-        parse_line("foo[k + 7 * c]=bar").unwrap(),
+        parse("foo[k + 7 * c]=bar").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2452,7 +2452,7 @@ pub fn test_assignments() {
     );
 
     assert_eq!(
-        parse_line("nobody=expects the=\"spanish inquisition\"").unwrap(),
+        parse("nobody=expects the=\"spanish inquisition\"").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2481,7 +2481,7 @@ pub fn test_assignments() {
 #[test]
 pub fn test_tilde() {
     assert_eq!(
-        parse_line("echo ~ ~/usr ~seiya ~seiya/usr a/~/b").unwrap(),
+        parse("echo ~ ~/usr ~seiya ~seiya/usr a/~/b").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2511,7 +2511,7 @@ pub fn test_tilde() {
 #[test]
 pub fn test_arith_expr() {
     assert_eq!(
-        parse_line("echo $(( 1 + 2+(-3) ))").unwrap(),
+        parse("echo $(( 1 + 2+(-3) ))").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2541,7 +2541,7 @@ pub fn test_arith_expr() {
     );
 
     assert_eq!(
-        parse_line("echo $((1+2*$foo-bar))").unwrap(),
+        parse("echo $((1+2*$foo-bar))").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2579,7 +2579,7 @@ pub fn test_arith_expr() {
 #[test]
 pub fn test_patterns() {
     assert_eq!(
-        parse_line("echo * a?c").unwrap(),
+        parse("echo * a?c").unwrap(),
         Ast {
             terms: vec![Term {
                 background: false,
@@ -2607,7 +2607,7 @@ pub fn test_patterns() {
 #[test]
 pub fn test_comments() {
     assert_eq!(
-        parse_line("foo bar # this is comment\n#comment line\nls -G /tmp # hello world\n"),
+        parse("foo bar # this is comment\n#comment line\nls -G /tmp # hello world\n"),
         Ok(Ast {
             terms: vec![
                 Term {
@@ -2636,14 +2636,14 @@ pub fn test_comments() {
         })
     );
 
-    assert_eq!(parse_line("# Hello"), Err(SyntaxError::Empty));
-    assert_eq!(parse_line("# Hello\n#World"), Err(SyntaxError::Empty));
+    assert_eq!(parse("# Hello"), Err(SyntaxError::Empty));
+    assert_eq!(parse("# Hello\n#World"), Err(SyntaxError::Empty));
 }
 
 #[test]
 pub fn test_string_literal() {
     assert_eq!(
-        parse_line("echo \"hello\""),
+        parse("echo \"hello\""),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
@@ -2660,7 +2660,7 @@ pub fn test_string_literal() {
     );
 
     assert_eq!(
-        parse_line("echo \"\" \"hello world\""),
+        parse("echo \"\" \"hello world\""),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
@@ -2677,7 +2677,7 @@ pub fn test_string_literal() {
     );
 
     assert_eq!(
-        parse_line("echo abc\"de\"fg \"1'2''3\""),
+        parse("echo abc\"de\"fg \"1'2''3\""),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
@@ -2694,7 +2694,7 @@ pub fn test_string_literal() {
     );
 
     assert_eq!(
-        parse_line("echo abc\'de\'fg"),
+        parse("echo abc\'de\'fg"),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
@@ -2714,7 +2714,7 @@ pub fn test_string_literal() {
 #[test]
 pub fn test_escape_sequences() {
     assert_eq!(
-        parse_line("echo \"\\e[1m\" a\"b;\\\"c\"d \\\n \\this_\\i\\s_\\normal"),
+        parse("echo \"\\e[1m\" a\"b;\\\"c\"d \\\n \\this_\\i\\s_\\normal"),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
@@ -2733,13 +2733,13 @@ pub fn test_escape_sequences() {
 
 #[test]
 pub fn test_courner_cases() {
-    assert_eq!(parse_line(""), Err(SyntaxError::Empty));
-    assert_eq!(parse_line("\n"), Err(SyntaxError::Empty));
-    assert_eq!(parse_line("\n\n\n"), Err(SyntaxError::Empty));
-    assert_eq!(parse_line("\n\t\n"), Err(SyntaxError::Empty));
-    assert_eq!(parse_line("  "), Err(SyntaxError::Empty));
-    assert!(parse_line(";;;;;;").is_err());
-    assert!(parse_line("||").is_err());
-    assert!(parse_line("& &&").is_err());
-    assert!(parse_line("echo foo ; &").is_err());
+    assert_eq!(parse(""), Err(SyntaxError::Empty));
+    assert_eq!(parse("\n"), Err(SyntaxError::Empty));
+    assert_eq!(parse("\n\n\n"), Err(SyntaxError::Empty));
+    assert_eq!(parse("\n\t\n"), Err(SyntaxError::Empty));
+    assert_eq!(parse("  "), Err(SyntaxError::Empty));
+    assert!(parse(";;;;;;").is_err());
+    assert!(parse("||").is_err());
+    assert!(parse("& &&").is_err());
+    assert!(parse("echo foo ; &").is_err());
 }

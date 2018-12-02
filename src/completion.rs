@@ -220,7 +220,7 @@ pub fn extract_completion_context(user_input: &str, user_cursor: usize) -> Compl
     // A Poor man's command line parser.
     // TODO: Support single-quoted string.
     // TODO: Skip envinroment variable assignments like: `RAILS_env=test rspec`
-    // TODO: Use `parser::parse_line` instead.
+    // TODO: Use `parser::parse` instead.
     //
     // Example:
     //     echo $(read-file -avh --from-stdin --other-opt < hello.bin) | hexdump -C
