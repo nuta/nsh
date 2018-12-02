@@ -181,6 +181,9 @@ pub fn input() -> Result<String, InputError> {
                         user_cursor = user_input.len();
                         mode = InputMode::Normal;
                     },
+                    Event::Key(Key::Ctrl('k')) => {
+                        user_input.truncate(user_cursor);
+                    },
                     Event::Key(Key::Ctrl('c')) => match mode {
                         InputMode::Normal => return Ok("".to_owned()),
                         InputMode::Completion => {
