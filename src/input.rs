@@ -190,7 +190,13 @@ pub fn input() -> Result<String, InputError> {
                             mode = InputMode::Normal;
                         }
                     },
-                    Event::Key(Key::Ctrl('d')) => return Err(InputError::Eof),
+                    Event::Key(Key::Ctrl('d')) => {
+                        if user_cursor < user_input.len() {
+                            user_input.remove(user_cursor);
+                        } else if user_input.is_empty() {
+                            return Err(InputError::Eof)
+                        }
+                    },
                     Event::Key(Key::Ctrl('l')) => {
                         // Clear the screen. Will be flushed after the prompt rendering.
                         write!(stdout, "{}", termion::clear::All).ok();
