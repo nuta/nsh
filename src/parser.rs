@@ -1195,8 +1195,11 @@ named!(parse_alias_line<Input, Alias>,
     )
 );
 
-pub fn parse_line(line: &str) -> Result<Ast, SyntaxError> {
-    match parse_script(Input(line)) {
+pub fn parse_line(script: &str) -> Result<Ast, SyntaxError> {
+    // Remove trailig backslashes.
+    let merged_script = script.to_string().replace("\\\n", "");
+
+    match parse_script(Input(&merged_script)) {
         Ok((_, tree)) => {
             if tree.terms.is_empty() {
                 Err(SyntaxError::Empty)
@@ -2711,7 +2714,7 @@ pub fn test_string_literal() {
 #[test]
 pub fn test_escape_sequences() {
     assert_eq!(
-        parse_line("echo \"\\e[1m\" a\"b;\\\"c\"d \\this_\\i\\s_\\normal"),
+        parse_line("echo \"\\e[1m\" a\"b;\\\"c\"d \\\n \\this_\\i\\s_\\normal"),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
