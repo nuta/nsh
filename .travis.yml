@@ -25,6 +25,7 @@ install:
   - pip3 install -r tools/requirements.txt
 
 script:
+  - "cd src/config/ui; yarn; yarn build; cd ../../.."
   - cargo build
   - cargo build --release
   - cargo test

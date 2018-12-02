@@ -22,6 +22,10 @@ structopt = "0.2"
 glob = "0.2"
 globset = "0.4"
 
+# nsh --config dependecies
+rocket = "0.4.0-rc.1"
+rand = "0.6"
+
 # The latest version published to the crates.io does not include
 # a bug fix to DetectCursorPos: https://github.com/redox-os/termion/pull/145
 [dependencies.termion]

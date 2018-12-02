@@ -1,4 +1,5 @@
 #![recursion_limit = "256"]
+#![feature(proc_macro_hygiene, decl_macro)]
 
 #[macro_use]
 extern crate slog;
@@ -20,6 +21,8 @@ extern crate crossbeam;
 extern crate crossbeam_channel;
 extern crate glob;
 extern crate globset;
+#[macro_use]
+extern crate rocket;
 
 mod builtins;
 mod completion;
@@ -33,6 +36,7 @@ mod utils;
 mod history;
 mod fuzzy;
 mod variable;
+mod config;
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -63,6 +67,7 @@ fn interactive_mode(isolate: &mut exec::Isolate) -> ExitStatus {
             }
         };
 
+        trace!("line {}", line);
         isolate.run_str(&line);
     }
 }
@@ -96,12 +101,16 @@ fn init_log() {
 #[derive(StructOpt, Debug)]
 #[structopt(name="nsh", about="A command-line shell that focuses on performance and productivity.")]
 struct Opt {
-    /// admin_level to consider
-    #[structopt(short="c")]
+    /// Open the web-based configuration tool.
+    #[structopt(long = "config")]
+    open_config: bool,
+
+    /// Run the given string.
+    #[structopt(short = "c")]
     command: Option<String>,
 
-    /// Files to process
-    #[structopt(name="FILE", parse(from_os_str))]
+    /// Run the file.
+    #[structopt(name = "FILE", parse(from_os_str))]
     file: Option<PathBuf>,
 }
 
@@ -109,9 +118,19 @@ struct Opt {
 pub static mut TIME_STARTED: Option<SystemTime> = None;
 
 fn main() {
+    init_log();
     let opt = Opt::from_args();
-    let interactive = opt.command.is_none() && opt.file.is_none();
 
+    if opt.open_config {
+        config::main();
+        return;
+    }
+
+    unsafe {
+        TIME_STARTED = Some(SystemTime::now());
+    }
+
+    let interactive = opt.command.is_none() && opt.file.is_none();
     if interactive {
         // Create a process group.
         let pid = getpid();
@@ -131,12 +150,6 @@ fn main() {
             // sigaction(Signal::SIGCHLD, &action).expect("failed to sigaction");
         }
     }
-
-    unsafe {
-        TIME_STARTED = Some(SystemTime::now());
-    }
-
-    init_log();
 
     worker::start_worker_threads();
     path::init();
