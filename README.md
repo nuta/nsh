@@ -20,6 +20,16 @@ Installation
 ------------
 TODO: Publish to crates.io
 
+Comparisons
+-----------
+| | **nsh**  | **[bash](https://www.gnu.org/software/bash)**  | **[zsh](http://www.zsh.org/)** | **[fish](http://fishshell.com/)** | **[PowerShell](https://github.com/PowerShell/PowerShell)** |
+| :-: | :-: | :-: | :-: | :-: | :-: |
+| **POSIX shell features** | almost complete | **Yes** | **Yes** | original syntax | No|
+| **Bash compatibility** | incomplete | **100% compatible** | **provides `emulate(1)`** | Needs Bass | No|
+| **Prompt UX** | work in progress | minimum standard | comfortable | **awesome** | comfortable |
+| **Configuration easiness** | **web-based `nsh --config`** | insufficient | oh-my-zsh or very long zshrc | **web-based `fish_config`** | insufficient |
+| **Name** | not bad | **noble** | **cool** | **cute** | **super cool** |
+
 Future Plans
 ------------
 - Support bash completions (`complete(1)` and `compgen(1)`).
@@ -33,6 +43,7 @@ Future Plans
 Building
 --------
 ```
+$ cd src/config/ui && yarn
 $ cargo build --release
 ```
 
