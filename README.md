@@ -11,7 +11,7 @@ Goals
 - A **Bash compatible** interactive shell.
 - **Tab compeltions** and **syntax highlighting** like [fish](http://fishshell.com/).
 - **Blazing fast startup times** by asynchronous initialization.
-- **Zero configration** features out of the box and web-based configuration tool `nshconfig`.
+- **Zero configration** features out of the box and web-based configuration tool `nsh --config`.
 - **Written in Rust** :crab:
 
 TODO: add a GIF video
