@@ -7,6 +7,7 @@ use syntect::highlighting::Style;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+use std::fmt::Write;
 use termion;
 use nix::unistd;
 use libc;
@@ -187,21 +188,45 @@ fn create_highlighter(theme_name: &str) -> HighlightLines {
     HighlightLines::new(syntax, theme)
 }
 
+/// `y` is 0-origin.
+fn replace_newline_with_clear(text: &str, y: u16) -> String {
+    let mut num_lines = 0;
+    let mut buf = String::new();
+    let mut line = String::new();
+
+    for ch in text.chars() {
+        if ch == '\n' {
+            let goto = termion::cursor::Goto(1, 1 + y + num_lines);
+            write!(buf, "{}{}{}", goto, termion::clear::CurrentLine, line).ok();
+            num_lines += 1;
+            line = String::new();
+        } else {
+            line.push(ch);
+        }
+    }
+
+    if !line.is_empty() {
+        let goto = termion::cursor::Goto(1, 1 + y + num_lines);
+        write!(buf, "{}{}{}", goto, termion::clear::CurrentLine, line).ok();
+    }
+
+    buf
+}
+
 static DEFAULT_PROMPT: &'static str = "\\c{cyan}\\c{bold}\\u@\\h:\\c{reset} \\W\n$\\c{reset} ";
 
-/// Returns the number of lines of the rendered prompt and the rendered prompt.
+/// Returns the new `prompt_y` and the rendered prompt.
 /// FIXME: too many arguments
 pub fn render_prompt(
     mode: InputMode,
     completions: &Completions,
-    prompt_base_y: u16,
+    prompt_y: u16,
+    y_max: u16,
+    prev_rendered_lines: u16,
     user_cursor: usize,
     user_input: &str,
     current_theme: &str,
-) -> (u16, String) {
-    use std::fmt::Write;
-    let mut buf = String::new();
-    let rendered_lines;
+) -> (u16, u16, String) {
 
     // Apply syntax highlighting.
     let mut highlighter = create_highlighter(current_theme);
@@ -220,110 +245,90 @@ pub fn render_prompt(
         ("$ ".to_owned(), 2)
     };
 
-    // Render the prompt and colored user input.
-    let user_cursor_pos = (prompt_last_line_len + user_cursor + 1) as u16;
-    write!(
-        buf,
-        "{}{}{}{}{}",
-        termion::style::Reset,
-        termion::cursor::Goto(1, 1 + prompt_base_y),
-        prompt_str.to_string().replace("\n", "\r\n"),
-        colored_user_input,
-        termion::style::Reset,
-    )
-    .ok();
+    use termion::clear::CurrentLine;
+    use termion::color::{Fg, Bg, White, Cyan};
+    use termion::style::*;
 
     // Render completions.
-    let prompt_lines = prompt_str.chars().filter(|c| *c == '\n').count() as u16 + 1;
-    trace!("prompt_lines: {}", prompt_lines);
-    match mode {
-        InputMode::Normal => {
-            rendered_lines = prompt_lines;
-        }
-        InputMode::Completion => {
-            let entries_len = completions.len();
-            let actual_lines = if entries_len < completions.display_lines() {
-                entries_len as u16
-            } else {
-                completions.display_lines() as u16
-            };
+    let mut completion_str = String::new();
+    if mode == InputMode::Completion {
+        let results = completions.entries();
+        let iter = results
+            .iter()
+            .skip(completions.display_index())
+            .take(completions.display_lines());
 
-            if actual_lines > 0 {
-                // The prompt line, completions, and "TAB to expand" line.
-                rendered_lines = prompt_lines + actual_lines + 1;
-                // The beginning y of the completions.
-                let completion_base_y = prompt_base_y + prompt_lines;
-
-                let results = completions.entries();
-                let iter = results
-                    .iter()
-                    .skip(completions.display_index())
-                    .take(completions.display_lines());
-
-                for (i, entry) in iter.enumerate() {
-                    write!(
-                        buf,
-                        "\n{}{}",
-                        termion::cursor::Goto(1, 1 + completion_base_y + i as u16),
-                        termion::clear::CurrentLine,
-                    )
-                    .ok();
-
-                    let selected =
-                        (completions.display_index() + i) == completions.selected_index() as usize;
-                    if selected {
-                        write!(buf, "{}{}", termion::style::Underline, termion::style::Bold).ok();
-                    } else {
-                        write!(
-                            buf,
-                            "{}{}",
-                            termion::style::NoUnderline,
-                            termion::style::NoBold
-                        )
-                        .ok();
-                    };
-
-                    write!(buf, "{}{}", entry, termion::style::Reset).ok();
+        if !results.is_empty() {
+            for (i, entry) in iter.enumerate() {
+                let current = completions.display_index() + i;
+                let selected = current == completions.selected_index() as usize;
+                if selected {
+                    write!(completion_str, "{}{}", Underline, Bold).ok();
+                } else {
+                    write!(completion_str, "{}{}", NoUnderline, NoBold).ok();
                 }
-
-                write!(
-                    buf,
-                    "\n{}{}{}{}{} {}/{} {}",
-                    termion::cursor::Goto(1, 1 + completion_base_y + actual_lines),
-                    termion::clear::CurrentLine,
-                    termion::style::Bold,
-                    termion::color::Fg(termion::color::White),
-                    termion::color::Bg(termion::color::Cyan),
-                    completions.selected_index() + 1,
-                    completions.len(),
-                    termion::style::Reset
-                )
-                .ok();
-            } else {
-                rendered_lines = prompt_lines + 1;
-                write!(
-                    buf,
-                    "\n{}{}{}{}{}no candidates{}",
-                    termion::cursor::Goto(1, 1 + prompt_base_y + prompt_lines),
-                    termion::clear::CurrentLine,
-                    termion::style::Bold,
-                    termion::color::Fg(termion::color::White),
-                    termion::color::Bg(termion::color::Cyan),
-                    termion::style::Reset
-                )
-                .ok();
+                write!(completion_str, "{}{}{}\n", CurrentLine, entry, Reset).ok();
             }
+
+            write!(completion_str, "{}{}{}{} {}/{} ",
+                CurrentLine, Bold, Fg(White), Bg(Cyan),
+                completions.selected_index() + 1,
+                completions.len()
+            ).ok();
+        } else {
+            write!(
+                completion_str,
+                "{}{}{}{}no candidates",
+                CurrentLine, Bold, Fg(White), Bg(Cyan)
+            )
+            .ok();
         }
     }
 
+    let mut buf = String::new();
+    let prompt_lines = prompt_str.chars().filter(|c| *c == '\n').count() as u16 + 1;
+    let completion_lines = if completion_str.is_empty() {
+        0
+    } else {
+        1 + completion_str.chars().filter(|c| *c == '\n').count() as u16
+    };
+
+    let rendered_lines = prompt_lines + completion_lines;
+    let avail = std::cmp::max(0, i32::from(y_max) - i32::from(prompt_y));
+    let scroll = std::cmp::max(0, i32::from(rendered_lines) - i32::from(avail) - 1) as u16;
+    let new_prompt_y = prompt_y - scroll;
+    let user_cursor_pos = (prompt_last_line_len + user_cursor) as u16;
+
+    for _ in 0..std::cmp::max(0, scroll) {
+        write!(buf, "\n").ok();
+    }
+
+    // Clear the current prompt.
+    for i in 0..prev_rendered_lines {
+        write!(
+            buf,
+            "{}{}",
+            termion::cursor::Goto(1, 1 + prompt_y + i),
+            termion::clear::CurrentLine,
+        )
+        .ok();
+    }
+
+    // Render the prompt and colored user input.
     write!(
         buf,
-        "{}",
-        termion::cursor::Goto(user_cursor_pos, 1 + prompt_base_y + (prompt_lines - 1))
-    )
-    .ok();
+        "{}{}{}{}{}{}{}",
+        replace_newline_with_clear(&prompt_str, new_prompt_y),
+        Reset,
+        colored_user_input,
+        Reset,
+        replace_newline_with_clear(&completion_str, new_prompt_y + prompt_lines),
+        termion::cursor::Goto(1 + user_cursor_pos, 1 + new_prompt_y + (prompt_lines - 1)),
+        Reset,
+    ).ok();
 
-    (rendered_lines, buf)
+    trace!("prompt_offset: S={} M={} base={}, new_y={}", scroll, y_max, prompt_y, new_prompt_y);
+    (rendered_lines, new_prompt_y, buf)
 }
 
 #[test]

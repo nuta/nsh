@@ -3,7 +3,7 @@ use crate::completion::{
 };
 use crate::history::{HistorySelector, append_history};
 use crate::prompt::render_prompt;
-use std::io::{self, prelude::*, Stdout};
+use std::io::{self, Write, Stdout};
 use termion;
 use termion::cursor::DetectCursorPos;
 use termion::event::{Event, Key};
@@ -21,20 +21,6 @@ pub enum InputMode {
     Completion,
 }
 
-/// Clears `n` lines from `base`th line in the terminal. The caller
-/// should `stdout.flush()`. `base` is 0-origin.
-fn clear_n_lines(stdout: &mut Stdout, base: u16, n: u16) {
-    for i in 0..n {
-        write!(
-            stdout,
-            "{}{}",
-            termion::cursor::Goto(1, 1 + base + i),
-            termion::clear::CurrentLine,
-        )
-        .ok();
-    }
-}
-
 /// Returns the cursor position (0-origin).
 fn get_current_yx(stdout: &mut Stdout) -> (u16, u16) {
     let (x, y) = stdout.cursor_pos().unwrap();
@@ -49,10 +35,14 @@ pub fn input() -> Result<String, InputError> {
         // The prompt is not at the beginning of a line. This could be caused
         // if the previous command didn't print the trailing newline
         // (e.g. `echo -n hello`). Print a marker `%' and a newline.
-        writeln!(stdout, "{}(no newline){}", termion::style::Invert, termion::style::Reset).ok();
+        writeln!(stdout, "{}{}(no newline){}",
+            termion::style::Bold,
+            termion::style::Invert,
+            termion::style::Reset
+        ).ok();
     }
 
-    let (mut prompt_base_y, _) = get_current_yx(&mut stdout);
+    let (mut prompt_y, _) = get_current_yx(&mut stdout);
 
     let mut user_input = String::new();
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
@@ -68,18 +58,22 @@ pub fn input() -> Result<String, InputError> {
 
     'input_line: loop {
         // Print the prompt.
-        clear_n_lines(&mut stdout, prompt_base_y, rendered_lines);
-        let (rendered_lines2, prompt) = render_prompt(
+        let y_max = termion::terminal_size().map(|(_, y)| y - 1).unwrap();
+        let (rendered_lines2, prompt_y2, prompt) = render_prompt(
             mode,
             &completions,
-            prompt_base_y,
+            prompt_y,
+            y_max,
+            rendered_lines,
             user_cursor,
             &user_input,
             &current_theme,
         );
-        rendered_lines = rendered_lines2;
+
         write!(stdout, "{}", prompt).ok();
         stdout.flush().ok();
+        prompt_y = prompt_y2;
+        rendered_lines = rendered_lines2;
 
         if print_startup_time {
             let now = std::time::SystemTime::now();
@@ -197,7 +191,7 @@ pub fn input() -> Result<String, InputError> {
                     Event::Key(Key::Ctrl('l')) => {
                         // Clear the screen. Will be flushed after the prompt rendering.
                         write!(stdout, "{}", termion::clear::All).ok();
-                        prompt_base_y = 0;
+                        prompt_y = 0;
                     }
                     Event::Key(Key::Char(ch)) => match (mode, ch) {
                         (_, ch) => {
