@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
+use std::path::PathBuf;
 use crate::parser;
 use crate::fuzzy::FuzzyVec;
 
@@ -150,13 +151,28 @@ impl CompGen {
 }
 
 fn path_completion(ctx: &CompletionContext) -> Completions {
-    // TODO: support other directories
-    let dir = std::env::current_dir().unwrap();
+    trace!("path_completion: current='{:?}'", ctx.current_word());
+
+    let given_dir = ctx.current_word().map(|s| (&*s).clone()).unwrap_or_else(|| ".".to_owned());
+    let dirent = if given_dir.ends_with('/') {
+        std::fs::read_dir(given_dir)
+    } else {
+        // Remove the last part: `/Users/chandler/Docum' -> `/users/chandler'
+        std::fs::read_dir(PathBuf::from(given_dir).parent().unwrap())
+    };
 
     let mut entries = Vec::new();
-    for e in std::fs::read_dir(dir).unwrap() {
-        // TODO: Use relative path if possible.
-        entries.push(Arc::new(e.unwrap().path().to_str().unwrap().to_owned()));
+    if let Ok(dirent) = dirent {
+        for entry in dirent {
+            entries.push(Arc::new(
+                entry
+                    .unwrap()
+                    .path()
+                    .to_str()
+                    .unwrap()
+                    .to_owned()
+            ));
+        }
     }
 
     CompGen::new()
