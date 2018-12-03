@@ -1,5 +1,5 @@
 use nix::unistd;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::os::unix::io::RawFd;
 
 pub fn get_env(name: &str, default: &str) -> String {
@@ -28,5 +28,13 @@ impl Write for FdFile {
     fn flush(&mut self) -> std::io::Result<()> {
         unistd::fsync(self.fd).ok();
         Ok(())
+    }
+}
+
+impl Read for FdFile {
+    #[inline]
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let len = unistd::read(self.fd, buf).expect("failed to read");
+        Ok(len)
     }
 }

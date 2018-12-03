@@ -17,6 +17,7 @@ use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 use std::io::prelude::*;
+use std::io::{BufReader, BufWriter};
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
@@ -860,9 +861,9 @@ impl Isolate {
         let mut ctx = InternalCommandContext {
             argv,
             isolate: self,
-            stdin: FdFile::new(stdin),
-            stdout: FdFile::new(stdout),
-            stderr: FdFile::new(stderr),
+            stdin: BufReader::new(FdFile::new(stdin)),
+            stdout: BufWriter::new(FdFile::new(stdout)),
+            stderr: BufWriter::new(FdFile::new(stderr)),
         };
 
         let cmd = argv[0].as_str();
