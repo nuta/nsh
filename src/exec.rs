@@ -814,10 +814,48 @@ impl Isolate {
     pub fn run_internal_command(
         &mut self,
         argv: &[String],
-        stdin: RawFd,
-        stdout: RawFd,
-        stderr: RawFd
+        mut stdin: RawFd,
+        mut stdout: RawFd,
+        mut stderr: RawFd,
+        redirects: &[parser::Redirection]
     ) -> Result<ExitStatus, InternalCommandError> {
+
+        let mut opened_fds = Vec::new();
+        for r in redirects {
+            match r.target {
+                parser::RedirectionType::File(ref wfilepath) => {
+                    let mut options = OpenOptions::new();
+                    match &r.direction {
+                        parser::RedirectionDirection::Input => {
+                            options.read(true);
+                        },
+                        parser::RedirectionDirection::Output => {
+                            options.write(true).create(true);
+                        },
+                        parser::RedirectionDirection::Append => {
+                            options.write(true).append(true);
+                        }
+                    };
+
+                    trace!("redirection: options={:?}", options);
+                    let filepath = self.expand_word_into_string(wfilepath);
+                    if let Ok(file) = options.open(&filepath) {
+                        let src = file.into_raw_fd();
+                        let dst = r.fd as RawFd;
+                        opened_fds.push(src);
+                        match dst {
+                            0 => stdin = src,
+                            1 => stdout = src,
+                            2 => stderr = src,
+                            _ => (),
+                        }
+                    } else {
+                        warn!("nsh: failed to open file: `{}'", filepath);
+                        return Err(InternalCommandError::BadRedirection);
+                    }
+                }
+            }
+        }
 
         let mut ctx = InternalCommandContext {
             argv,
@@ -828,10 +866,17 @@ impl Isolate {
         };
 
         let cmd = argv[0].as_str();
-        match INTERNAL_COMMANDS.get(cmd) {
+        let result = match INTERNAL_COMMANDS.get(cmd) {
             Some(func) => Ok(func(&mut ctx)),
             _ => Err(InternalCommandError::NotFound),
+        };
+
+        // Close redirections.
+        for fd in opened_fds {
+            close(fd).expect("failed to close");
         }
+
+        result
     }
 
     fn expand_alias(&self, argv: &[Word]) -> Vec<Word> {
@@ -885,8 +930,9 @@ impl Isolate {
         }
 
         // Internal commands
-        match self.run_internal_command(&argv, ctx.stdin, ctx.stdout, ctx.stderr) {
+        match self.run_internal_command(&argv, ctx.stdin, ctx.stdout, ctx.stderr, redirects) {
             Ok(status) => return status,
+            Err(InternalCommandError::BadRedirection) => return ExitStatus::ExitedWith(1),
             Err(InternalCommandError::NotFound) => (), /* Try external command. */
         }
 

@@ -26,6 +26,7 @@ pub struct InternalCommandContext<'a> {
 #[derive(Debug)]
 pub enum InternalCommandError {
     NotFound,
+    BadRedirection,
 }
 
 /// https://xkcd.com/221/
