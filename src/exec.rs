@@ -244,6 +244,11 @@ impl Isolate {
     }
 
     #[inline]
+    pub fn interactive(&self) -> bool {
+        self.interactive
+    }
+
+    #[inline]
     pub fn enter_frame(&mut self) {
         self.frames.push(Frame::new());
     }

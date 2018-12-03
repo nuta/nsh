@@ -17,9 +17,11 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("read: {:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
-            if let Some(prompt) = opts.prompt {
-                write!(ctx.stderr, "{}", prompt).ok();
-                ctx.stderr.flush().ok();
+            if ctx.isolate.interactive() {
+                if let Some(prompt) = opts.prompt {
+                    write!(ctx.stderr, "{}", prompt).ok();
+                    ctx.stderr.flush().ok();
+                }
             }
 
             let mut value = String::new();
