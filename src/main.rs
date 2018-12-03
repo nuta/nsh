@@ -41,23 +41,49 @@ mod config;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use std::process;
+use std::sync::{Arc, Mutex};
 use structopt::StructOpt;
 use nix::unistd::{getpid, setpgid, tcsetpgrp};
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
 use crate::exec::ExitStatus;
 
-fn interactive_mode(isolate: &mut exec::Isolate) -> ExitStatus {
-    // Eval nshrc.
-    if let Some(home_dir) = dirs::home_dir() {
-        let nshrc_path = Path::new(&home_dir).join(".nshrc");
-        if nshrc_path.exists() {
-            isolate.run_file(nshrc_path);
+fn interactive_mode(raw_isolate: exec::Isolate) -> ExitStatus {
+    let isolate_lock = Arc::new(Mutex::new(raw_isolate));
+    let isolate_lock2 = isolate_lock.clone();
+
+    //Evaluate ~/.nshrc asynchronously since it may take too long.
+    let nshrc_loader = std::thread::spawn(move || {
+        let mut isolate = isolate_lock2.lock().unwrap();
+        if let Some(home_dir) = dirs::home_dir() {
+            let nshrc_path = Path::new(&home_dir).join(".nshrc");
+            if nshrc_path.exists() {
+                isolate.run_file(nshrc_path);
+            }
         }
-    }
+    });
+
+    // Read a line.
+    let mut line = match input::input() {
+        Ok(line) => {
+            println!();
+            line
+        }
+        Err(input::InputError::Eof) => {
+            return ExitStatus::ExitedWith(0);
+        }
+    };
+
+    // Now we have to execute the first command from the prompt. Wait for the
+    // nshrc loader to finish and enter the main loop.
+    nshrc_loader.join().unwrap();
+    let mut isolate = isolate_lock.lock().unwrap();
 
     loop {
-        // Read a line.
-        let line = match input::input() {
+        trace!("line {}", line);
+        isolate.run_str(&line);
+
+        // Read the next line.
+        line = match input::input() {
             Ok(line) => {
                 println!();
                 line
@@ -66,9 +92,6 @@ fn interactive_mode(isolate: &mut exec::Isolate) -> ExitStatus {
                 return ExitStatus::ExitedWith(0);
             }
         };
-
-        trace!("line {}", line);
-        isolate.run_str(&line);
     }
 }
 
@@ -117,6 +140,8 @@ struct Opt {
 
 pub static mut TIME_STARTED: Option<SystemTime> = None;
 
+/// The entry point. In the intreactive mode, we utilize asynchronous initializaiton
+/// (background worker threads) to render the prompt as soon as possible for hunan.
 fn main() {
     init_log();
     let opt = Opt::from_args();
@@ -159,7 +184,7 @@ fn main() {
     let status = match (opt.command, opt.file) {
         (Some(command), _) => isolate.run_str(&command),
         (_, Some(file)) => isolate.run_file(file),
-        (_, _) => interactive_mode(&mut isolate),
+        (_, _) => interactive_mode(isolate),
     };
 
     match status {

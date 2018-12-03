@@ -212,6 +212,8 @@ pub struct Isolate {
     pid_job_mapping: HashMap<Pid, Arc<Job>>,
 }
 
+unsafe impl Send for Isolate {}
+
 impl Isolate {
     pub fn new(shell_pgid: Pid, interactive: bool) -> Isolate {
         let shell_termios = if interactive {
