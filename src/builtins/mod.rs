@@ -13,6 +13,7 @@ mod set;
 mod fg;
 mod bg;
 mod jobs;
+mod wait;
 mod shift;
 mod read;
 
@@ -58,6 +59,7 @@ lazy_static! {
         commands.insert("set", crate::builtins::set::command);
         commands.insert("fg", crate::builtins::fg::command);
         commands.insert("bg", crate::builtins::bg::command);
+        commands.insert("wait", crate::builtins::wait::command);
         commands.insert("jobs", crate::builtins::jobs::command);
         commands.insert("shift", crate::builtins::shift::command);
         commands.insert("read", crate::builtins::read::command);
