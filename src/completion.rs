@@ -71,8 +71,8 @@ impl Completions {
     }
 
     #[inline(always)]
-    pub fn selected(&self) -> Arc<String> {
-        self.entries[self.selected_index].clone()
+    pub fn selected(&self) -> Option<Arc<String>> {
+        self.entries.get(self.selected_index).cloned()
     }
 
     #[inline(always)]

@@ -91,17 +91,18 @@ pub fn input() -> Result<String, InputError> {
                         InputMode::Normal => break 'input_line,
                         InputMode::Completion => {
                             trace!("ctx: {:?}", completion_ctx);
-                            let selected = completions.selected();
-                            let prefix = user_input
-                                .get(..(completion_ctx.current_word_offset))
-                                .unwrap_or("")
-                                .to_string();
-                            let suffix_offset = completion_ctx.current_word_offset
-                                + completion_ctx.current_word_len;
-                            let suffix =
-                                &user_input.get((suffix_offset)..).unwrap_or("").to_string();
-                            user_input = format!("{}{}{}", prefix, selected, suffix);
-                            user_cursor = completion_ctx.current_word_offset + selected.len();
+                            if let Some(selected) = completions.selected() {
+                                let prefix = user_input
+                                    .get(..(completion_ctx.current_word_offset))
+                                    .unwrap_or("")
+                                    .to_string();
+                                let suffix_offset = completion_ctx.current_word_offset
+                                    + completion_ctx.current_word_len;
+                                let suffix =
+                                    &user_input.get((suffix_offset)..).unwrap_or("").to_string();
+                                user_input = format!("{}{}{}", prefix, selected, suffix);
+                                user_cursor = completion_ctx.current_word_offset + selected.len();
+                            }
                             mode = InputMode::Normal;
                             continue 'input_line;
                         }
