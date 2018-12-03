@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 use std::fs::read_dir;
-use std::sync::{Mutex, RwLock, Arc};
+use std::sync::{RwLock, Arc};
 use crate::worker::Work;
 use crate::fuzzy::FuzzyVec;
 use crate::completion::Completions;
 
 lazy_static! {
-    static ref PATH_TABLE: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
+    static ref PATH_TABLE: RwLock<BTreeMap<String, String>> = RwLock::new(BTreeMap::new());
     static ref PATH_FUZZY_VEC: RwLock<FuzzyVec> = RwLock::new(FuzzyVec::new());
     static ref RELOAD_WORK: Work = Work::new(reload_paths);
 }
@@ -19,7 +19,7 @@ pub fn lookup_external_command(cmd: &str) -> Option<String> {
     if cmd.starts_with('/') {
         Some(cmd.to_string())
     } else {
-        PATH_TABLE.lock().unwrap().get(cmd).cloned()
+        PATH_TABLE.read().unwrap().get(cmd).cloned()
     }
 }
 
@@ -31,7 +31,7 @@ pub fn complete(query: &str) -> Completions {
 }
 
 fn reload_paths() {
-    let mut table = PATH_TABLE.lock().unwrap();
+    let mut table = PATH_TABLE.write().unwrap();
     let mut fuzzy_vec = PATH_FUZZY_VEC.write().unwrap();
     let path = std::env::var("PATH").unwrap_or_else(|_| DEFAULT_PATH.to_owned());
 
