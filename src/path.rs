@@ -13,6 +13,10 @@ lazy_static! {
 
 static DEFAULT_PATH: &'static str = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/sbin";
 
+pub fn wait_for_path_loader() {
+    RELOAD_WORK.wait();
+}
+
 pub fn lookup_external_command(cmd: &str) -> Option<String> {
     RELOAD_WORK.wait();
 
