@@ -402,6 +402,7 @@ impl Isolate {
 
     fn expand_word_into_vec(&mut self, word: &Word, ifs: &str) -> Vec<String> {
         let mut words = Vec::new();
+        let mut current_word = String::new();
         for span in word.spans() {
             let (frag, expand) = match span {
                 Span::Literal(s) => (s.clone(), false),
@@ -450,12 +451,21 @@ impl Isolate {
 
             // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo=123`.
             if expand {
+                if !current_word.is_empty() {
+                    words.push(current_word);
+                    current_word = String::new();
+                }
+
                 for word in frag.split(|c| ifs.contains(c)) {
                     words.push(word.to_string());
                 }
             } else {
-                words.push(frag);
+                current_word += &frag;
             }
+        }
+
+        if !current_word.is_empty() {
+            words.push(current_word);
         }
 
         if words.is_empty() {
