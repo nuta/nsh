@@ -6,16 +6,16 @@
     <main>
         <section>
             <h2>Prompt</h2>
-            <label for="ps1">Prompt Format (<code>$PS1</code>)</label>
+            <label for="prompt">Prompt Format (<code>$prompt</code>)</label>
             <div class="input-group mb-3">
               <div class="input-group-prepend">
-                <span class="input-group-text">$PS1 =</span>
+                <span class="input-group-text">$prompt =</span>
               </div>
-              <input type="text" class="form-control" id="ps1" v-model="ps1">
+              <input type="text" class="form-control" id="prompt" v-model="prompt">
             </div>
             <p>Preview:</p>
-            <div class="ps1-preview">
-                <span v-for="frag in ps1_preview"
+            <div class="prompt-preview">
+                <span v-for="frag in prompt_preview"
                 :class="['frag', 'color-' + frag.color, { bold: frag.bold, underline: frag.underline }]"
                 ><template v-if="frag.text == '\n'"><br></template><template v-else>{{ frag.text }}</template></span>
             </div>
@@ -77,7 +77,7 @@ import { setTimeout, clearTimeout } from 'timers';
 
 const SETTINGS = [
     {
-        name: "ps1",
+        name: "prompt",
         type: "string",
         default: "\\c{cyan}\\c{bold}[\\u@\\h]:\\c{reset} \\W $\\c{reset} "
     },
@@ -89,15 +89,15 @@ const SETTINGS = [
 ];
 
 
-function parse_ps1(ps1: string): any[] {
+function parse_prompt(prompt: string): any[] {
     let frags = [];
     let color = "white";
     let bold = false;
     let underline = false;
     let skip_next = false;
-    for (let i = 0; i < ps1.length; i++) {
-        const crnt = ps1[i];
-        const next = ps1[i + 1] || '';
+    for (let i = 0; i < prompt.length; i++) {
+        const crnt = prompt[i];
+        const next = prompt[i + 1] || '';
         if (skip_next) {
             skip_next = false;
             continue;
@@ -116,12 +116,12 @@ function parse_ps1(ps1: string): any[] {
                         let attr = "";
                         // Skip `\\', `c', and `{'.
                         i += 3;
-                        for (; i < ps1.length; i++) {
-                            if (ps1[i] == '}') {
+                        for (; i < prompt.length; i++) {
+                            if (prompt[i] == '}') {
                                 break;
                             }
 
-                            attr += ps1[i];
+                            attr += prompt[i];
                         }
 
                         switch (attr) {
@@ -171,8 +171,8 @@ export default {
         return data;
     },
     computed: {
-        ps1_preview() {
-            return parse_ps1(this.ps1);
+        prompt_preview() {
+            return parse_prompt(this.prompt);
         }
     },
     watch: {
@@ -240,7 +240,7 @@ section {
     margin-top: 35px;
 }
 
-.ps1-preview {
+.prompt-preview {
     width: 100%;
     padding: 20px 30px;
     margin-bottom: 30px;
