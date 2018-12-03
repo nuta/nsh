@@ -3,6 +3,7 @@ use crate::completion::{
 };
 use crate::history::{HistorySelector, append_history};
 use crate::prompt::render_prompt;
+use crate::config::Config;
 use std::io::{self, Write, Stdout};
 use termion;
 use termion::cursor::DetectCursorPos;
@@ -27,7 +28,7 @@ fn get_current_yx(stdout: &mut Stdout) -> (u16, u16) {
     (y - 1, x - 1)
 }
 
-pub fn input() -> Result<String, InputError> {
+pub fn input(config: &Config) -> Result<String, InputError> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
     let (_, current_x) = get_current_yx(&mut stdout);
@@ -60,6 +61,7 @@ pub fn input() -> Result<String, InputError> {
         // Print the prompt.
         let y_max = termion::terminal_size().map(|(_, y)| y - 1).unwrap();
         let (rendered_lines2, prompt_y2, prompt) = render_prompt(
+            &config.prompt,
             mode,
             &completions,
             prompt_y,

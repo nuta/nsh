@@ -6,6 +6,7 @@ use crate::parser::{
 use crate::path::{lookup_external_command,wait_for_path_loader};
 use crate::variable::{Variable, Value};
 use crate::utils::FdFile;
+use crate::config::Config;
 use nix;
 use nix::sys::wait::{waitpid, WaitStatus, WaitPidFlag};
 use nix::sys::signal::{kill, SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
@@ -189,6 +190,7 @@ impl Job {
 }
 
 pub struct Isolate {
+    config: Config,
     shell_pgid: Pid,
     interactive: bool,
     term_fd: RawFd,
@@ -216,7 +218,7 @@ pub struct Isolate {
 unsafe impl Send for Isolate {}
 
 impl Isolate {
-    pub fn new(shell_pgid: Pid, interactive: bool) -> Isolate {
+    pub fn new(config: Config, shell_pgid: Pid, interactive: bool) -> Isolate {
         let shell_termios = if interactive {
             Some(tcgetattr(0 /* stdin */).expect("failed to tcgetattr"))
         } else {
@@ -224,6 +226,7 @@ impl Isolate {
         };
 
         Isolate {
+            config,
             shell_pgid,
             interactive,
             term_fd: 0 /* stdin */,
@@ -241,6 +244,11 @@ impl Isolate {
             pid_job_mapping: HashMap::new(),
             last_fore_job: None,
         }
+    }
+
+    #[inline]
+    pub fn config(&self) -> &Config {
+        &self.config
     }
 
     #[inline]
@@ -1342,7 +1350,12 @@ impl Isolate {
 
 #[test]
 fn test_expr() {
-    let mut isolate = Isolate::new(getpid(), false);
+    let config = Config {
+        path: "$ ".into(),
+        prompt: "/bin".into(),
+    };
+
+    let mut isolate = Isolate::new(config, getpid(), false);
     assert_eq!(
         isolate.evaluate_expr(&&Expr::Mul(BinaryExpr {
             lhs: Box::new(Expr::Literal(2)),

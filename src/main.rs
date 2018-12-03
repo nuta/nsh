@@ -23,6 +23,10 @@ extern crate glob;
 extern crate globset;
 #[macro_use]
 extern crate rocket;
+extern crate serde;
+extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
 
 mod builtins;
 mod completion;
@@ -46,8 +50,9 @@ use structopt::StructOpt;
 use nix::unistd::{getpid, setpgid, tcsetpgrp};
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
 use crate::exec::ExitStatus;
+use crate::config::Config;
 
-fn interactive_mode(raw_isolate: exec::Isolate) -> ExitStatus {
+fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     let isolate_lock = Arc::new(Mutex::new(raw_isolate));
     let isolate_lock2 = isolate_lock.clone();
 
@@ -63,7 +68,7 @@ fn interactive_mode(raw_isolate: exec::Isolate) -> ExitStatus {
     });
 
     // Read a line.
-    let mut line = match input::input() {
+    let mut line = match input::input(config) {
         Ok(line) => {
             println!();
             line
@@ -83,7 +88,7 @@ fn interactive_mode(raw_isolate: exec::Isolate) -> ExitStatus {
         isolate.run_str(&line);
 
         // Read the next line.
-        line = match input::input() {
+        line = match input::input(config) {
             Ok(line) => {
                 println!();
                 line
@@ -176,15 +181,26 @@ fn main() {
         }
     }
 
-    worker::start_worker_threads();
-    path::init();
-    history::init();
+    // Load ~/.nshconfig.
+    let home_dir = dirs::home_dir().unwrap();
+    let nshconfig_path = Path::new(&home_dir).join(".nshconfig");
+    let config: config::Config = match std::fs::File::open(nshconfig_path) {
+        Ok(file) => serde_json::from_reader(file).expect("failed to parse ~/.nshrc"),
+        Err(_) => {
+            // Use default values.
+            serde_json::from_str("{}").expect("failed to parse '{}'")
+        }
+    };
 
-    let mut isolate = exec::Isolate::new(getpid(), interactive);
+    worker::start_worker_threads();
+    path::init(&config);
+    history::init(&config);
+
+    let mut isolate = exec::Isolate::new(config.clone(), getpid(), interactive);
     let status = match (opt.command, opt.file) {
         (Some(command), _) => isolate.run_str(&command),
         (_, Some(file)) => isolate.run_file(file),
-        (_, _) => interactive_mode(isolate),
+        (_, _) => interactive_mode(&config, isolate),
     };
 
     match status {

@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufRead, Write};
 use std::sync::Mutex;
+use crate::config::Config;
 use crate::worker::Work;
 use crate::fuzzy::FuzzyVec;
 
@@ -90,6 +91,6 @@ impl HistorySelector {
     }
 }
 
-pub fn init() {
+pub fn init(config: &Config) {
     LOAD_WORK.enqueue();
 }

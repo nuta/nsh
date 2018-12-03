@@ -213,11 +213,10 @@ fn replace_newline_with_clear(text: &str, y: u16) -> String {
     buf
 }
 
-static DEFAULT_PROMPT: &'static str = "\\c{cyan}\\c{bold}\\u@\\h:\\c{reset} \\W\n$\\c{reset} ";
-
 /// Returns the new `prompt_y` and the rendered prompt.
 /// FIXME: too many arguments
 pub fn render_prompt(
+    prompt_fmt: &str,
     mode: InputMode,
     completions: &Completions,
     prompt_y: u16,
@@ -238,8 +237,7 @@ pub fn render_prompt(
     }
 
     // Parse and render the prompt.
-    let ps1 = get_env("PS1", DEFAULT_PROMPT);
-    let (prompt_str, prompt_last_line_len) = if let Ok(fmt) = parse_prompt(ps1.as_str()) {
+    let (prompt_str, prompt_last_line_len) = if let Ok(fmt) = parse_prompt(prompt_fmt) {
         draw_prompt(&fmt)
     } else {
         ("$ ".to_owned(), 2)
