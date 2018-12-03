@@ -43,6 +43,15 @@ impl FuzzyVec {
 fn fuzzy_search(entries: &[Arc<String>], query: &str) -> Vec<Arc<String>> {
         let mut filtered = Vec::new();
 
+        if query.is_empty() {
+            // Return the all entries.
+            for e in entries {
+                filtered.push(e.clone());
+            }
+
+            return filtered;
+        }
+
         // Filter entries by the query.
 'entry_loop:
         for e in entries {

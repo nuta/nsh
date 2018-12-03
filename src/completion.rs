@@ -151,14 +151,19 @@ impl CompGen {
 }
 
 fn path_completion(ctx: &CompletionContext) -> Completions {
-    trace!("path_completion: current='{:?}'", ctx.current_word());
-
-    let given_dir = ctx.current_word().map(|s| (&*s).clone()).unwrap_or_else(|| ".".to_owned());
-    let dirent = if given_dir.ends_with('/') {
-        std::fs::read_dir(given_dir)
-    } else {
-        // Remove the last part: `/Users/chandler/Docum' -> `/users/chandler'
-        std::fs::read_dir(PathBuf::from(given_dir).parent().unwrap())
+    let given_dir = ctx.current_word().map(|s| (&*s).clone());
+    trace!("path_completion: current='{:?}', dir='{:?}'", ctx.current_word(), given_dir);
+    let dirent = match &given_dir {
+        Some(given_dir) if given_dir.ends_with('/') => {
+            std::fs::read_dir(given_dir)
+        },
+        Some(given_dir) if given_dir.contains('/') => {
+            // Remove the last part: `/Users/chandler/Docum' -> `/users/chandler'
+            std::fs::read_dir(PathBuf::from(given_dir.clone()).parent().unwrap())
+        },
+        _ => {
+            std::fs::read_dir(".")
+        }
     };
 
     let mut entries = Vec::new();
