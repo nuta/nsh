@@ -41,11 +41,11 @@ fn save(access_token: String, payload: Data) -> Status {
         return Status::BadRequest;
     }
 
-    let mut nshinit_path = dirs::home_dir().unwrap();
-    nshinit_path.push(".nshinit");
+    let mut nshconfig_path = dirs::home_dir().unwrap();
+    nshconfig_path.push(".nshconfig");
 
-    payload.stream_to_file(nshinit_path)
-        .expect("failed to save ~/.nshinit");
+    payload.stream_to_file(nshconfig_path)
+        .expect("failed to save ~/.nshconfig");
 
     Status::Ok
 }
@@ -56,13 +56,13 @@ fn load(access_token: String) -> Result<Json<String>, Status> {
         return Err(Status::BadRequest);
     }
 
-    let mut nshinit_path = dirs::home_dir().unwrap();
-    nshinit_path.push(".nshinit");
+    let mut nshconfig_path = dirs::home_dir().unwrap();
+    nshconfig_path.push(".nshconfig");
 
-    let f = std::fs::OpenOptions::new().read(true).open(nshinit_path);
+    let f = std::fs::OpenOptions::new().read(true).open(nshconfig_path);
     if let Ok(mut f) = f {
         let mut body = String::new();
-        f.read_to_string(&mut body).expect("failed to read to ~/.nshinit");
+        f.read_to_string(&mut body).expect("failed to read to ~/.nshconfig");
         Ok(Json(body))
     } else {
         Ok(Json("{}".to_owned()))

@@ -211,7 +211,7 @@ export default {
                         .send(new_value)
                         .then(() => {
                             new Noty({
-                                text: '<b>saved to ~/.nshinit</b>',
+                                text: '<b>saved to ~/.nshconfig</b>',
                                 type: 'success',
                                 timeout: 1500,
                              }).show();
