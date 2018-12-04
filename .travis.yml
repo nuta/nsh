@@ -27,7 +27,6 @@ install:
 script:
   - "cd src/config/ui; yarn; yarn build; cd ../../.."
   - cargo build
-  - cargo build --release
   - cargo test
   - ./tools/run-blackbox-tests.py
 
