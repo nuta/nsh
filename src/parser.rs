@@ -2717,3 +2717,30 @@ pub fn test_courner_cases() {
     assert!(parse("& &&").is_err());
     assert!(parse("echo foo ; &").is_err());
 }
+
+#[cfg(test)]
+mod benchmarks {
+    use test::Bencher;
+    use super::*;
+
+    #[bench]
+    fn newline_parsing_bench(b: &mut Bencher) {
+        b.iter(|| {
+            parse("\n")
+        });
+    }
+
+    #[bench]
+    fn simple_oneliner_parsing_bench(b: &mut Bencher) {
+        b.iter(|| {
+            parse("RAILS_ENV=development rails server -p 10022 && echo exited")
+        });
+    }
+
+    #[bench]
+    fn complex_oneliner_parsing_bench(b: &mut Bencher) {
+        b.iter(|| {
+            parse("func1() { while read line; do echo \"read $line from the prompt!\"; done }")
+        });
+    }
+}

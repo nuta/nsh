@@ -345,3 +345,31 @@ fn test_prompt_parser() {
         })
     );
 }
+
+
+#[cfg(test)]
+mod benchmarks {
+    use test::Bencher;
+    use super::*;
+
+    #[bench]
+    fn simple_prompt_rendering_bench(b: &mut Bencher) {
+        b.iter(|| {
+            let mode = InputMode::Normal;
+            let completions = Completions::new(vec![]);
+            let theme = "Solarized (dark)";
+            render_prompt("$ ", mode, &completions, 0, 64, 0, 3, "ls -alhG", &theme);
+        });
+    }
+
+    #[bench]
+    fn complex_prompt_rendering_bench(b: &mut Bencher) {
+        b.iter(|| {
+            let prompt = "\\c{cyan}\\c{bold}\\u@\\h:\\c{reset} \\W\n$\\c{reset} ";
+            let mode = InputMode::Normal;
+            let completions = Completions::new(vec![]);
+            let theme = "Solarized (dark)";
+            render_prompt(&prompt, mode, &completions, 0, 64, 64, 3, "ls -alhG", &theme);
+        });
+    }
+}
