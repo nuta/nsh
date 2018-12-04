@@ -25,8 +25,8 @@ Comparisons
 | | **nsh**  | **[bash](https://www.gnu.org/software/bash)**  | **[zsh](http://www.zsh.org/)** | **[fish](http://fishshell.com/)** | **[PowerShell](https://github.com/PowerShell/PowerShell)** |
 | :-: | :-: | :-: | :-: | :-: | :-: |
 | **POSIX shell features** | almost complete | **Yes** | **Yes** | original syntax | No|
-| **Bash compatibility** | incomplete | **100% compatible** | **provides `emulate(1)`** | Needs Bass | No|
-| **Prompt UX** | work in progress | minimum standard | comfortable | **awesome** | comfortable |
+| **Bash compatibility** | incomplete | **100% compatible** | **provides `emulate(1)`** | requires Bass | No |
+| **Prompt UX** | *(work in progress)* | minimum standard | comfortable | **awesome** | comfortable |
 | **Configuration easiness** | **web-based `nsh --config`** | insufficient | oh-my-zsh or very long zshrc | **web-based `fish_config`** | insufficient |
 | **Name** | not bad | **noble** | **cool** | **cute** | **super cool** |
 
@@ -42,9 +42,16 @@ Future Plans
 
 Building
 --------
+### Prerequisites
+- macOS or Linux
+- Rust [nightly](https://doc.rust-lang.org/book/2018-edition/appendix-06-nightly-rust.html) toolchain. Google `rustup` if you're unfamiliar with.
+- [Node.js](https://nodejs.org/en/)
+- [yarn](https://yarnpkg.com/lang/en/docs/install)
+
 ```
-$ cd src/config/ui && yarn
+$ cd src/config/ui && yarn && cd ../../..
 $ cargo build --release
+$ ./target/release/nsh
 ```
 
 Testing
