@@ -175,9 +175,9 @@ pub enum Span {
     // $((1 + 2 * 3))
     ArithExpr { expr: Expr },
     // *
-    AnyString,
+    AnyString { quoted: bool },
     // ?
-    AnyChar,
+    AnyChar { quoted: bool },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -250,10 +250,10 @@ fn escape_sequence(buf: Input, in_quote: bool) -> IResult<Input, Span> {
     }
 }
 
-named!(pattern<Input, Span>,
+named_args!(pattern(quoted: bool)<Input, Span>,
     alt!(
-        map!(tag!("*"), |_| Span::AnyString) |
-        map!(tag!("?"), |_| Span::AnyChar)
+        map!(tag!("*"), |_| Span::AnyString{ quoted }) |
+        map!(tag!("?"), |_| Span::AnyChar{ quoted })
     )
 );
 
@@ -544,8 +544,8 @@ fn parse_word(_buf: Input, in_expansion: bool, quote: Option<char>) -> IResult<I
     }
 
     info!(
-        "parse_word({}): '{}' ------------------------",
-        in_expansion, buf
+        "parse_word({}, {:?}): '{}' ------------------------",
+        in_expansion, quote, buf
     );
     loop {
         // Parse quoted strings.
@@ -574,7 +574,7 @@ fn parse_word(_buf: Input, in_expansion: bool, quote: Option<char>) -> IResult<I
 
         match alt!(
             buf,
-            pattern
+            call!(pattern, quote.is_some())
                 | call!(expansion, quote.is_some())
                 | call!(backquoted_command_expansion, quote.is_some())
                 | call!(escape_sequence, quote.is_some())
@@ -2562,10 +2562,10 @@ pub fn test_patterns() {
                     commands: vec![Command::SimpleCommand {
                         argv: vec![
                             Word(vec![Span::Literal("echo".into())]),
-                            Word(vec![Span::AnyString]),
+                            Word(vec![Span::AnyString { quoted: false }]),
                             Word(vec![
                                 Span::Literal("a".into()),
-                                Span::AnyChar,
+                                Span::AnyChar { quoted: false },
                                 Span::Literal("c".into()),
                             ]),
                         ],

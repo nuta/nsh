@@ -31,33 +31,102 @@ fn kill_process_group(pgid: Pid, signal: Signal) -> Result<(), nix::Error> {
     kill(Pid::from_raw(-pgid.as_raw()), signal)
 }
 
-fn expand_glob(words: Vec<String>) -> Vec<String> {
-    let mut glob_expanded = Vec::new();
-    for word in words {
-        // FIXME: Support file path which contains '*'.
-        if word.contains('*') || word.contains('?') {
-            for entry in glob(&word).expect("failed to glob") {
-                match entry {
-                    Ok(path) => {
-                        glob_expanded.push(path.to_str().unwrap().to_string());
-                    },
-                    Err(e) => trace!("glob error: {:?}", e),
-                }
-            }
-        } else {
-            glob_expanded.push(word);
-        };
-    }
-
-    glob_expanded
-}
-
 fn move_fd(src: RawFd, dst: RawFd) {
     if src != dst {
         dup2(src, dst).expect("failed to dup2");
         close(src).expect("failed to close");
     }
 }
+
+enum LiteralOrGlob {
+    Literal(String),
+    AnyString,
+    AnyChar,
+}
+
+struct PatternWord {
+    fragments: Vec<LiteralOrGlob>
+}
+
+impl PatternWord {
+    pub fn new(fragments: Vec<LiteralOrGlob>) -> PatternWord {
+        PatternWord {
+            fragments
+        }
+    }
+
+    pub fn into_string(self) -> String {
+        let mut string = String::new();
+        for frag in self.fragments {
+            match frag {
+                LiteralOrGlob::Literal(lit) => string += &lit,
+                LiteralOrGlob::AnyChar => string.push('?'),
+                LiteralOrGlob::AnyString => string.push('*'),
+            }
+        }
+
+        string
+    }
+
+    pub fn expand_glob(self) -> Vec<String> {
+        let includes_glob = self.fragments.iter().any(|frag| {
+            match frag {
+                LiteralOrGlob::AnyString => true,
+                LiteralOrGlob::AnyChar => true,
+                _ => false,
+            }
+        });
+
+        let mut expanded_words = Vec::new();
+        if includes_glob {
+            let mut pattern = String::new();
+            for frag in self.fragments {
+                match frag {
+                    LiteralOrGlob::Literal(lit) => {
+                        pattern += lit
+                            .replace("*", "[*]")
+                            .replace("?", "[?]")
+                            .as_str();
+                    },
+                    LiteralOrGlob::AnyChar => {
+                        pattern.push('?');
+                    },
+                    LiteralOrGlob::AnyString => {
+                        pattern.push('*');
+                    },
+                }
+            }
+
+            let mut paths = Vec::new();
+            for entry in glob(&pattern).expect("failed to glob") {
+                match entry {
+                    Ok(path) => {
+                        paths.push(path.to_str().unwrap().to_string());
+                    },
+                    Err(e) => trace!("glob error: {:?}", e),
+                }
+            }
+            if paths.is_empty() {
+                // FIXME: return error instead
+                panic!("nsh: no matches");
+            }
+
+            expanded_words.extend(paths);
+        } else {
+            let mut s = String::new();
+            for frag in self.fragments {
+                if let LiteralOrGlob::Literal(lit) = frag {
+                    s += &lit;
+                }
+            }
+
+            expanded_words.push(s);
+        }
+
+        expanded_words
+    }
+}
+
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ExitStatus {
@@ -414,14 +483,16 @@ impl Isolate {
         }
     }
 
-    fn expand_word_into_vec(&mut self, word: &Word, ifs: &str) -> Vec<String> {
+    fn expand_word_into_vec(&mut self, word: &Word, ifs: &str) -> Vec<PatternWord> {
         let mut words = Vec::new();
-        let mut current_word = String::new();
+        let mut current_word = Vec::new();
         for span in word.spans() {
             let (frag, expand) = match span {
-                Span::Literal(s) => (s.clone(), false),
+                Span::Literal(s) => {
+                    (LiteralOrGlob::Literal(s.clone()), false)
+                },
                 Span::Parameter { name, op, quoted } => {
-                    (self.expand_param(name, op), !quoted)
+                    (LiteralOrGlob::Literal(self.expand_param(name, op)), !quoted)
                 },
                 Span::ArrayParameter { name, index, quoted } => {
                     let index = self.evaluate_expr(index);
@@ -436,10 +507,11 @@ impl Isolate {
                             .unwrap_or_else(|| "".to_owned())
                     };
 
-                    (frag, !quoted)
+                    (LiteralOrGlob::Literal(frag), !quoted)
                 },
                 Span::ArithExpr { expr } => {
-                    (self.evaluate_expr(expr).to_string(), false)
+                    let result = self.evaluate_expr(expr).to_string();
+                    (LiteralOrGlob::Literal(result), false)
                 },
                 Span::Tilde(user) => {
                     if user.is_some() {
@@ -447,60 +519,83 @@ impl Isolate {
                         unimplemented!();
                     }
 
-                    (dirs::home_dir().unwrap().to_str().unwrap().to_owned(), false)
+                    let dir = dirs::home_dir().unwrap().to_str().unwrap().to_owned();
+                    (LiteralOrGlob::Literal(dir), false)
                 },
                 Span::Command { body, quoted } => {
-                    let stdout = self.run_in_subshell(body);
                     // TODO: support binary output
-                    let s = std::str::from_utf8(&stdout).unwrap_or("").to_string();
-                    (s.trim_end_matches('\n').to_string(), !quoted)
+                    let raw_stdout = self.run_in_subshell(body);
+                    let stdout = std::str::from_utf8(&raw_stdout)
+                        .unwrap_or("")
+                        .to_string()
+                        .trim_end_matches('\n')
+                        .to_owned();
+                    (LiteralOrGlob::Literal(stdout), !quoted)
                 },
-                Span::AnyChar => {
-                    ("?".into(), false)
+                Span::AnyChar { quoted } if !*quoted => {
+                    (LiteralOrGlob::AnyChar, false)
                 },
-                Span::AnyString => {
-                    ("*".into(), false)
+                Span::AnyString { quoted } if !*quoted => {
+                    (LiteralOrGlob::AnyString, false)
+                },
+                Span::AnyChar { .. } => {
+                    (LiteralOrGlob::Literal("?".into()), false)
+                },
+                Span::AnyString { .. } => {
+                    (LiteralOrGlob::Literal("*".into()), false)
                 },
             };
 
             // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo=123`.
-            if expand {
-                if !current_word.is_empty() {
-                    words.push(current_word);
-                    current_word = String::new();
-                }
+            match frag {
+                LiteralOrGlob::Literal(ref lit) if expand => {
+                    if !current_word.is_empty() {
+                        words.push(PatternWord::new(current_word));
+                        current_word = Vec::new();
+                    }
 
-                for word in frag.split(|c| ifs.contains(c)) {
-                    words.push(word.to_string());
+                    for word in lit.split(|c| ifs.contains(c)) {
+                        words.push(PatternWord::new(vec![LiteralOrGlob::Literal(word.into())]));
+                    }
+                },
+                frag => {
+                    current_word.push(frag);
                 }
-            } else {
-                current_word += &frag;
             }
         }
 
         if !current_word.is_empty() {
-            words.push(current_word);
+            words.push(PatternWord::new(current_word));
         }
 
         if words.is_empty() {
-            // e.g. `echo ""`
-            vec!["".into()]
+            vec![PatternWord::new(vec![LiteralOrGlob::Literal("".into())])]
         } else {
             words
         }
-
     }
 
     fn expand_word_into_string(&mut self, word: &Word) -> String {
         let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
-        self.expand_word_into_vec(word, &ifs).join("")
+        let ws: Vec<String> = self.expand_word_into_vec(word, &ifs)
+            .into_iter()
+            .map(|w| w.into_string())
+            .collect();
+        ws.join(" ")
     }
 
     fn expand_words(&mut self, words: &[Word]) -> Vec<String> {
         let mut evaluated = Vec::new();
         let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
         for word in words {
-            evaluated.extend(self.expand_word_into_vec(word, &ifs));
+            let mut ws = Vec::new();
+            for w in self.expand_word_into_vec(word, &ifs) {
+                for f in w.expand_glob() {
+                    ws.push(f);
+                }
+            }
+
+            evaluated.extend(ws);
         }
 
         evaluated
@@ -915,7 +1010,7 @@ impl Isolate {
         redirects: &[parser::Redirection],
         assignments: &[parser::Assignment],
     ) -> ExitStatus {
-        let argv = expand_glob(self.expand_words(&self.expand_alias(argv)));
+        let argv = self.expand_words(&self.expand_alias(argv));
 
         if argv.is_empty() {
             // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
@@ -1026,8 +1121,27 @@ impl Isolate {
 
         let word = self.expand_word_into_string(word);
         for case in cases {
-            for pattern in &case.patterns {
-                let pattern = self.expand_word_into_string(pattern);
+            for raw_pattern in &case.patterns {
+                let mut pattern = String::new();
+                for ws in self.expand_word_into_vec(raw_pattern, "") {
+                    for w in ws.fragments {
+                        match w {
+                            LiteralOrGlob::Literal(lit) => {
+                                pattern += lit
+                                    .replace("*", "[*]")
+                                    .replace("?", "[?]")
+                                    .as_str();
+                            },
+                            LiteralOrGlob::AnyChar => {
+                                pattern.push('?');
+                            },
+                            LiteralOrGlob::AnyString => {
+                                pattern.push('*');
+                            }
+                        }
+                    }
+                }
+
                 if self.match_pattern(&pattern, &word) {
                     return self.run_terms(&case.body, ctx.stdin, ctx.stdout, ctx.stderr);
                 }

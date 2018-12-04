@@ -18,3 +18,10 @@ case "aaa" in
     123) echo "err #5" ;;
     *) echo "ok #4"  ;;
 esac
+
+case "a*d"e in
+    123) echo "err #6" ;;
+    "a*d*") echo "bad #7"  ;;
+    "a*d"*) echo "ok #5"  ;;
+    *) echo "err #8"  ;;
+esac
