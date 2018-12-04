@@ -1,6 +1,11 @@
-dist: xenial
 language: rust
+dist: xenial
+osx_image: xcode10.1
 cache: cargo
+
+os:
+  - linux
+  - osx
 
 rust:
   - nightly
