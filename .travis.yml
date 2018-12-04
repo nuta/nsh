@@ -40,10 +40,10 @@ install:
 
 script:
   - "cd src/config/ui && yarn && yarn build && cd ../../.."
-  - cargo test
   - cargo build --release
   - cargo run -- --doctor
   - cargo bench
+  - cargo test
   - ./tools/run-blackbox-tests.py
 
 notifications:
