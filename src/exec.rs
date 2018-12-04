@@ -26,8 +26,8 @@ use std::cell::RefCell;
 use glob::glob;
 use globset;
 
-fn kill_process_group(pgid: Pid, signal: Signal) -> Result<(), nix::Error> {
-    kill(Pid::from_raw(-pgid.as_raw()), signal)
+fn kill_process_group(pgid: Pid, signal: Signal) -> Result<()> {
+    kill(Pid::from_raw(-pgid.as_raw()), signal).map_err(|err| ExecError::SyscallError{ err })
 }
 
 fn move_fd(src: RawFd, dst: RawFd) {
@@ -257,6 +257,18 @@ impl Job {
     }
 }
 
+#[derive(Debug, Fail)]
+pub enum ExecError {
+    #[fail(display = "index out of bounds")]
+    IndexOutOfBounds,
+    #[fail(display = "syscall error: {:?}", err)]
+    SyscallError {
+        err: nix::Error
+    },
+}
+
+type Result<I> = std::result::Result<I, ExecError>;
+
 pub struct Isolate {
     shell_pgid: Pid,
     interactive: bool,
@@ -431,18 +443,18 @@ impl Isolate {
         }
     }
 
-    fn expand_param(&mut self, name: &str, op: &ExpansionOp) -> String {
+    fn expand_param(&mut self, name: &str, op: &ExpansionOp) -> Result<String> {
         match name {
             "?" => {
-                return self.last_status.to_string();
+                return Ok(self.last_status.to_string());
             },
             _ => {
                 if let Some(var) = self.get(name) {
                     // $<name> is defined and contains a string value.
                     let value = var.as_str().to_string();
                     return match op {
-                        ExpansionOp::Length => value.len().to_string(),
-                        _ => value,
+                        ExpansionOp::Length => Ok(value.len().to_string()),
+                        _ => Ok(value),
                     };
                 }
             }
@@ -456,7 +468,7 @@ impl Isolate {
                     std::process::exit(1);
                 }
 
-                "0".to_owned()
+                Ok("0".to_owned())
             },
             ExpansionOp::GetOrEmpty => {
                 if self.nounset {
@@ -464,19 +476,19 @@ impl Isolate {
                     std::process::exit(1);
                 }
 
-                "".to_owned()
+                Ok("".to_owned())
             },
             ExpansionOp::GetOrDefault(word) => self.expand_word_into_string(word),
             ExpansionOp::GetOrDefaultAndAssign(word) => {
-                let content = self.expand_word_into_string(word);
+                let content = self.expand_word_into_string(word)?;
                 self.set(name, Value::String(content.clone()), false);
-                content
+                Ok(content)
             }
             _ => panic!("TODO:"),
         }
     }
 
-    fn expand_word_into_vec(&mut self, word: &Word, ifs: &str) -> Vec<PatternWord> {
+    fn expand_word_into_vec(&mut self, word: &Word, ifs: &str) -> Result<Vec<PatternWord>> {
         let mut words = Vec::new();
         let mut current_word = Vec::new();
         for span in word.spans() {
@@ -485,21 +497,19 @@ impl Isolate {
                     (LiteralOrGlob::Literal(s.clone()), false)
                 },
                 Span::Parameter { name, op, quoted } => {
-                    (LiteralOrGlob::Literal(self.expand_param(name, op)), !quoted)
+                    (LiteralOrGlob::Literal(self.expand_param(name, op)?), !quoted)
                 },
                 Span::ArrayParameter { name, index, quoted } => {
                     let index = self.evaluate_expr(index);
-                    let frag = if index < 0 {
-                        // TODO: return Err instead.
+                    if index < 0 {
                         eprintln!("nsh: {}: the index must be larger than or equals 0", name);
-                        "".to_owned()
-                    } else {
-                        self
+                        return Err(ExecError::IndexOutOfBounds);
+                    }
+
+                    let frag = self
                             .get(name)
                             .map(|v| v.value_at(index as usize).to_string())
-                            .unwrap_or_else(|| "".to_owned())
-                    };
-
+                            .unwrap_or_else(|| "".to_owned());
                     (LiteralOrGlob::Literal(frag), !quoted)
                 },
                 Span::ArithExpr { expr } => {
@@ -562,27 +572,28 @@ impl Isolate {
         }
 
         if words.is_empty() {
-            vec![PatternWord::new(vec![LiteralOrGlob::Literal("".into())])]
+            Ok(vec![PatternWord::new(vec![LiteralOrGlob::Literal("".into())])])
         } else {
-            words
+            Ok(words)
         }
     }
 
-    fn expand_word_into_string(&mut self, word: &Word) -> String {
+    fn expand_word_into_string(&mut self, word: &Word) -> Result<String> {
         let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
-        let ws: Vec<String> = self.expand_word_into_vec(word, &ifs)
+        let ws: Vec<String> = self.expand_word_into_vec(word, &ifs)?
             .into_iter()
             .map(|w| w.into_string())
             .collect();
-        ws.join(" ")
+
+        Ok(ws.join(" "))
     }
 
-    fn expand_words(&mut self, words: &[Word]) -> Vec<String> {
+    fn expand_words(&mut self, words: &[Word]) -> Result<Vec<String>> {
         let mut evaluated = Vec::new();
         let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
         for word in words {
             let mut ws = Vec::new();
-            for w in self.expand_word_into_vec(word, &ifs) {
+            for w in self.expand_word_into_vec(word, &ifs)? {
                 for f in w.expand_glob() {
                     ws.push(f);
                 }
@@ -591,7 +602,7 @@ impl Isolate {
             evaluated.extend(ws);
         }
 
-        evaluated
+        Ok(evaluated)
     }
 
     /// Evaluates a variable initializer.
@@ -603,15 +614,17 @@ impl Isolate {
     ///               ^^^^^^^ an array initializer
     /// ```
     ///
-    fn evaluate_initializer(&mut self, initializer: &Initializer) -> Value {
+    fn evaluate_initializer(&mut self, initializer: &Initializer) -> Result<Value> {
         match initializer {
-            Initializer::String(ref word) => Value::String(self.expand_word_into_string(word)),
+            Initializer::String(ref word) => {
+                Ok(Value::String(self.expand_word_into_string(word)?))
+            },
             Initializer::Array(ref words) =>  {
                 let mut elems = Vec::new();
                 for word in words {
-                    elems.push(self.expand_word_into_string(word));
+                    elems.push(self.expand_word_into_string(word)?);
                 }
-                Value::Array(elems)
+                Ok(Value::Array(elems))
             }
         }
     }
@@ -784,7 +797,7 @@ impl Isolate {
         argv: Vec<String>,
         redirects: &[parser::Redirection],
         assignments: &[parser::Assignment]
-    ) -> ExitStatus {
+    ) -> Result<ExitStatus> {
         let mut fds = Vec::new();
         for r in redirects {
             match r.target {
@@ -803,12 +816,12 @@ impl Isolate {
                     };
 
                     trace!("redirection: options={:?}", options);
-                    let filepath = self.expand_word_into_string(wfilepath);
+                    let filepath = self.expand_word_into_string(wfilepath)?;
                     if let Ok(file) = options.open(&filepath) {
                         fds.push((file.into_raw_fd(), r.fd as RawFd))
                     } else {
                         warn!("nsh: failed to open file: `{}'", filepath);
-                        return ExitStatus::ExitedWith(1);
+                        return Ok(ExitStatus::ExitedWith(1));
                     }
                 }
             }
@@ -830,14 +843,14 @@ impl Isolate {
             Some(argv0) => CString::new(argv0).unwrap(),
             None => {
                 eprintln!("nsh: command not found `{}'", argv[0]);
-                return ExitStatus::ExitedWith(1);
+                return Ok(ExitStatus::ExitedWith(1));
             }
         };
 
         // Spawn a child.
         match fork().expect("failed to fork") {
             ForkResult::Parent { child } => {
-                ExitStatus::Running(child)
+                Ok(ExitStatus::Running(child))
             },
             ForkResult::Child => {
                 // FIXME: CString::new() internally calls memchr(); it could be non-negligible cost.
@@ -894,7 +907,9 @@ impl Isolate {
 
                 // Load assignments.
                 for assignment in assignments {
-                    let value = self.evaluate_initializer(&assignment.initializer);
+                    let value = self
+                        .evaluate_initializer(&assignment.initializer)
+                        .expect("failed to evaluate the initializer");
                     match value {
                         Value::String(s) => std::env::set_var(&assignment.name, s),
                         Value::Array(_) => {
@@ -920,7 +935,7 @@ impl Isolate {
         mut stdout: RawFd,
         mut stderr: RawFd,
         redirects: &[parser::Redirection]
-    ) -> Result<ExitStatus, InternalCommandError> {
+    ) -> std::result::Result<ExitStatus, InternalCommandError> {
 
         let mut opened_fds = Vec::new();
         for r in redirects {
@@ -940,7 +955,7 @@ impl Isolate {
                     };
 
                     trace!("redirection: options={:?}", options);
-                    let filepath = self.expand_word_into_string(wfilepath);
+                    let filepath = self.expand_word_into_string(wfilepath).expect("TODO:");
                     if let Ok(file) = options.open(&filepath) {
                         let src = file.into_raw_fd();
                         let dst = r.fd as RawFd;
@@ -1002,13 +1017,13 @@ impl Isolate {
         argv: &[Word],
         redirects: &[parser::Redirection],
         assignments: &[parser::Assignment],
-    ) -> ExitStatus {
-        let argv = self.expand_words(&self.expand_alias(argv));
+    ) -> Result<ExitStatus> {
+        let argv = self.expand_words(&self.expand_alias(argv))?;
 
         if argv.is_empty() {
             // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
             // named "foo.txt".
-            return ExitStatus::ExitedWith(0);
+            return Ok(ExitStatus::ExitedWith(0));
         }
 
         // Functions
@@ -1021,20 +1036,20 @@ impl Isolate {
                     self.set(&(i + 1).to_string(), Value::String(arg.clone()), true);
                 }
 
-                let result = match self.run_command(&body, ctx) {
+                let result = match self.run_command(&body, ctx)? {
                     ExitStatus::Return => ExitStatus::ExitedWith(0),
                     result => result,
                 };
 
                 self.leave_frame();
-                return result;
+                return Ok(result);
             }
         }
 
         // Internal commands
         match self.run_internal_command(&argv, ctx.stdin, ctx.stdout, ctx.stderr, redirects) {
-            Ok(status) => return status,
-            Err(InternalCommandError::BadRedirection) => return ExitStatus::ExitedWith(1),
+            Ok(status) => return Ok(status),
+            Err(InternalCommandError::BadRedirection) => return Ok(ExitStatus::ExitedWith(1)),
             Err(InternalCommandError::NotFound) => (), /* Try external command. */
         }
 
@@ -1042,15 +1057,15 @@ impl Isolate {
         self.run_external_command(&ctx, argv, redirects, assignments)
     }
 
-    fn run_local_command(&mut self, declarations: &[parser::LocalDeclaration]) -> ExitStatus {
+    fn run_local_command(&mut self, declarations: &[parser::LocalDeclaration]) -> Result<ExitStatus> {
         if self.in_global_frame() {
             eprintln!("nsh: local variable can only be used in a function");
-            ExitStatus::ExitedWith(1)
+            Ok(ExitStatus::ExitedWith(1))
         } else {
             for decl in declarations {
                 match decl {
                     LocalDeclaration::Assignment(Assignment { name, initializer, .. }) => {
-                        let value = self.evaluate_initializer(&initializer);
+                        let value = self.evaluate_initializer(&initializer)?;
                         self.set(&name, value, true)
                     },
                     LocalDeclaration::Name(name) =>  {
@@ -1058,7 +1073,8 @@ impl Isolate {
                     }
                 }
             }
-            ExitStatus::ExitedWith(0)
+
+            Ok(ExitStatus::ExitedWith(0))
         }
     }
 
@@ -1070,16 +1086,16 @@ impl Isolate {
         elif_parts: &[parser::ElIf],
         else_part: &Option<Vec<parser::Term>>,
         _redirections: &[parser::Redirection]
-    ) -> ExitStatus {
+    ) -> Result<ExitStatus> {
         // then
-        let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr);
+        let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr)?;
         if result == ExitStatus::ExitedWith(0) {
             return self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr);
         }
 
         // elif
         for elif in elif_parts {
-            let result = self.run_terms(&elif.condition, ctx.stdin, ctx.stdout, ctx.stderr);
+            let result = self.run_terms(&elif.condition, ctx.stdin, ctx.stdout, ctx.stderr)?;
             if result == ExitStatus::ExitedWith(0) {
                 return self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr);
             }
@@ -1090,7 +1106,7 @@ impl Isolate {
             return self.run_terms(else_part, ctx.stdin, ctx.stdout, ctx.stderr);
         }
 
-        ExitStatus::ExitedWith(0)
+        Ok(ExitStatus::ExitedWith(0))
     }
 
     fn match_pattern(&self, pattern: &str, text: &str) -> bool {
@@ -1110,13 +1126,13 @@ impl Isolate {
         ctx: &Context,
         word: &parser::Word,
         cases: &[parser::CaseItem],
-    ) -> ExitStatus {
+    ) -> Result<ExitStatus> {
 
-        let word = self.expand_word_into_string(word);
+        let word = self.expand_word_into_string(word)?;
         for case in cases {
             for raw_pattern in &case.patterns {
                 let mut pattern = String::new();
-                for ws in self.expand_word_into_vec(raw_pattern, "") {
+                for ws in self.expand_word_into_vec(raw_pattern, "")? {
                     for w in ws.fragments {
                         match w {
                             LiteralOrGlob::Literal(lit) => {
@@ -1141,7 +1157,7 @@ impl Isolate {
             }
         }
 
-        ExitStatus::ExitedWith(0)
+        Ok(ExitStatus::ExitedWith(0))
     }
 
     fn run_while_command(
@@ -1149,62 +1165,62 @@ impl Isolate {
         ctx: &Context,
         condition: &[parser::Term],
         body: &[parser::Term],
-    ) -> ExitStatus {
+    ) -> Result<ExitStatus> {
 
         let mut last_result = ExitStatus::ExitedWith(0);
         loop {
-            let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr);
+            let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr)?;
             if result != ExitStatus::ExitedWith(0) {
                 break;
             }
 
-            last_result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
+            last_result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr)?;
         }
 
-        last_result
+        Ok(last_result)
     }
 
-    fn run_for_command(&mut self, ctx: &Context, var_name: &str, words: &[Word], body: &[parser::Term]) -> ExitStatus {
+    fn run_for_command(&mut self, ctx: &Context, var_name: &str, words: &[Word], body: &[parser::Term]) -> Result<ExitStatus> {
         for word in words {
-            let value = self.expand_word_into_string(word);
+            let value = self.expand_word_into_string(word)?;
             self.set(&var_name, Value::String(value), false);
 
-            let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
+            let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr)?;
             match result {
                 ExitStatus::Break => break,
                 ExitStatus::Continue => (),
-                ExitStatus::Return => return result,
+                ExitStatus::Return => return Ok(result),
                 _ => (),
             }
         }
 
-        ExitStatus::ExitedWith(0)
+        Ok(ExitStatus::ExitedWith(0))
     }
 
-    fn run_command(&mut self, command: &parser::Command, ctx: &Context) -> ExitStatus {
+    fn run_command(&mut self, command: &parser::Command, ctx: &Context) -> Result<ExitStatus> {
         if self.noexec {
-            return ExitStatus::NoExec;
+            return Ok(ExitStatus::NoExec);
         }
 
         trace!("run_command: {:?}", command);
-        match command {
+       let result = match command {
             parser::Command::SimpleCommand { argv, redirects, assignments } => {
-                self.run_simple_command(ctx, &argv, &redirects, &assignments)
+                self.run_simple_command(ctx, &argv, &redirects, &assignments)?
             }
             parser::Command::If { condition, then_part, elif_parts, else_part, redirects } => {
-                self.run_if_command(ctx, &condition, &then_part, &elif_parts, &else_part, &redirects)
+                self.run_if_command(ctx, &condition, &then_part, &elif_parts, &else_part, &redirects)?
             }
             parser::Command::While { condition, body } => {
-                self.run_while_command(ctx, &condition, &body)
+                self.run_while_command(ctx, &condition, &body)?
             }
             parser::Command::Case { word, cases } => {
-                self.run_case_command(ctx, &word, &cases)
+                self.run_case_command(ctx, &word, &cases)?
             }
             parser::Command::For { var_name, words, body } => {
-                self.run_for_command(ctx, var_name, &words, &body)
+                self.run_for_command(ctx, var_name, &words, &body)?
             },
             parser::Command::LocalDef { declarations } => {
-                self.run_local_command(&declarations)
+                self.run_local_command(&declarations)?
             }
             parser::Command::FunctionDef { name, body } => {
                 self.set(name, Value::Function(body.clone()), true);
@@ -1212,13 +1228,13 @@ impl Isolate {
             }
             parser::Command::Assignment { assignments } => {
                 for assign in assignments {
-                    let value = self.evaluate_initializer(&assign.initializer);
+                    let value = self.evaluate_initializer(&assign.initializer)?;
                     self.set(&assign.name, value, false)
                 }
                 ExitStatus::ExitedWith(0)
             },
             parser::Command::Group { terms } => {
-                self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr)
+                self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr)?
             },
             parser::Command::Return => {
                 ExitStatus::Return
@@ -1229,7 +1245,9 @@ impl Isolate {
             parser::Command::Continue => {
                 ExitStatus::Continue
             }
-        }
+        };
+
+        Ok(result)
     }
 
     /// Runs commands in a subshell (`$()`).
@@ -1254,7 +1272,11 @@ impl Isolate {
                 let stdout = pipe_in;
                 let stderr = 2;
                 let status = match self.run_terms(terms, stdin, stdout, stderr) {
-                    ExitStatus::ExitedWith(status) => status,
+                    Ok(ExitStatus::ExitedWith(status)) => status,
+                    Err(err) => {
+                        eprintln!("nsh: error: {}", err);
+                        1
+                    },
                     _ => 0,
                 };
 
@@ -1271,7 +1293,7 @@ impl Isolate {
         pipeline_stdout: RawFd,
         stderr: RawFd,
         background: bool,
-    ) -> ExitStatus {
+    ) -> Result<ExitStatus> {
         // Invoke commands in a pipeline.
         let mut last_result = None;
         let mut iter = pipeline.commands.iter().peekable();
@@ -1299,7 +1321,7 @@ impl Isolate {
                 pgid,
                 background,
                 interactive: self.interactive
-            });
+            })?;
 
             if let ExitStatus::Running(pid) = result {
                 if pgid.is_none() {
@@ -1360,16 +1382,16 @@ impl Isolate {
                 }
             },
             Some(ExitStatus::Break) => {
-                return ExitStatus::Break;
+                return Ok(ExitStatus::Break);
             },
             Some(ExitStatus::Continue) => {
-                return ExitStatus::Continue;
+                return Ok(ExitStatus::Continue);
             },
             Some(ExitStatus::Return) => {
-                return ExitStatus::Return;
+                return Ok(ExitStatus::Return);
             },
             Some(ExitStatus::NoExec) => {
-                return ExitStatus::NoExec;
+                return Ok(ExitStatus::NoExec);
             },
             None => {
                 trace!("nothing to execute");
@@ -1385,7 +1407,7 @@ impl Isolate {
             }
         }
 
-        last_status
+        Ok(last_status)
     }
 
     /// Runs pipelines.
@@ -1395,7 +1417,7 @@ impl Isolate {
         stdin: RawFd,
         stdout: RawFd,
         stderr: RawFd,
-    ) -> ExitStatus {
+    ) -> Result<ExitStatus> {
         let mut last_status = ExitStatus::ExitedWith(0);
         for term in terms {
             for pipeline in &term.pipelines {
@@ -1403,21 +1425,22 @@ impl Isolate {
                 match (last_status, &pipeline.run_if) {
                     (ExitStatus::ExitedWith(0), RunIf::Success) => (),
                     (ExitStatus::ExitedWith(_), RunIf::Failure) => (),
-                    (ExitStatus::Break, _) => return ExitStatus::Break,
-                    (ExitStatus::Continue, _) => return ExitStatus::Continue,
-                    (ExitStatus::Return, _) => return ExitStatus::Return,
+                    (ExitStatus::Break, _) => return Ok(ExitStatus::Break),
+                    (ExitStatus::Continue, _) => return Ok(ExitStatus::Continue),
+                    (ExitStatus::Return, _) => return Ok(ExitStatus::Return),
                     (_, RunIf::Always) => (),
                     _ => continue,
                 }
 
-                last_status = self.run_pipeline(pipeline, stdin, stdout, stderr, term.background);
+                last_status = self.run_pipeline(pipeline, stdin, stdout, stderr, term.background)?;
             }
         }
-        last_status
+
+        Ok(last_status)
     }
 
     /// Runs commands.
-    pub fn eval(&mut self, ast: &Ast) -> ExitStatus {
+    pub fn eval(&mut self, ast: &Ast) -> Result<ExitStatus> {
         trace!("ast: {:#?}", ast);
 
         // Inherit shell's stdin/stdout/stderr.
@@ -1441,7 +1464,13 @@ impl Isolate {
     pub fn run_str(&mut self, script: &str) -> ExitStatus {
         match parser::parse(script) {
             Ok(ast) => {
-                self.eval(&ast)
+                match self.eval(&ast) {
+                    Ok(status) => status,
+                    Err(err) => {
+                        eprintln!("nsh: error: {}", err);
+                        ExitStatus::ExitedWith(1)
+                    }
+                }
             }
             Err(parser::SyntaxError::Empty) => {
                 // Just ignore.
