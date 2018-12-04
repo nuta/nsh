@@ -1457,12 +1457,7 @@ impl Isolate {
 
 #[test]
 fn test_expr() {
-    let config = Config {
-        path: "$ ".into(),
-        prompt: "/bin".into(),
-    };
-
-    let mut isolate = Isolate::new(config, getpid(), false);
+    let mut isolate = Isolate::new(false);
     assert_eq!(
         isolate.evaluate_expr(&&Expr::Mul(BinaryExpr {
             lhs: Box::new(Expr::Literal(2)),
