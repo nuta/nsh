@@ -1322,7 +1322,7 @@ impl Isolate {
                 interactive: self.interactive
             });
 
-            match result {
+            last_result = match result {
                 Ok(ExitStatus::Running(pid)) => {
                     if pgid.is_none() {
                         // The first child (the process group leader) pid is used for pgid.
@@ -1333,17 +1333,28 @@ impl Isolate {
                         setpgid(pid, pgid.unwrap()).expect("failed to setpgid");
                     }
 
-                    if let Some((pipe_out, pipe_in)) = pipes {
-                        stdin = pipe_out;
-                        // `pipe_in` is used by a child process and is no longer needed.
-                        close(pipe_in).expect("failed to close pipe_in");
-                    }
-
                     childs.push(pid);
-                    last_result = Some(result.unwrap());
+                    Some(ExitStatus::Running(pid))
                 },
-                // Break, Continue, ...
-                Ok(_) => break,
+                Ok(ExitStatus::ExitedWith(status)) => {
+                    Some(ExitStatus::ExitedWith(status))
+                },
+                Ok(ExitStatus::Break) => {
+                    last_result = Some(ExitStatus::Break);
+                    break;
+                },
+                Ok(ExitStatus::Continue) => {
+                    last_result = Some(ExitStatus::Continue);
+                    break;
+                },
+                Ok(ExitStatus::Return) => {
+                    last_result = Some(ExitStatus::Return);
+                    break;
+                },
+                Ok(ExitStatus::NoExec) => {
+                    last_result = Some(ExitStatus::NoExec);
+                    break;
+                },
                 Err(err) => {
                     if err.find_root_cause().downcast_ref::<IndexOutOfBoundsError>().is_some() {
                         eprintln!("nsh: error: index out of bounds");
@@ -1356,7 +1367,16 @@ impl Isolate {
                         last_result = Some(ExitStatus::ExitedWith(1));
                         break;
                     }
+
+                    // TODO:
+                    unreachable!();
                 },
+            };
+
+            if let Some((pipe_out, pipe_in)) = pipes {
+                stdin = pipe_out;
+                // `pipe_in` is used by a child process and is no longer needed.
+                close(pipe_in).expect("failed to close pipe_in");
             }
         }
 
