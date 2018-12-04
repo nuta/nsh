@@ -25,9 +25,20 @@ use std::sync::Arc;
 use std::cell::RefCell;
 use glob::glob;
 use globset;
+use failure::Error;
+
+#[derive(Debug, Fail)]
+#[fail(display = "index out of bounds")]
+pub struct IndexOutOfBoundsError;
+
+#[derive(Debug, Fail)]
+#[fail(display = "no matches")]
+pub struct NoMatchesError;
+
+type Result<I> = std::result::Result<I, Error>;
 
 fn kill_process_group(pgid: Pid, signal: Signal) -> Result<()> {
-    kill(Pid::from_raw(-pgid.as_raw()), signal).map_err(|err| ExecError::SyscallError{ err })
+    kill(Pid::from_raw(-pgid.as_raw()), signal).map_err(|err| Error::from(err))
 }
 
 fn move_fd(src: RawFd, dst: RawFd) {
@@ -67,7 +78,7 @@ impl PatternWord {
         string
     }
 
-    pub fn expand_glob(self) -> Vec<String> {
+    pub fn expand_glob(self) -> Result<Vec<String>> {
         let includes_glob = self.fragments.iter().any(|frag| {
             match frag {
                 LiteralOrGlob::AnyString => true,
@@ -106,8 +117,7 @@ impl PatternWord {
                 }
             }
             if paths.is_empty() {
-                // FIXME: return error instead
-                panic!("nsh: no matches");
+                return Err(Error::from(NoMatchesError));
             }
 
             expanded_words.extend(paths);
@@ -122,7 +132,7 @@ impl PatternWord {
             expanded_words.push(s);
         }
 
-        expanded_words
+        Ok(expanded_words)
     }
 }
 
@@ -256,18 +266,6 @@ impl Job {
         })
     }
 }
-
-#[derive(Debug, Fail)]
-pub enum ExecError {
-    #[fail(display = "index out of bounds")]
-    IndexOutOfBounds,
-    #[fail(display = "syscall error: {:?}", err)]
-    SyscallError {
-        err: nix::Error
-    },
-}
-
-type Result<I> = std::result::Result<I, ExecError>;
 
 pub struct Isolate {
     shell_pgid: Pid,
@@ -503,7 +501,7 @@ impl Isolate {
                     let index = self.evaluate_expr(index);
                     if index < 0 {
                         eprintln!("nsh: {}: the index must be larger than or equals 0", name);
-                        return Err(ExecError::IndexOutOfBounds);
+                        return Err(Error::from(IndexOutOfBoundsError));
                     }
 
                     let frag = self
@@ -526,10 +524,13 @@ impl Isolate {
                     (LiteralOrGlob::Literal(dir), false)
                 },
                 Span::Command { body, quoted } => {
-                    // TODO: support binary output
                     let raw_stdout = self.run_in_subshell(body);
                     let stdout = std::str::from_utf8(&raw_stdout)
-                        .unwrap_or("")
+                        .map_err(|err| {
+                            // TODO: support binary output
+                            eprintln!("binary (invalid utf-8) variable/expansion is not supported");
+                            err
+                        })?
                         .to_string()
                         .trim_end_matches('\n')
                         .to_owned();
@@ -594,7 +595,7 @@ impl Isolate {
         for word in words {
             let mut ws = Vec::new();
             for w in self.expand_word_into_vec(word, &ifs)? {
-                for f in w.expand_glob() {
+                for f in w.expand_glob()? {
                     ws.push(f);
                 }
             }
@@ -852,7 +853,6 @@ impl Isolate {
                 Ok(ExitStatus::Running(child))
             },
             ForkResult::Child => {
-                // FIXME: CString::new() internally calls memchr(); it could be non-negligible cost.
                 let mut args = Vec::new();
                 for arg in argv {
                     args.push(CString::new(arg).unwrap());
@@ -933,7 +933,7 @@ impl Isolate {
         mut stdout: RawFd,
         mut stderr: RawFd,
         redirects: &[parser::Redirection]
-    ) -> std::result::Result<ExitStatus, InternalCommandError> {
+    ) -> Result<ExitStatus> {
 
         let mut opened_fds = Vec::new();
         for r in redirects {
@@ -953,7 +953,7 @@ impl Isolate {
                     };
 
                     trace!("redirection: options={:?}", options);
-                    let filepath = self.expand_word_into_string(wfilepath).expect("TODO:");
+                    let filepath = self.expand_word_into_string(wfilepath)?;
                     if let Ok(file) = options.open(&filepath) {
                         let src = file.into_raw_fd();
                         let dst = r.fd as RawFd;
@@ -966,7 +966,7 @@ impl Isolate {
                         }
                     } else {
                         warn!("nsh: failed to open file: `{}'", filepath);
-                        return Err(InternalCommandError::BadRedirection);
+                        return Err(Error::from(InternalCommandError::BadRedirection));
                     }
                 }
             }
@@ -982,8 +982,8 @@ impl Isolate {
 
         let cmd = argv[0].as_str();
         let result = match INTERNAL_COMMANDS.get(cmd) {
-            Some(func) => Ok(func(&mut ctx)),
-            _ => Err(InternalCommandError::NotFound),
+            Some(func) => func(&mut ctx),
+            _ => return Err(Error::from(InternalCommandError::NotFound)),
         };
 
         // Close redirections.
@@ -991,7 +991,7 @@ impl Isolate {
             close(fd).expect("failed to close");
         }
 
-        result
+        Ok(result)
     }
 
     fn expand_alias(&self, argv: &[Word]) -> Vec<Word> {
@@ -1045,10 +1045,16 @@ impl Isolate {
         }
 
         // Internal commands
-        match self.run_internal_command(&argv, ctx.stdin, ctx.stdout, ctx.stderr, redirects) {
+        let result = self.run_internal_command(&argv, ctx.stdin, ctx.stdout, ctx.stderr, redirects);
+        match result {
             Ok(status) => return Ok(status),
-            Err(InternalCommandError::BadRedirection) => return Ok(ExitStatus::ExitedWith(1)),
-            Err(InternalCommandError::NotFound) => (), /* Try external command. */
+            Err(err) => {
+                match err.find_root_cause().downcast_ref::<InternalCommandError>() {
+                    Some(InternalCommandError::BadRedirection) => return Ok(ExitStatus::ExitedWith(1)),
+                    Some(InternalCommandError::NotFound) => (), /* Try external command. */
+                    _ => return Err(err),
+                }
+            }
         }
 
         // External commands
@@ -1086,35 +1092,34 @@ impl Isolate {
         _redirections: &[parser::Redirection]
     ) -> Result<ExitStatus> {
         // then
-        let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr)?;
+        let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr);
         if result == ExitStatus::ExitedWith(0) {
-            return self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr);
+            return Ok(self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr));
         }
 
         // elif
         for elif in elif_parts {
-            let result = self.run_terms(&elif.condition, ctx.stdin, ctx.stdout, ctx.stderr)?;
+            let result = self.run_terms(&elif.condition, ctx.stdin, ctx.stdout, ctx.stderr);
             if result == ExitStatus::ExitedWith(0) {
-                return self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr);
+                return Ok(self.run_terms(then_part, ctx.stdin, ctx.stdout, ctx.stderr));
             }
         }
 
         // else
         if let Some(else_part) = else_part {
-            return self.run_terms(else_part, ctx.stdin, ctx.stdout, ctx.stderr);
+            return Ok(self.run_terms(else_part, ctx.stdin, ctx.stdout, ctx.stderr));
         }
 
         Ok(ExitStatus::ExitedWith(0))
     }
 
-    fn match_pattern(&self, pattern: &str, text: &str) -> bool {
+    fn match_pattern(&self, pattern: &str, text: &str) -> Result<bool> {
         match globset::GlobBuilder::new(pattern).build() {
             Ok(matcher) => {
-                matcher.compile_matcher().is_match(text)
+                Ok(matcher.compile_matcher().is_match(text))
             },
             Err(err) => {
-                // FIXME: return an Result instead
-                panic!("failed to construct globset matcher: {}", err);
+                Err(Error::from(err))
             }
         }
     }
@@ -1149,8 +1154,8 @@ impl Isolate {
                     }
                 }
 
-                if self.match_pattern(&pattern, &word) {
-                    return self.run_terms(&case.body, ctx.stdin, ctx.stdout, ctx.stderr);
+                if self.match_pattern(&pattern, &word)? {
+                    return Ok(self.run_terms(&case.body, ctx.stdin, ctx.stdout, ctx.stderr));
                 }
             }
         }
@@ -1167,12 +1172,12 @@ impl Isolate {
 
         let mut last_result = ExitStatus::ExitedWith(0);
         loop {
-            let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr)?;
+            let result = self.run_terms(condition, ctx.stdin, ctx.stdout, ctx.stderr);
             if result != ExitStatus::ExitedWith(0) {
                 break;
             }
 
-            last_result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr)?;
+            last_result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
         }
 
         Ok(last_result)
@@ -1183,7 +1188,7 @@ impl Isolate {
             let value = self.expand_word_into_string(word)?;
             self.set(&var_name, Value::String(value), false);
 
-            let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr)?;
+            let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
             match result {
                 ExitStatus::Break => break,
                 ExitStatus::Continue => (),
@@ -1232,7 +1237,7 @@ impl Isolate {
                 ExitStatus::ExitedWith(0)
             },
             parser::Command::Group { terms } => {
-                self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr)?
+                self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr)
             },
             parser::Command::Return => {
                 ExitStatus::Return
@@ -1270,12 +1275,8 @@ impl Isolate {
                 let stdout = pipe_in;
                 let stderr = 2;
                 let status = match self.run_terms(terms, stdin, stdout, stderr) {
-                    Ok(ExitStatus::ExitedWith(status)) => status,
-                    Err(err) => {
-                        eprintln!("nsh: error: {}", err);
-                        1
-                    },
-                    _ => 0,
+                    ExitStatus::ExitedWith(status) => status,
+                    _ => 1,
                 };
 
                 std::process::exit(status);
@@ -1291,7 +1292,7 @@ impl Isolate {
         pipeline_stdout: RawFd,
         stderr: RawFd,
         background: bool,
-    ) -> Result<ExitStatus> {
+    ) -> ExitStatus {
         // Invoke commands in a pipeline.
         let mut last_result = None;
         let mut iter = pipeline.commands.iter().peekable();
@@ -1319,32 +1320,47 @@ impl Isolate {
                 pgid,
                 background,
                 interactive: self.interactive
-            })?;
+            });
 
-            if let ExitStatus::Running(pid) = result {
-                if pgid.is_none() {
-                    // The first child (the process group leader) pid is used for pgid.
-                    pgid = Some(pid);
-                }
+            match result {
+                Ok(ExitStatus::Running(pid)) => {
+                    if pgid.is_none() {
+                        // The first child (the process group leader) pid is used for pgid.
+                        pgid = Some(pid);
+                    }
 
-                if self.interactive {
-                    setpgid(pid, pgid.unwrap()).expect("failed to setpgid");
-                }
+                    if self.interactive {
+                        setpgid(pid, pgid.unwrap()).expect("failed to setpgid");
+                    }
 
-                childs.push(pid);
+                    if let Some((pipe_out, pipe_in)) = pipes {
+                        stdin = pipe_out;
+                        // `pipe_in` is used by a child process and is no longer needed.
+                        close(pipe_in).expect("failed to close pipe_in");
+                    }
+
+                    childs.push(pid);
+                    last_result = Some(result.unwrap());
+                },
+                // Break, Continue, ...
+                Ok(_) => break,
+                Err(err) => {
+                    if err.find_root_cause().downcast_ref::<IndexOutOfBoundsError>().is_some() {
+                        eprintln!("nsh: error: index out of bounds");
+                        last_result = Some(ExitStatus::ExitedWith(1));
+                        break;
+                    }
+
+                    if err.find_root_cause().downcast_ref::<NoMatchesError>().is_some() {
+                        eprintln!("nsh: error: no matches");
+                        last_result = Some(ExitStatus::ExitedWith(1));
+                        break;
+                    }
+                },
             }
-
-            if let Some((pipe_out, pipe_in)) = pipes {
-                stdin = pipe_out;
-                // `pipe_in` is used by a child process and is no longer needed.
-                close(pipe_in).expect("failed to close pipe_in");
-            }
-
-            last_result = Some(result);
         }
 
         // Wait for the last command in the pipeline.
-        // FIXME: needs refactoring: last_status should be immutable
         let last_status = match last_result {
             Some(ExitStatus::ExitedWith(status)) => {
                 self.last_status = status;
@@ -1380,16 +1396,16 @@ impl Isolate {
                 }
             },
             Some(ExitStatus::Break) => {
-                return Ok(ExitStatus::Break);
+                return ExitStatus::Break;
             },
             Some(ExitStatus::Continue) => {
-                return Ok(ExitStatus::Continue);
+                return ExitStatus::Continue;
             },
             Some(ExitStatus::Return) => {
-                return Ok(ExitStatus::Return);
+                return ExitStatus::Return;
             },
             Some(ExitStatus::NoExec) => {
-                return Ok(ExitStatus::NoExec);
+                return ExitStatus::NoExec;
             },
             None => {
                 trace!("nothing to execute");
@@ -1405,7 +1421,7 @@ impl Isolate {
             }
         }
 
-        Ok(last_status)
+        last_status
     }
 
     /// Runs pipelines.
@@ -1415,7 +1431,7 @@ impl Isolate {
         stdin: RawFd,
         stdout: RawFd,
         stderr: RawFd,
-    ) -> Result<ExitStatus> {
+    ) -> ExitStatus {
         let mut last_status = ExitStatus::ExitedWith(0);
         for term in terms {
             for pipeline in &term.pipelines {
@@ -1423,22 +1439,22 @@ impl Isolate {
                 match (last_status, &pipeline.run_if) {
                     (ExitStatus::ExitedWith(0), RunIf::Success) => (),
                     (ExitStatus::ExitedWith(_), RunIf::Failure) => (),
-                    (ExitStatus::Break, _) => return Ok(ExitStatus::Break),
-                    (ExitStatus::Continue, _) => return Ok(ExitStatus::Continue),
-                    (ExitStatus::Return, _) => return Ok(ExitStatus::Return),
+                    (ExitStatus::Break, _) => return ExitStatus::Break,
+                    (ExitStatus::Continue, _) => return ExitStatus::Continue,
+                    (ExitStatus::Return, _) => return ExitStatus::Return,
                     (_, RunIf::Always) => (),
                     _ => continue,
                 }
 
-                last_status = self.run_pipeline(pipeline, stdin, stdout, stderr, term.background)?;
+                last_status = self.run_pipeline(pipeline, stdin, stdout, stderr, term.background);
             }
         }
 
-        Ok(last_status)
+        last_status
     }
 
     /// Runs commands.
-    pub fn eval(&mut self, ast: &Ast) -> Result<ExitStatus> {
+    pub fn eval(&mut self, ast: &Ast) -> ExitStatus {
         trace!("ast: {:#?}", ast);
 
         // Inherit shell's stdin/stdout/stderr.
@@ -1462,14 +1478,8 @@ impl Isolate {
     pub fn run_str(&mut self, script: &str) -> ExitStatus {
         match parser::parse(script) {
             Ok(ast) => {
-                match self.eval(&ast) {
-                    Ok(status) => status,
-                    Err(err) => {
-                        eprintln!("nsh: error: {}", err);
-                        ExitStatus::ExitedWith(1)
-                    }
-                }
-            }
+                self.eval(&ast)
+            },
             Err(parser::SyntaxError::Empty) => {
                 // Just ignore.
                 ExitStatus::ExitedWith(0)

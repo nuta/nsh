@@ -25,9 +25,11 @@ pub struct InternalCommandContext<'a> {
     pub stderr: BufWriter<FdFile>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Fail)]
 pub enum InternalCommandError {
+    #[fail(display = "command not found")]
     NotFound,
+    #[fail(display = "failed to create redirections")]
     BadRedirection,
 }
 
