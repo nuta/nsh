@@ -11,7 +11,7 @@ from pathlib import Path
 from termcolor import cprint
 import re
 
-def run_test(test):
+def run_test(build, test):
     cprint("Running {}...".format(test), attrs=["bold"], end="")
     sys.stdout.flush()
 
@@ -63,7 +63,7 @@ def run_test(test):
 
     # Run the test.
     p = subprocess.Popen(
-        ["./target/debug/nsh", str(test)],
+        ["./target/{}/nsh".format(build), str(test)],
         env={
             "RUST_BACKTRACE": "1",
             "RUST_LOG": "nsh=trace",
@@ -104,6 +104,7 @@ def run_test(test):
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--release", action="store_true")
     parser.add_argument("tests", nargs="*")
     args = parser.parse_args()
 
@@ -112,10 +113,15 @@ def main():
     else:
         tests = Path("test").glob("**/*.sh")
 
-    subprocess.run(["cargo", "build"], check=True)
+    if args.release:
+        build = "release"
+        subprocess.run(["cargo", "build", "--release"], check=True)
+    else:
+        build = "debug"
+        subprocess.run(["cargo", "build"], check=True)
 
     for test in tests:
-        run_test(test)
+        run_test(build, test)
 
 if __name__ == "__main__":
     main()
