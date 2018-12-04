@@ -71,13 +71,13 @@ impl Completions {
     }
 
     #[inline(always)]
-    pub fn selected(&self) -> Option<Arc<String>> {
-        self.entries.get(self.selected_index).cloned()
+    pub fn selected_index(&self) -> usize {
+        self.selected_index
     }
 
     #[inline(always)]
-    pub fn selected_index(&self) -> usize {
-        self.selected_index
+    pub fn get(&self, index: usize) -> Option<Arc<String>> {
+        self.entries.get(index).cloned()
     }
 
     #[inline(always)]

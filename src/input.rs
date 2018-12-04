@@ -28,6 +28,21 @@ fn get_current_yx(stdout: &mut Stdout) -> (u16, u16) {
     (y - 1, x - 1)
 }
 
+fn select_completion(completions: &Completions, completion_ctx: &CompletionContext, selected: usize, user_input: &mut String, user_cursor: &mut usize) {
+    if let Some(selected) = completions.get(selected) {
+        let prefix = user_input
+            .get(..(completion_ctx.current_word_offset))
+            .unwrap_or("")
+            .to_string();
+        let suffix_offset = completion_ctx.current_word_offset
+            + completion_ctx.current_word_len;
+        let suffix =
+            &user_input.get((suffix_offset)..).unwrap_or("").to_string();
+        *user_input = format!("{}{}{}", prefix, selected, suffix);
+        *user_cursor = completion_ctx.current_word_offset + selected.len();
+    }
+}
+
 pub fn input(config: &Config) -> Result<String, InputError> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
@@ -93,18 +108,13 @@ pub fn input(config: &Config) -> Result<String, InputError> {
                         InputMode::Normal => break 'input_line,
                         InputMode::Completion => {
                             trace!("ctx: {:?}", completion_ctx);
-                            if let Some(selected) = completions.selected() {
-                                let prefix = user_input
-                                    .get(..(completion_ctx.current_word_offset))
-                                    .unwrap_or("")
-                                    .to_string();
-                                let suffix_offset = completion_ctx.current_word_offset
-                                    + completion_ctx.current_word_len;
-                                let suffix =
-                                    &user_input.get((suffix_offset)..).unwrap_or("").to_string();
-                                user_input = format!("{}{}{}", prefix, selected, suffix);
-                                user_cursor = completion_ctx.current_word_offset + selected.len();
-                            }
+                            select_completion(
+                                &completions,
+                                &completion_ctx,
+                                completions.selected_index(),
+                                &mut user_input,
+                                &mut user_cursor
+                            );
                             mode = InputMode::Normal;
                             continue 'input_line;
                         }
@@ -116,7 +126,19 @@ pub fn input(config: &Config) -> Result<String, InputError> {
                         InputMode::Normal => {
                             completion_ctx = extract_completion_context(&user_input, user_cursor);
                             completions = call_completion(&completion_ctx);
-                            mode = InputMode::Completion;
+                            if completions.len() == 1 {
+                                // There is only one completion candidate. Select it and continue
+                                // normal input mode.
+                                select_completion(
+                                    &completions,
+                                    &completion_ctx,
+                                    0,
+                                    &mut user_input,
+                                    &mut user_cursor
+                                );
+                            } else {
+                                mode = InputMode::Completion;
+                            }
                         }
                     },
                     Event::Key(Key::Backspace) => {

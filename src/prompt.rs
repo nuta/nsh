@@ -258,7 +258,7 @@ pub fn render_prompt(
         if !results.is_empty() {
             for (i, entry) in iter.enumerate() {
                 let current = completions.display_index() + i;
-                let selected = current == completions.selected_index() as usize;
+                let selected = current == completions.selected_index();
                 if selected {
                     write!(completion_str, "{}{}", Underline, Bold).ok();
                 } else {
