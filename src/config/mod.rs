@@ -1,6 +1,6 @@
 mod server;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Config {
     // `$PROMPT`.
     #[serde(default = "default_prompt")]

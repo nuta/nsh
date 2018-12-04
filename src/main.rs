@@ -196,7 +196,7 @@ fn main() {
     path::init(&config);
     history::init(&config);
 
-    let mut isolate = exec::Isolate::new(config.clone(), getpid(), interactive);
+    let mut isolate = exec::Isolate::new(interactive);
     let status = match (opt.command, opt.file) {
         (Some(command), _) => isolate.run_str(&command),
         (_, Some(file)) => isolate.run_file(file),
