@@ -41,6 +41,7 @@ mod history;
 mod fuzzy;
 mod variable;
 mod config;
+mod doctor;
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -133,6 +134,10 @@ struct Opt {
     #[structopt(long = "config")]
     open_config: bool,
 
+    /// Check your terminal environment.
+    #[structopt(long = "doctor")]
+    doctor: bool,
+
     /// Run the given string.
     #[structopt(short = "c")]
     command: Option<String>,
@@ -150,6 +155,11 @@ pub static mut TIME_STARTED: Option<SystemTime> = None;
 fn main() {
     init_log();
     let opt = Opt::from_args();
+
+    if opt.doctor {
+        doctor::main();
+        return;
+    }
 
     if opt.open_config {
         config::main();
