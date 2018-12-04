@@ -771,7 +771,6 @@ impl Isolate {
                 (pid, ProcessState::Stopped(pid))
             },
             status => {
-                // TODO:
                 panic!("unexpected waitpid event: {:?}", status);
             }
         };
@@ -920,7 +919,6 @@ impl Isolate {
                     }
                 }
 
-                // TODO: inherit exported variables
                 execv(&argv0, &args).expect("failed to exec");
                 unreachable!();
             }
