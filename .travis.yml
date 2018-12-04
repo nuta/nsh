@@ -5,8 +5,12 @@ cache: cargo
 rust:
   - nightly
   - beta
-# Rust Edition 2018 is not yet stable.
-#  - stable
+  - stable
+
+matrix:
+  allow_failures:
+    - rust: beta
+    - rust: stable
 
 addons:
   apt:
