@@ -1,6 +1,5 @@
 use crate::completion::Completions;
 use crate::input::InputMode;
-use crate::utils::get_env;
 use nom::types::CompleteStr as Input;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::Style;

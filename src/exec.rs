@@ -316,11 +316,6 @@ impl Isolate {
     }
 
     #[inline]
-    pub fn config(&self) -> &Config {
-        &self.config
-    }
-
-    #[inline]
     pub fn interactive(&self) -> bool {
         self.interactive
     }

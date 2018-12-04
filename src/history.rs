@@ -91,6 +91,6 @@ impl HistorySelector {
     }
 }
 
-pub fn init(config: &Config) {
+pub fn init(_config: &Config) {
     LOAD_WORK.enqueue();
 }
