@@ -38,6 +38,7 @@ script:
   - cargo test
   - cargo build --release
   - cargo run -- --doctor
+  - cargo bench
   - ./tools/run-blackbox-tests.py
 
 notifications:
