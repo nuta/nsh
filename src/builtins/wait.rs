@@ -33,7 +33,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             }
         },
         Err(err) => {
-            writeln!(ctx.stdout, "wait: {}", err).ok();
+            writeln!(ctx.stderr, "wait: {}", err).ok();
             ExitStatus::ExitedWith(1)
         }
     }

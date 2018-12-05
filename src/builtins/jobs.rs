@@ -19,7 +19,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             ExitStatus::ExitedWith(0)
         },
         Err(err) => {
-            writeln!(ctx.stdout, "fg: {}", err).ok();
+            writeln!(ctx.stderr, "fg: {}", err).ok();
             ExitStatus::ExitedWith(1)
         }
     }

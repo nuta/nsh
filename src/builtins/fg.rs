@@ -23,12 +23,12 @@ pub(super) fn parse_job_id(
                 match (&job_id[1..]).parse() {
                     Ok(job_id) => JobId::new(job_id),
                     Err(_) => {
-                        writeln!(ctx.stdout, "nsh: invalid job id `{}'", job_id).ok();
+                        writeln!(ctx.stderr, "nsh: invalid job id `{}'", job_id).ok();
                         return Err(ExitStatus::ExitedWith(1));
                     },
                 }
             } else {
-                writeln!(ctx.stdout, "nsh: invalid job id `{}'", job_id).ok();
+                writeln!(ctx.stderr, "nsh: invalid job id `{}'", job_id).ok();
                 return Err(ExitStatus::ExitedWith(1));
             }
         },
@@ -36,7 +36,7 @@ pub(super) fn parse_job_id(
             match ctx.isolate.last_fore_job() {
                 Some(job) => job.id(),
                 None => {
-                    writeln!(ctx.stdout, "nsh: no jobs to run").ok();
+                    writeln!(ctx.stderr, "nsh: no jobs to run").ok();
                     return Err(ExitStatus::ExitedWith(1));
                 }
             }
@@ -46,7 +46,7 @@ pub(super) fn parse_job_id(
     match ctx.isolate.find_job_by_id(id) {
         Some(job) => Ok(job),
         None => {
-            writeln!(ctx.stdout, "nsh: no such job `{}'", id).ok();
+            writeln!(ctx.stderr, "nsh: no such job `{}'", id).ok();
             Err(ExitStatus::ExitedWith(1))
         }
     }
@@ -65,7 +65,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             }
         },
         Err(err) => {
-            writeln!(ctx.stdout, "fg: {}", err).ok();
+            writeln!(ctx.stderr, "nsh: fg: {}", err).ok();
             ExitStatus::ExitedWith(1)
         }
     }
