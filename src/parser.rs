@@ -1122,6 +1122,8 @@ named_args!(and_or_list<'a>(sep: Option<Input>)<Input<'a>, Vec<Pipeline>>,
 
 named!(compound_list<Input, Vec<Term>>,
     do_parse!(
+        // Skip `;`
+        opt!(call!(operator, ";")) >>
         head: call!(and_or_list, None) >>
         sep: opt!(alt!(
             do_parse!(
@@ -1356,7 +1358,7 @@ pub fn test_simple_commands() {
     );
 
     assert_eq!(
-        parse("echo foo & sleep 1 &\n echo bar; echo baz & echo foo2 &").unwrap(),
+        parse("echo foo & sleep 1 &\n echo bar; echo baz &; echo foo2 &").unwrap(),
         Ast {
             terms: vec![
                 Term {
