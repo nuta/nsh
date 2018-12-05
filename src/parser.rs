@@ -230,25 +230,30 @@ pub fn is_whitespace(ch: char) -> bool {
 
 // echo "double quote \" is a escaped"
 fn escape_sequence(buf: Input, in_quote: bool) -> IResult<Input, Span> {
-    if in_quote {
-        do_parse!(buf,
-            tag!("\\") >>
-            span: alt!(
-                map!(tag!("$"), |_| Span::Literal("$".to_string()))
-                | map!(tag!("n"), |_| Span::Literal("\n".to_string()))
-                | map!(tag!("e"), |_| Span::Literal("\x1b".to_string()))
-                | map!(tag!("a"), |_| Span::Literal("\x07".to_string()))
-                | map!(tag!("t"), |_| Span::Literal("\t".to_string()))
-                | map!(tag!("r"), |_| Span::Literal("\r".to_string()))
-                // \\, \', and \"
-                | map!(one_of!("\"\'\\"), |ch| Span::Literal(ch.to_string()))
-            ) >>
-            ( span )
+     // `echo a\nd` will output `and'.
+     if in_quote {
+        alt!(buf,
+            // "\$" -> "$""
+            map!(tag!("\\$"), |_| Span::Literal("$".to_owned()))
+            | map!(tag!("\\\""), |_| Span::Literal("\"".to_owned()))
+            | map!(tag!("\\\'"), |_| Span::Literal("\'".to_owned()))
+            | do_parse!(
+                tag!("\\") >>
+                ch: take!(1) >>
+                ({
+                    let mut s = "\\".to_owned();
+                    s += &ch;
+                    Span::Literal(s)
+                })
+            )
         )
-    } else {
-        // `echo a\nd` will output `and'.
-        do_parse!(buf, tag!("\\") >> ch: take!(1) >> (Span::Literal(ch.to_string())))
-    }
+     } else {
+         do_parse!(buf,
+            tag!("\\") >>
+            ch: take!(1) >>
+            (Span::Literal(ch.to_string()))
+        )
+     }
 }
 
 named_args!(pattern(quoted: bool)<Input, Span>,
@@ -2642,14 +2647,14 @@ pub fn test_string_literal() {
     );
 
     assert_eq!(
-        parse("echo \"\" \"hello world\""),
+        parse("echo -e \"\" \"hello\\tworld\""),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
-                        argv: vec![lit!("echo"), Word(vec![]), lit!("hello world")],
+                        argv: vec![lit!("echo"), lit!("-e"), Word(vec![]), lit!("hello\\tworld")],
                         assignments: vec![],
                         redirects: vec![],
                     }]
@@ -2696,14 +2701,14 @@ pub fn test_string_literal() {
 #[test]
 pub fn test_escape_sequences() {
     assert_eq!(
-        parse("echo \"\\e[1m\" \\$a\"b;\\\"c\"d \\\n \\this_\\i\\s_\\normal"),
+        parse("echo \"\\e[1m\" \\$a\"b;\\n\\\"c\"d \\\\n \\this_\\i\\s_\\normal"),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
-                        argv: vec![lit!("echo"), lit!("\u{1b}[1m"), lit!("$ab;\"cd"), lit!("this_is_normal")],
+                        argv: vec![lit!("echo"), lit!("\\e[1m"), lit!("$ab;\\n\"cd"), lit!("\\n"), lit!("this_is_normal")],
                         assignments: vec![],
                         redirects: vec![],
                     }]
