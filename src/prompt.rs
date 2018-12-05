@@ -331,7 +331,7 @@ pub fn render_prompt(
 #[test]
 fn test_prompt_parser() {
     assert_eq!(
-        parse_prompt("\\u at \\h in \\W\n$ "),
+        parse_prompt("\\u at \\h in \\W\\n$ "),
         Ok(Prompt {
             spans: vec![
                 Span::Username,
@@ -365,7 +365,7 @@ mod benchmarks {
     #[bench]
     fn complex_prompt_rendering_bench(b: &mut Bencher) {
         b.iter(|| {
-            let prompt = "\\c{cyan}\\c{bold}\\u@\\h:\\c{reset} \\W\n$\\c{reset} ";
+            let prompt = "\\c{cyan}\\c{bold}\\u@\\h:\\c{reset} \\W\\n$\\c{reset} ";
             let mode = InputMode::Normal;
             let completions = Completions::new(vec![]);
             let theme = "Solarized (dark)";
