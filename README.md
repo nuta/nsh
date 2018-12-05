@@ -20,6 +20,10 @@ Installation
 ------------
 TODO: Publish to crates.io
 
+Why create new shell?
+---------------------
+I got tired of making my zshrc faster.
+
 Comparisons
 -----------
 | | **nsh**  | **[bash](https://www.gnu.org/software/bash)**  | **[zsh](http://www.zsh.org/)** | **[fish](http://fishshell.com/)** | **[PowerShell](https://github.com/PowerShell/PowerShell)** |
