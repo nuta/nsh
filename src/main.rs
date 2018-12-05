@@ -38,7 +38,6 @@ mod exec;
 mod input;
 mod parser;
 mod path;
-mod worker;
 mod prompt;
 mod utils;
 mod history;
@@ -48,7 +47,6 @@ mod config;
 mod doctor;
 
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 use std::process;
 use std::sync::{Arc, Mutex};
 use structopt::StructOpt;
@@ -61,6 +59,24 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     let isolate_lock = Arc::new(Mutex::new(raw_isolate));
     let isolate_lock2 = isolate_lock.clone();
 
+    // Create a process group.
+    let pid = getpid();
+    setpgid(pid, pid).expect("failed to setpgid");
+    tcsetpgrp(0 /* stdin */, pid).expect("failed to tcsetpgrp");
+
+    // Ignore job-control-related signals in order not to stop the shell.
+    // (refer https://www.gnu.org/software/libc/manual)
+    // Don't ignore SIGCHLD! If you ignore it waitpid(2) returns ECHILD.
+    let action = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
+    unsafe {
+        sigaction(Signal::SIGINT, &action).expect("failed to sigaction");
+        sigaction(Signal::SIGQUIT, &action).expect("failed to sigaction");
+        sigaction(Signal::SIGTSTP, &action).expect("failed to sigaction");
+        sigaction(Signal::SIGTTIN, &action).expect("failed to sigaction");
+        sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
+    }
+
+
     //Evaluate ~/.nshrc asynchronously since it may take too long.
     let nshrc_loader = std::thread::spawn(move || {
         let mut isolate = isolate_lock2.lock().unwrap();
@@ -72,7 +88,7 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
         }
     });
 
-    // Read a line.
+    // Render the prompt and wait for an user input.
     let mut line = match input::input(config) {
         Ok(line) => {
             println!();
@@ -151,9 +167,6 @@ struct Opt {
     file: Option<PathBuf>,
 }
 
-
-pub static mut TIME_STARTED: Option<SystemTime> = None;
-
 /// The entry point. In the intreactive mode, we utilize asynchronous initializaiton
 /// (background worker threads) to render the prompt as soon as possible for hunan.
 fn main() {
@@ -170,31 +183,6 @@ fn main() {
         return;
     }
 
-    unsafe {
-        TIME_STARTED = Some(SystemTime::now());
-    }
-
-    let interactive = opt.command.is_none() && opt.file.is_none();
-    if interactive {
-        // Create a process group.
-        let pid = getpid();
-        setpgid(pid, pid).expect("failed to setpgid");
-        tcsetpgrp(0 /* stdin */, pid).expect("failed to tcsetpgrp");
-
-        // Ignore job-control-related signals in order not to stop the shell.
-        // (refer https://www.gnu.org/software/libc/manual)
-        let action = SigAction::new(SigHandler::SigIgn, SaFlags::empty(), SigSet::empty());
-        unsafe {
-            sigaction(Signal::SIGINT, &action).expect("failed to sigaction");
-            sigaction(Signal::SIGQUIT, &action).expect("failed to sigaction");
-            sigaction(Signal::SIGTSTP, &action).expect("failed to sigaction");
-            sigaction(Signal::SIGTTIN, &action).expect("failed to sigaction");
-            sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
-            // Don't ignore SIGCHLD! If you do so waitpid(2) returns ECHILD.
-            // sigaction(Signal::SIGCHLD, &action).expect("failed to sigaction");
-        }
-    }
-
     // Load ~/.nshconfig.
     let home_dir = dirs::home_dir().unwrap();
     let nshconfig_path = Path::new(&home_dir).join(".nshconfig");
@@ -206,10 +194,11 @@ fn main() {
         }
     };
 
-    worker::start_worker_threads();
+    // Initialize subsystems.
     path::init(&config);
     history::init(&config);
 
+    let interactive = opt.command.is_none() && opt.file.is_none();
     let status = match (opt.command, opt.file) {
         (Some(command), _) => {
             let mut isolate = exec::Isolate::new("nsh", interactive);

@@ -37,7 +37,7 @@ pub struct NoMatchesError;
 type Result<I> = std::result::Result<I, Error>;
 
 fn kill_process_group(pgid: Pid, signal: Signal) -> Result<()> {
-    kill(Pid::from_raw(-pgid.as_raw()), signal).map_err(|err| Error::from(err))
+    kill(Pid::from_raw(-pgid.as_raw()), signal).map_err(Error::from)
 }
 
 fn move_fd(src: RawFd, dst: RawFd) {
@@ -1298,17 +1298,15 @@ impl Isolate {
             let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
             let expanded_words = self.expand_word_into_vec(unexpanded_word, &ifs)?;
             for pattern_word in expanded_words {
-                for values in pattern_word.expand_glob() {
-                    for value in values {
-                        self.set(&var_name, Value::String(value), false);
+                for value in pattern_word.expand_glob()? {
+                    self.set(&var_name, Value::String(value), false);
 
-                        let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
-                        match result {
-                            ExitStatus::Break => break 'for_loop,
-                            ExitStatus::Continue => (),
-                            ExitStatus::Return => return Ok(result),
-                            _ => (),
-                        }
+                    let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
+                    match result {
+                        ExitStatus::Break => break 'for_loop,
+                        ExitStatus::Continue => (),
+                        ExitStatus::Return => return Ok(result),
+                        _ => (),
                     }
                 }
             }

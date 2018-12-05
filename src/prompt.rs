@@ -264,7 +264,7 @@ pub fn render_prompt(
                 } else {
                     write!(completion_str, "{}{}", NoUnderline, NoBold).ok();
                 }
-                write!(completion_str, "{}{}{}\n", CurrentLine, entry, Reset).ok();
+                writeln!(completion_str, "{}{}{}", CurrentLine, entry, Reset).ok();
             }
 
             write!(completion_str, "{}{}{}{} {}/{} ",
@@ -292,12 +292,12 @@ pub fn render_prompt(
 
     let rendered_lines = prompt_lines + completion_lines;
     let avail = std::cmp::max(0, i32::from(y_max) - i32::from(prompt_y));
-    let scroll = std::cmp::max(0, i32::from(rendered_lines) - i32::from(avail) - 1) as u16;
+    let scroll = std::cmp::max(0, i32::from(rendered_lines) - avail - 1) as u16;
     let new_prompt_y = prompt_y - scroll;
     let user_cursor_pos = (prompt_last_line_len + user_cursor) as u16;
 
     for _ in 0..std::cmp::max(0, scroll) {
-        write!(buf, "\n").ok();
+        writeln!(buf).ok();
     }
 
     // Clear the current prompt.

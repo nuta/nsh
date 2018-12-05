@@ -15,10 +15,7 @@ impl FdFile {
     pub fn read_line(&self) -> Option<String> {
         let mut line = Vec::new();
         loop {
-            let mut ch = Vec::with_capacity(1);
-            ch.resize(1, 0);
-
-            trace!("read char ----------------------");
+            let mut ch = vec![0; 1];
             match unistd::read(self.fd, &mut ch) {
                 // EOF
                 Ok(read_len) if read_len == 0 => break,

@@ -69,7 +69,6 @@ pub fn input(config: &Config) -> Result<String, InputError> {
     // TODO: move these variables into InputMode::Completion.
     let mut completions = Completions::new(vec![]);
     let mut completion_ctx: CompletionContext = Default::default();
-    let mut print_startup_time = true;
     let mut history = HistorySelector::new();
 
     'input_line: loop {
@@ -91,12 +90,6 @@ pub fn input(config: &Config) -> Result<String, InputError> {
         stdout.flush().ok();
         prompt_y = prompt_y2;
         rendered_lines = rendered_lines2;
-
-        if print_startup_time {
-            let now = std::time::SystemTime::now();
-            trace!("startup time: {:?}", now.duration_since(unsafe { crate::TIME_STARTED.unwrap() }));
-            print_startup_time = false;
-        }
 
         // Read a line from stdin.
         match stdin_events.next() {

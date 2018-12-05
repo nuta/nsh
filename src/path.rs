@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs::read_dir;
 use std::sync::{RwLock, Arc};
-use crate::worker::Work;
 use crate::fuzzy::FuzzyVec;
 use crate::completion::Completions;
 use crate::config::Config;
@@ -9,16 +8,14 @@ use crate::config::Config;
 lazy_static! {
     static ref PATH_TABLE: RwLock<BTreeMap<String, String>> = RwLock::new(BTreeMap::new());
     static ref PATH_FUZZY_VEC: RwLock<FuzzyVec> = RwLock::new(FuzzyVec::new());
-    static ref RELOAD_WORK: Work = Work::new(reload_paths);
 }
 
 pub fn wait_for_path_loader() {
-    RELOAD_WORK.wait();
+    // XXX: Assumes that reload_path() thread aquires the writer lock before.
+    PATH_TABLE.write().ok();
 }
 
 pub fn lookup_external_command(cmd: &str) -> Option<String> {
-    RELOAD_WORK.wait();
-
     if cmd.starts_with('/') {
         Some(cmd.to_string())
     } else {
@@ -54,5 +51,7 @@ fn reload_paths() {
 
 pub fn init(config: &Config) {
     std::env::set_var("PATH", config.path.clone());
-    RELOAD_WORK.enqueue();
+    std::thread::spawn(|| {
+        reload_paths();
+    });
 }

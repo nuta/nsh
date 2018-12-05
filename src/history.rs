@@ -4,12 +4,10 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufRead, Write};
 use std::sync::Mutex;
 use crate::config::Config;
-use crate::worker::Work;
 use crate::fuzzy::FuzzyVec;
 
 lazy_static! {
     static ref HISTORY: Mutex<FuzzyVec> = Mutex::new(FuzzyVec::new());
-    static ref LOAD_WORK: Work = Work::new(load_history);
 }
 
 pub fn append_history(line: &str) {
@@ -92,5 +90,7 @@ impl HistorySelector {
 }
 
 pub fn init(_config: &Config) {
-    LOAD_WORK.enqueue();
+    std::thread::spawn(|| {
+        load_history();
+    });
 }
