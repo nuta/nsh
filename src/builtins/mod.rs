@@ -16,6 +16,7 @@ mod jobs;
 mod wait;
 mod shift;
 mod read;
+mod unset;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
@@ -65,6 +66,7 @@ lazy_static! {
         commands.insert("jobs", crate::builtins::jobs::command);
         commands.insert("shift", crate::builtins::shift::command);
         commands.insert("read", crate::builtins::read::command);
+        commands.insert("unset", crate::builtins::unset::command);
         commands
     };
 }

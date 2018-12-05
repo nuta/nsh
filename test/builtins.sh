@@ -13,7 +13,15 @@ func1() {
     shift
     echo $1
     shift
-    exit 0
 }
 
 func1 a b "c d"
+
+echo "unset --------------"
+foo=123
+echo $foo
+unset foo
+echo $foo
+
+exit 0
+echo unreachable
