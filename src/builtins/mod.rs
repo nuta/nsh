@@ -1,7 +1,7 @@
 use crate::exec::{ExitStatus, Isolate};
 use crate::utils::FdFile;
 use std::collections::BTreeMap;
-use std::io::{Write, BufReader, BufWriter};
+use std::io::{Write};
 
 mod alias;
 mod cd;
@@ -21,9 +21,9 @@ mod unset;
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
     pub isolate: &'a mut Isolate,
-    pub stdin: BufReader<FdFile>,
-    pub stdout: BufWriter<FdFile>,
-    pub stderr: BufWriter<FdFile>
+    pub stdin: FdFile,
+    pub stdout: FdFile,
+    pub stderr: FdFile
 }
 
 #[derive(Debug, Fail)]

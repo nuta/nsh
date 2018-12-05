@@ -17,7 +17,6 @@ use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::path::PathBuf;
 use std::io::prelude::*;
-use std::io::{BufReader, BufWriter};
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
@@ -1089,9 +1088,9 @@ impl Isolate {
         let mut ctx = InternalCommandContext {
             argv,
             isolate: self,
-            stdin: BufReader::new(FdFile::new(stdin)),
-            stdout: BufWriter::new(FdFile::new(stdout)),
-            stderr: BufWriter::new(FdFile::new(stderr)),
+            stdin: FdFile::new(stdin),
+            stdout: FdFile::new(stdout),
+            stderr: FdFile::new(stderr),
         };
 
         let cmd = argv[0].as_str();
@@ -1440,6 +1439,12 @@ impl Isolate {
                 interactive: self.interactive
             });
 
+            if let Some((pipe_out, pipe_in)) = pipes {
+                stdin = pipe_out;
+                // `pipe_in` is used by a child process and is no longer needed.
+                close(pipe_in).expect("failed to close pipe_in");
+            }
+
             last_result = match result {
                 Ok(ExitStatus::Running(pid)) => {
                     if pgid.is_none() {
@@ -1490,12 +1495,6 @@ impl Isolate {
                     unreachable!();
                 },
             };
-
-            if let Some((pipe_out, pipe_in)) = pipes {
-                stdin = pipe_out;
-                // `pipe_in` is used by a child process and is no longer needed.
-                close(pipe_in).expect("failed to close pipe_in");
-            }
         }
 
         // Wait for the last command in the pipeline.

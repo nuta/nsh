@@ -2,7 +2,7 @@ use crate::builtins::InternalCommandContext;
 use crate::exec::ExitStatus;
 use crate::variable::Value;
 use structopt::StructOpt;
-use std::io::{BufRead, Write};
+use std::io::Write;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "read", about = "read command.")]
@@ -24,21 +24,15 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
                 }
             }
 
-            let mut value = String::new();
-            match ctx.stdin.read_line(&mut value) {
-                Ok(_) => {
-                    if value.is_empty() {
-                        // EOF
-                        return ExitStatus::ExitedWith(1);
-                    }
-
-                    let trimed_value = value.trim_end();
+            match ctx.stdin.read_line() {
+                Some(line) => {
+                    let trimed_value = line.trim_end();
                     let value = Value::String(trimed_value.to_owned());
                     ctx.isolate.set(&opts.var_name, value, false);
                     ExitStatus::ExitedWith(0)
                 },
-                Err(err) => {
-                    writeln!(ctx.stdout, "read: {}", err).ok();
+                None => {
+                    // EOF
                     ExitStatus::ExitedWith(1)
                 }
             }
