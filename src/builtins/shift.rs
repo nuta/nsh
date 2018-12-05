@@ -1,6 +1,6 @@
 use crate::builtins::InternalCommandContext;
 use crate::exec::ExitStatus;
-use crate::variable::{Value, Variable};
+use crate::variable::Value;
 use structopt::StructOpt;
 use std::io::Write;
 
@@ -29,7 +29,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             for (i, var) in args.iter().skip(opts.n.unwrap_or(1)).enumerate() {
                 let value = Value::String(var.as_str().to_string());
                 trace!("value: ${} = {:?}", i + 1, value);
-                current.set_nth_arg(i + 1, Variable::new(value));
+                current.set_nth_arg(i + 1, value);
             }
 
             ExitStatus::ExitedWith(0)

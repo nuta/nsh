@@ -180,8 +180,8 @@ impl Frame {
         }
     }
 
-    pub fn set(&mut self, key: &str, value: Variable) {
-        self.vars.insert(key.into(), Arc::new(value));
+    pub fn set(&mut self, key: &str, value: Value) {
+        self.vars.insert(key.into(), Arc::new(Variable::new(value)));
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
@@ -216,16 +216,15 @@ impl Frame {
         args
     }
 
+    /// Set `$1`, `$2`, ...
     pub fn set_args(&mut self, args: &[String]) {
-        // Set $1, $2, ...
         for (i, arg) in args.iter().enumerate() {
-            let var = Variable::new(Value::String(arg.clone()));
-            self.set(&(i + 1).to_string(), var);
+            self.set(&(i + 1).to_string(), Value::String(arg.clone()));
         }
     }
 
     /// 1-origin.
-    pub fn set_nth_arg(&mut self, index: usize, value: Variable) {
+    pub fn set_nth_arg(&mut self, index: usize, value: Value) {
         self.set(&index.to_string(), value)
     }
 
@@ -430,7 +429,7 @@ impl Isolate {
             &mut self.global
         };
 
-        frame.set(key, Variable::new(value));
+        frame.set(key, value);
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
