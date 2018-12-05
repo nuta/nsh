@@ -12,7 +12,7 @@ pub struct Config {
 }
 
 fn default_prompt() -> String {
-    "\\c{cyan}\\c{bold}\\u@\\h:\\c{reset} \\W\n$\\c{reset} ".to_owned()
+    "\\c{cyan}\\c{bold}\\u@\\h:\\c{reset} \\W\\n$\\c{reset} ".to_owned()
 }
 
 fn default_path() -> String {

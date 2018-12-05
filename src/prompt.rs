@@ -44,7 +44,7 @@ named!(span<Input, Span>,
         map!(tag!("\\u"), |_| Span::Username)
         | map!(tag!("\\h"), |_| Span::Hostname)
         | map!(tag!("\\W"), |_| Span::CurrentDir)
-        | map!(tag!("\n"), |_| Span::Newline)
+        | map!(tag!("\\n"), |_| Span::Newline)
         | map!(tag!("\\c{reset}"), |_| Span::Color(Color::Reset))
         | map!(tag!("\\c{bold}"), |_| Span::Color(Color::Bold))
         | map!(tag!("\\c{underline}"), |_| Span::Color(Color::Underline))
