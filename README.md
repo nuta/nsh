@@ -20,8 +20,8 @@ Installation
 ------------
 TODO: Publish to crates.io
 
-Why create new shell?
----------------------
+Why create a new shell?
+------------------------
 I got tired of making my zshrc faster.
 
 Comparisons
@@ -72,10 +72,9 @@ source code, and there must be bugs. To make nsh practical for daily use, I need
 
 ### How can I contribute?
 - **Report bugs** in [GitHub issues](https://github.com/seiyanuta/nsh/issues). Please attach
-  a minimal reproducible example (e.g. a valid shell script which causes a parser error)
-  *if possible*. It helps me to fix the bug easier.
+  a minimal reproducible example (e.g. shell script) *if possible*. It helps me to fix the bug easier.
 - **Suggest enhancements** in [GitHub issues](https://github.com/seiyanuta/nsh/issues).
-- **Submit a Pull Request** which implements a new feature, fixes a bug, rephrases sentences in documentation, etc.
+- **Submit a Pull Request** which implements a new feature, fixes a bug, refactors code, rephrases sentences in documentation, etc.
 
 License
 -------
