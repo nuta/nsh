@@ -1,0 +1,35 @@
+$? ---------
+0
+1
+bar
+0
+$0 ---------
+test/special_vars2.sh
+$1 ---------
+
+$2 ---------
+
+$# ---------
+2
+$* ---------
+spam
+egg
+breakfast
+$@ ---------
+spam
+egg
+breakfast
+"$*" ---------
+spam egg breakfast
+"$@" ---------
+spam egg
+breakfast
+"$@*" ---------
+breakfast
+"$@" ---------
+breakfast
+$0 ---------
+test/special_vars2.sh
+$1 ---------
+breakfast
+$2 ---------

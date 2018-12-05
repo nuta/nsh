@@ -10,14 +10,12 @@ pub enum Value {
 #[derive(Debug)]
 pub struct Variable {
     value: Value,
-    is_local: bool,
 }
 
 impl Variable {
-    pub fn new(value: Value, is_local: bool) -> Variable {
+    pub fn new(value: Value) -> Variable {
         Variable {
             value,
-            is_local,
         }
     }
 

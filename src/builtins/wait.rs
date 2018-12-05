@@ -15,12 +15,21 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("wait: {:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
-            match parse_job_id(ctx, opts.job_id) {
-                Ok(job) => {
-                    ctx.isolate.wait_for_job(&job);
-                    ExitStatus::ExitedWith(0)
-                },
-                Err(status) => status,
+            if opts.job_id.is_some() {
+                match parse_job_id(ctx, opts.job_id) {
+                    Ok(job) => {
+                        ctx.isolate.wait_for_job(&job);
+                        ExitStatus::ExitedWith(0)
+                    },
+                    Err(status) => status,
+                }
+            } else {
+                // Wait for all jobs.
+                for job in &ctx.isolate.jobs() {
+                    ctx.isolate.wait_for_job(job);
+                }
+
+                ExitStatus::ExitedWith(0)
             }
         },
         Err(err) => {

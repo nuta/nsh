@@ -48,6 +48,7 @@ fn move_fd(src: RawFd, dst: RawFd) {
     }
 }
 
+#[derive(Debug)]
 enum LiteralOrGlob {
     Literal(String),
     AnyString,
@@ -190,6 +191,67 @@ impl Frame {
     pub fn get(&self, key: &str) -> Option<Arc<Variable>> {
         self.vars.get(key).cloned()
     }
+
+    pub fn get_args(&self) -> Vec<Arc<Variable>> {
+        let mut args = Vec::new();
+        for i in 1.. {
+            if let Some(var) = self.get(&i.to_string()) {
+                args.push(var.clone());
+            } else {
+                break;
+            }
+        }
+
+        args
+    }
+
+    pub fn get_string_args(&self) -> Vec<String> {
+        let mut args = Vec::new();
+        for var in self.get_args() {
+            if let Value::String(value) = var.value() {
+                args.push(value.clone());
+            }
+        }
+
+        args
+    }
+
+    pub fn set_args(&mut self, args: &[String]) {
+        // Set $1, $2, ...
+        for (i, arg) in args.iter().enumerate() {
+            let var = Variable::new(Value::String(arg.clone()));
+            self.set(&(i + 1).to_string(), var);
+        }
+    }
+
+    /// 1-origin.
+    pub fn set_nth_arg(&mut self, index: usize, value: Variable) {
+        self.set(&index.to_string(), value)
+    }
+
+    /// 1-origin.
+    pub fn remove_nth_arg(&mut self, index: usize) -> Option<Arc<Variable>> {
+        self.remove(&index.to_string())
+    }
+
+    /// 1-origin.
+    pub fn get_nth_arg(&self, index: usize) -> Option<Arc<Variable>> {
+        self.get(&index.to_string())
+    }
+
+    pub fn num_args(&self) -> usize {
+        let mut num_args = 0;
+        for i in 1..=9 {
+            if self.get(&i.to_string()).is_none() {
+                break;
+            }
+
+            num_args += 1;
+        }
+
+        num_args
+
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -270,10 +332,16 @@ impl Job {
 pub struct Isolate {
     shell_pgid: Pid,
     interactive: bool,
+    /// $0
+    script_name: String,
     term_fd: RawFd,
     shell_termios: Option<Termios>,
 
+    /// `$?`
     last_status: i32,
+    /// `$!`
+    last_back_job: Option<Arc<Job>>,
+
     /// Global scope.
     global: Frame,
     /// Local scopes (variables declared with `local').
@@ -295,7 +363,7 @@ pub struct Isolate {
 unsafe impl Send for Isolate {}
 
 impl Isolate {
-    pub fn new(interactive: bool) -> Isolate {
+    pub fn new(script_name: &str, interactive: bool) -> Isolate {
         let shell_pgid = getpid();
         let shell_termios = if interactive {
             Some(tcgetattr(0 /* stdin */).expect("failed to tcgetattr"))
@@ -305,6 +373,7 @@ impl Isolate {
 
         Isolate {
             shell_pgid,
+            script_name: script_name.to_string(),
             interactive,
             term_fd: 0 /* stdin */,
             shell_termios,
@@ -320,6 +389,7 @@ impl Isolate {
             states: HashMap::new(),
             pid_job_mapping: HashMap::new(),
             last_fore_job: None,
+            last_back_job: None,
         }
     }
 
@@ -360,7 +430,7 @@ impl Isolate {
             &mut self.global
         };
 
-        frame.set(key, Variable::new(value, is_local));
+        frame.set(key, Variable::new(value));
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
@@ -441,18 +511,43 @@ impl Isolate {
         }
     }
 
-    fn expand_param(&mut self, name: &str, op: &ExpansionOp) -> Result<String> {
+    fn expand_param(&mut self, name: &str, op: &ExpansionOp) -> Result<Vec<String>> {
         match name {
             "?" => {
-                return Ok(self.last_status.to_string());
+                return Ok(vec![self.last_status.to_string()]);
+            },
+            "!" => {
+                let pgid = match &self.last_back_job {
+                    Some(job) => job.pgid.to_string(),
+                    None => 0.to_string(),
+                };
+
+                return Ok(vec![pgid]);
+            },
+            "0" => {
+                return Ok(vec![self.script_name.clone()]);
+            },
+            "$" => {
+                return Ok(vec![self.shell_pgid.to_string()]);
+            },
+            "#" => {
+                return Ok(vec![self.current_frame().num_args().to_string()]);
+            },
+            "*" => {
+                let args = self.current_frame().get_string_args();
+                let expanded = args.join(" ");
+                return Ok(vec![expanded]);
+            },
+            "@" => {
+                return Ok(self.current_frame().get_string_args());
             },
             _ => {
                 if let Some(var) = self.get(name) {
                     // $<name> is defined and contains a string value.
                     let value = var.as_str().to_string();
                     return match op {
-                        ExpansionOp::Length => Ok(value.len().to_string()),
-                        _ => Ok(value),
+                        ExpansionOp::Length => Ok(vec![value.len().to_string()]),
+                        _ => Ok(vec![value]),
                     };
                 }
             }
@@ -466,7 +561,7 @@ impl Isolate {
                     std::process::exit(1);
                 }
 
-                Ok("0".to_owned())
+                Ok(vec!["0".to_owned()])
             },
             ExpansionOp::GetOrEmpty => {
                 if self.nounset {
@@ -474,13 +569,15 @@ impl Isolate {
                     std::process::exit(1);
                 }
 
-                Ok("".to_owned())
+                Ok(vec!["".to_owned()])
             },
-            ExpansionOp::GetOrDefault(word) => self.expand_word_into_string(word),
+            ExpansionOp::GetOrDefault(word) => {
+                self.expand_word_into_string(word).map(|s| vec![s])
+            },
             ExpansionOp::GetOrDefaultAndAssign(word) => {
                 let content = self.expand_word_into_string(word)?;
                 self.set(name, Value::String(content.clone()), false);
-                Ok(content)
+                Ok(vec![content])
             }
             _ => panic!("TODO:"),
         }
@@ -490,12 +587,16 @@ impl Isolate {
         let mut words = Vec::new();
         let mut current_word = Vec::new();
         for span in word.spans() {
-            let (frag, expand) = match span {
+            let (frags, expand) = match span {
                 Span::Literal(s) => {
-                    (LiteralOrGlob::Literal(s.clone()), false)
+                    (vec![LiteralOrGlob::Literal(s.clone())], false)
                 },
                 Span::Parameter { name, op, quoted } => {
-                    (LiteralOrGlob::Literal(self.expand_param(name, op)?), !quoted)
+                    let frags = self.expand_param(name, op)?
+                        .iter()
+                        .map(|frag| LiteralOrGlob::Literal(frag.to_owned()))
+                        .collect();
+                    (frags, !quoted)
                 },
                 Span::ArrayParameter { name, index, quoted } => {
                     let index = self.evaluate_expr(index);
@@ -508,11 +609,11 @@ impl Isolate {
                             .get(name)
                             .map(|v| v.value_at(index as usize).to_string())
                             .unwrap_or_else(|| "".to_owned());
-                    (LiteralOrGlob::Literal(frag), !quoted)
+                    (vec![LiteralOrGlob::Literal(frag)], !quoted)
                 },
                 Span::ArithExpr { expr } => {
                     let result = self.evaluate_expr(expr).to_string();
-                    (LiteralOrGlob::Literal(result), false)
+                    (vec![LiteralOrGlob::Literal(result)], false)
                 },
                 Span::Tilde(user) => {
                     if user.is_some() {
@@ -521,7 +622,7 @@ impl Isolate {
                     }
 
                     let dir = dirs::home_dir().unwrap().to_str().unwrap().to_owned();
-                    (LiteralOrGlob::Literal(dir), false)
+                    (vec![LiteralOrGlob::Literal(dir)], false)
                 },
                 Span::Command { body, quoted } => {
                     let raw_stdout = self.run_in_subshell(body);
@@ -534,36 +635,47 @@ impl Isolate {
                         .to_string()
                         .trim_end_matches('\n')
                         .to_owned();
-                    (LiteralOrGlob::Literal(stdout), !quoted)
+                    (vec![LiteralOrGlob::Literal(stdout)], !quoted)
                 },
                 Span::AnyChar { quoted } if !*quoted => {
-                    (LiteralOrGlob::AnyChar, false)
+                    (vec![LiteralOrGlob::AnyChar], false)
                 },
                 Span::AnyString { quoted } if !*quoted => {
-                    (LiteralOrGlob::AnyString, false)
+                    (vec![LiteralOrGlob::AnyString], false)
                 },
                 Span::AnyChar { .. } => {
-                    (LiteralOrGlob::Literal("?".into()), false)
+                    (vec![LiteralOrGlob::Literal("?".into())], false)
                 },
                 Span::AnyString { .. } => {
-                    (LiteralOrGlob::Literal("*".into()), false)
+                    (vec![LiteralOrGlob::Literal("*".into())], false)
                 },
             };
 
-            // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo=123`.
-            match frag {
-                LiteralOrGlob::Literal(ref lit) if expand => {
-                    if !current_word.is_empty() {
-                        words.push(PatternWord::new(current_word));
-                        current_word = Vec::new();
-                    }
+            // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo="1 2 3"`.
+            trace!("expand = {}, frags = {:?}", expand, frags);
+            let frags_len = frags.len();
+            for frag in frags {
+                match frag {
+                    LiteralOrGlob::Literal(ref lit) if expand => {
+                        if !current_word.is_empty() {
+                            words.push(PatternWord::new(current_word));
+                            current_word = Vec::new();
+                        }
 
-                    for word in lit.split(|c| ifs.contains(c)) {
-                        words.push(PatternWord::new(vec![LiteralOrGlob::Literal(word.into())]));
+                        trace!("lit = '{}'", lit);
+                        for word in lit.split(|c| ifs.contains(c)) {
+                            trace!("expanded = '{}'", word);
+                            words.push(PatternWord::new(vec![LiteralOrGlob::Literal(word.into())]));
+                        }
+                    },
+                    frag => {
+                        current_word.push(frag);
                     }
-                },
-                frag => {
-                    current_word.push(frag);
+                }
+
+                if frags_len > 1 && !current_word.is_empty() {
+                    words.push(PatternWord::new(current_word));
+                    current_word = Vec::new();
                 }
             }
         }
@@ -712,6 +824,9 @@ impl Isolate {
     }
 
     pub fn run_in_background(&mut self, job: &Arc<Job>, sigcont: bool) {
+        trace!("bak **********\n{:?}", job.pgid);
+        self.last_back_job = Some(job.clone());
+
         if sigcont {
             kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
         }
@@ -1028,12 +1143,8 @@ impl Isolate {
         if let Some(ref var) = self.get(argv[0].as_str()) {
             if let Value::Function(ref body) = var.value() {
                 self.enter_frame();
-
-                // Set $1, $2, ...
-                for (i, arg) in argv.iter().skip(1).enumerate() {
-                    self.set(&(i + 1).to_string(), Value::String(arg.clone()), true);
-                }
-
+                let args: Vec<String> = argv.iter().skip(1).cloned().collect();
+                self.current_frame_mut().set_args(&args);
                 let result = match self.run_command(&body, ctx)? {
                     ExitStatus::Return => ExitStatus::ExitedWith(0),
                     result => result,
@@ -1184,16 +1295,24 @@ impl Isolate {
     }
 
     fn run_for_command(&mut self, ctx: &Context, var_name: &str, words: &[Word], body: &[parser::Term]) -> Result<ExitStatus> {
-        for word in words {
-            let value = self.expand_word_into_string(word)?;
-            self.set(&var_name, Value::String(value), false);
+    'for_loop:
+        for unexpanded_word in words {
+            let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
+            let expanded_words = self.expand_word_into_vec(unexpanded_word, &ifs)?;
+            for pattern_word in expanded_words {
+                for values in pattern_word.expand_glob() {
+                    for value in values {
+                        self.set(&var_name, Value::String(value), false);
 
-            let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
-            match result {
-                ExitStatus::Break => break,
-                ExitStatus::Continue => (),
-                ExitStatus::Return => return Ok(result),
-                _ => (),
+                        let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
+                        match result {
+                            ExitStatus::Break => break 'for_loop,
+                            ExitStatus::Continue => (),
+                            ExitStatus::Return => return Ok(result),
+                            _ => (),
+                        }
+                    }
+                }
             }
         }
 
@@ -1391,8 +1510,14 @@ impl Isolate {
                 let job = self.create_job(cmd_name, pgid.unwrap(), childs);
 
                 if !self.interactive {
+                    if background {
+                        // Update `$!`.
+                        self.run_in_background(&job, false);
+                    }
+
                     match self.wait_for_job(&job) {
                         ProcessState::Completed(status) => {
+                            self.last_status = status;
                             ExitStatus::ExitedWith(status)
                         },
                         ProcessState::Stopped(_) => {
@@ -1514,7 +1639,7 @@ impl Isolate {
 
 #[test]
 fn test_expr() {
-    let mut isolate = Isolate::new(false);
+    let mut isolate = Isolate::new("nsh", false);
     assert_eq!(
         isolate.evaluate_expr(&&Expr::Mul(BinaryExpr {
             lhs: Box::new(Expr::Literal(2)),

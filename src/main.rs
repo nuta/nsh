@@ -210,15 +210,28 @@ fn main() {
     path::init(&config);
     history::init(&config);
 
-    let mut isolate = exec::Isolate::new(interactive);
     let status = match (opt.command, opt.file) {
-        (Some(command), _) => isolate.run_str(&command),
-        (_, Some(file)) => isolate.run_file(file),
-        (_, _) => interactive_mode(&config, isolate),
+        (Some(command), _) => {
+            let mut isolate = exec::Isolate::new("nsh", interactive);
+            isolate.run_str(&command)
+        },
+        (_, Some(file)) => {
+            let script_name = file.to_str().unwrap();
+            let mut isolate = exec::Isolate::new(script_name, interactive);
+            isolate.run_file(file)
+        },
+        (_, _) => {
+            let isolate = exec::Isolate::new("nsh", interactive);
+            interactive_mode(&config, isolate)
+        },
     };
 
     match status {
         ExitStatus::ExitedWith(status) => process::exit(status),
+        ExitStatus::Running(_) => {
+            eprintln!("nsh: warning: some jobs are running in background");
+            process::exit(0);
+        },
         ExitStatus::NoExec=> process::exit(0),
         _ => panic!("unexpected {:?}", status),
     }

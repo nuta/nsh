@@ -234,7 +234,8 @@ fn escape_sequence(buf: Input, in_quote: bool) -> IResult<Input, Span> {
         do_parse!(buf,
             tag!("\\") >>
             span: alt!(
-                map!(tag!("n"), |_| Span::Literal("\n".to_string()))
+                map!(tag!("$"), |_| Span::Literal("$".to_string()))
+                | map!(tag!("n"), |_| Span::Literal("\n".to_string()))
                 | map!(tag!("e"), |_| Span::Literal("\x1b".to_string()))
                 | map!(tag!("a"), |_| Span::Literal("\x07".to_string()))
                 | map!(tag!("t"), |_| Span::Literal("\t".to_string()))
@@ -496,6 +497,11 @@ named!(var_name<Input, String>,
     map!(recognize!(
         alt!(
             tag!("?")
+            | tag!("$")
+            | tag!("!")
+            | tag!("*")
+            | tag!("@")
+            | tag!("#")
             | take_while_m_n!(1, 1, is_digit)
             | take_while1!(is_valid_var_name_char)
         )
@@ -2688,14 +2694,14 @@ pub fn test_string_literal() {
 #[test]
 pub fn test_escape_sequences() {
     assert_eq!(
-        parse("echo \"\\e[1m\" a\"b;\\\"c\"d \\\n \\this_\\i\\s_\\normal"),
+        parse("echo \"\\e[1m\" \\$a\"b;\\\"c\"d \\\n \\this_\\i\\s_\\normal"),
         Ok(Ast {
             terms: vec![Term {
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
-                        argv: vec![lit!("echo"), lit!("\u{1b}[1m"), lit!("ab;\"cd"), lit!("this_is_normal")],
+                        argv: vec![lit!("echo"), lit!("\u{1b}[1m"), lit!("$ab;\"cd"), lit!("this_is_normal")],
                         assignments: vec![],
                         redirects: vec![],
                     }]
