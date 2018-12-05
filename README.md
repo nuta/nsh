@@ -14,7 +14,7 @@ Goals
 - **Zero configration** features out of the box and web-based configuration tool `nsh --config`.
 - **Written in Rust** :crab:
 
-TODO: add a GIF video
+![demo](https://gist.githubusercontent.com/seiyanuta/6deb34b183f30f45e1d239dba1e07dd8/raw/c959dd6aa90e19dbdca46d3c76a4bbda2bb2d07b/demo.gif)
 
 Installation
 ------------
