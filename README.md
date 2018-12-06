@@ -20,6 +20,13 @@ Installation
 ------------
 TODO: Publish to crates.io
 
+Configuration
+-------------
+- `~/.nshrc`: A shell script like `.bashrc`.
+- `~/.nshconfig`: A JSON file which contains preferences. Use `nsh --config` to edit.
+
+----
+
 Why create a new shell?
 ------------------------
 I got tired of making my zshrc faster.
@@ -79,3 +86,18 @@ source code, and there must be bugs. To make nsh practical for daily use, I need
 License
 -------
 CC0 or MIT. Choose whichever you prefer.
+
+----
+
+Internals
+---------
+
+### Asynchronous initialization
+For better user experience we want to print the prompt as soon as possible.
+To achieve blazingly fast first prompt rendering, in constrast to bash, nsh
+utilizes threads to initialize the shell environment such as history loading,
+`$PATH` scanning, and even `.nshrc` execution.
+
+Since we execute `.nshrc` in a background thread nsh introduces another config
+file named `.nshconfig`, a JSON file which contains some declarative configuration
+such as `$PROMPT` (aka. `$PS1`) and `$PATH`.
