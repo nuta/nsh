@@ -953,12 +953,18 @@ impl Isolate {
 
         // Determine the absolute path of the command.
         let argv0 = match lookup_external_command(&argv[0]) {
-            Some(argv0) => CString::new(argv0).unwrap(),
+            Some(argv0) => CString::new(argv0)?,
             None => {
                 eprintln!("nsh: command not found `{}'", argv[0]);
                 return Ok(ExitStatus::ExitedWith(1));
             }
         };
+
+        // Construct CString argv.
+        let mut args = Vec::new();
+        for arg in argv {
+            args.push(CString::new(arg)?);
+        }
 
         // Spawn a child.
         match fork().expect("failed to fork") {
@@ -966,11 +972,6 @@ impl Isolate {
                 Ok(ExitStatus::Running(child))
             },
             ForkResult::Child => {
-                let mut args = Vec::new();
-                for arg in argv {
-                    args.push(CString::new(arg).unwrap());
-                }
-
                 // Create or join a process group.
                 if ctx.interactive {
                     let pid = getpid();
@@ -1370,7 +1371,7 @@ impl Isolate {
 
     /// Runs commands in a subshell (`$()`).
     pub fn run_in_subshell(&mut self, terms: &[parser::Term]) -> Vec<u8> {
-        let (pipe_out, pipe_in) = pipe().unwrap();
+        let (pipe_out, pipe_in) = pipe().expect("failed to create a pipe");
 
         // Since child process has its own isolated address space, `RELOAD_WORK.wait()`
         // would block forever. Wait for the path loader before forking to make sure
@@ -1419,7 +1420,7 @@ impl Isolate {
             let pipes = if iter.peek().is_some() {
                 // There is a next command in the pipeline (e.g. date in
                 // `date | hexdump`). Create and connect a pipe.
-                let (pipe_out, pipe_in) = pipe().unwrap();
+                let (pipe_out, pipe_in) = pipe().expect("failed to create a pipe");
                 stdout = pipe_in;
                 Some((pipe_out, pipe_in))
             } else {
