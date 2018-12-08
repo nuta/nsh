@@ -1,6 +1,11 @@
 pub use nom::types::CompleteStr as Input;
 use nom::{self, IResult};
 
+#[repr(u32)]
+pub enum ParseError {
+    ExpectedKeyword = 1,
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RedirectionDirection {
     Input,  // cat < foo.txt
@@ -352,9 +357,15 @@ named_args!(expansion(quoted: bool)<Input, Span>,
     do_parse!(
         tag!("$") >>
         span: alt!(
-            call!(arith_expr, quoted) |
-            call!(command_expansion, quoted) |
-            call!(parameter_expansion, quoted)
+            map!(eof!(), |_| Span::Literal("$".into()))
+            | call!(arith_expr, quoted)
+            | call!(command_expansion, quoted)
+            | call!(parameter_expansion, quoted)
+            | map!(take!(1), |ch| {
+                let mut s = "$".to_string();
+                s += &ch;
+                Span::Literal(s)
+            })
         ) >>
         ( span )
     )
@@ -813,7 +824,7 @@ named_args!(symbol<'a>(symbol: &'static str)<Input<'a>, ()>,
 );
 
 named_args!(keyword<'a>(keyword: &'static str)<Input<'a>, ()>,
-    do_parse!(
+    add_return_error!(ErrorKind::Custom(32), do_parse!(
         // Peek first not to comsume whitespace/semilocon/newline.
         peek!(
             do_parse!(
@@ -828,7 +839,7 @@ named_args!(keyword<'a>(keyword: &'static str)<Input<'a>, ()>,
         peek!(alt!(eof!() | take_while1!(|c| !is_valid_word_char(c)))) >>
         take_while!(|c| is_whitespace(c) || c == ';' || c == '\n') >>
         ( () )
-    )
+    ))
 );
 
 named_args!(operator<'a>(keyword: &'static str)<Input<'a>, Input<'a>>,
