@@ -44,7 +44,6 @@ Comparisons
 Future Plans
 ------------
 - Support bash completions (`complete(1)` and `compgen(1)`).
-- Friendly syntax error message like `rustc`.
 - Smart fuzzy search in completion.
 - Auto correction as [fuck](https://github.com/nvbn/thefuck) does.
 - Plugins: Git information in prompt, rbenv, and more.

@@ -1,0 +1,238 @@
+//
+//  Misc.
+//
+WHITESPACE = _{ " " | "\t" | "\r" }
+COMMENT = _{ "#" ~ (!("\n") ~ ANY)* }
+word_chars = _{
+    !(
+        "|" | "&" | ";" | " " | "\t" | "\r" | "\n" | "`"
+        | "{" | "}" | "(" | ")" | "$" | "\"" | "'" | "*" | "?"
+    )
+    ~ ANY
+}
+var_name_chars = _{
+    "_" | ASCII_ALPHANUMERIC
+}
+
+wsnl = _{ ( WHITESPACE | COMMENT | "\n")+ }
+var_name = ${ var_name_chars+ }
+username = ${ (!("/") ~ word_chars)+ }
+special_var_name = _{ "?" | "$" | "!" | "*" | "@" | "#" | ASCII_DIGIT }
+
+index = { ("[" ~ expr ~ "]")? }
+
+//
+//  Expr
+//
+expr = !{ term ~ (term_op ~ expr)? }
+term_op = { "+" | "-" }
+term = { factor ~ (factor_op ~ term)? }
+factor_op = { "*" | "/" }
+sign = { ("+" | "-")? }
+factor = { sign ~ primary }
+primary = _{ num | ("$"? ~ var_name) | param_ex_span |  ("(" ~ expr ~ ")") }
+num = ${ ASCII_DIGIT+ }
+
+//
+//  Word
+//
+word = ${ (tilde_span | span) ~ span* }
+span = _{
+    double_quoted_span
+    | single_quoted_span
+    | literal_span
+    | any_string_span
+    | any_char_span
+    | expr_span
+    | command_span
+    | backtick_span
+    | param_ex_span
+    | param_span
+}
+literal_span = ${ (("\\" ~ ANY) | word_chars)+ }
+tilde_span = { "~" ~ username? }
+any_string_span = { "*" }
+any_char_span = { "?" }
+command_span = !{ "$(" ~ compound_list ~ ")" }
+backtick_span = !{ "`" ~ compound_list ~ "`" }
+expr_span = !{ "$((" ~ expr ~ "))" }
+expandable_var_name = { var_name | special_var_name }
+length_op ={ "#"? }
+param_op = { ":=" | ":-" | "-"  | "=" }
+param_opt = { param_op ~ word }
+param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ index ~ param_opt? ~ "}" }
+param_span = { "$" ~ expandable_var_name }
+
+double_quoted_span = { "\"" ~ double_quoted_span_inner* ~ "\"" }
+double_quoted_span_inner = _{
+    expr_span
+    | backtick_span
+    | command_span
+    | param_span
+    | param_ex_span
+    | literal_in_double_quoted_span
+}
+
+single_quoted_span = { "'" ~ single_quoted_span_inner* ~ "'" }
+single_quoted_span_inner = _{
+    literal_in_single_quoted_span
+}
+
+literal_in_double_quoted_span = ${
+    (
+        !("\"" | "\\" | "`" | "$") ~ ANY
+        | "\\" ~ ANY
+        | WHITESPACE
+    )+
+}
+
+literal_in_single_quoted_span = ${ ( "\\'"  | !("\'") ~ ANY | WHITESPACE)+ }
+
+//
+// Assignment
+//
+initializer = { array_initializer | string_initializer }
+string_initializer = { word }
+array_initializer = { ("(" ~ word* ~ ")") }
+
+assignment = { var_name ~ index ~ "=" ~ initializer ~ WHITESPACE? }
+assignment_command = { assignment+ }
+
+//
+// Simple Command
+//
+fd = { ASCII_DIGIT* }
+redirect_direction = { "<" | ">" | ">>" }
+redirect = { fd ~ redirect_direction ~ word }
+word_or_redirect = _{ redirect | word }
+reserved_word = ${
+    (
+        "break"
+        | "case"
+        | "continue"
+        | "done"
+        | "do"
+        | "elif"
+        | "else"
+        | "esac"
+        | "fi"
+        | "for"
+        | "function"
+        | "if"
+        | "in"
+        | "local"
+        | "return"
+        | "then"
+        | "while"
+    ) ~ !(word_chars)
+}
+argv0 = { !reserved_word ~ word }
+args = { word_or_redirect* }
+assignments = { assignment* }
+simple_command = { assignments ~ argv0 ~ args }
+
+//
+//  If Command
+//
+if_command = {
+    "if" ~ compound_list ~
+    "then" ~ compound_list ~
+    elif_part* ~
+    else_part? ~
+    "fi"
+}
+elif_part = { "elif" ~ compound_list ~ "then" ~ compound_list }
+else_part = { "else" ~ compound_list }
+
+//
+//  While Command
+//
+while_command = {
+    "while" ~ compound_list ~ "do" ~ compound_list ~ "done"
+}
+
+//
+//  For Command
+//
+word_list = { (!reserved_word ~ word)* }
+for_command = {
+    "for" ~ var_name ~ "in" ~ word_list ~ (";" | wsnl)+ ~ "do" ~ compound_list ~ "done"
+}
+
+//
+//  Case Command
+//
+patterns = { word ~ ("|" ~ word)* }
+case_item = {
+    !("esac") ~ patterns ~ ")" ~ compound_list ~ ";;"
+}
+
+case_command = {
+    "case" ~ word ~ "in" ~ (wsnl | case_item)* ~ "esac"
+}
+
+//
+//  Function Definition
+//
+function_definition = {
+    ("function")? ~ var_name ~ "()" ~ wsnl? ~ command
+}
+
+//
+//  Local variable definition
+//
+local_definition = { "local" ~ (assignment | var_name)+ }
+
+//
+//  Return/Break/Continue Command
+//
+return_command = { "return" }
+break_command = { "break" }
+continue_command = { "continue" }
+
+//
+//  Group (`{}')
+//
+group = { "{" ~ compound_list ~ "}" }
+
+//
+//  Command
+//
+command = {
+    if_command
+    | case_command
+    | while_command
+    | for_command
+    | break_command
+    | continue_command
+    | return_command
+    | local_definition
+    | function_definition
+    | group
+    | simple_command
+    | assignment_command
+}
+
+//
+//  Pipeline `|'
+//
+pipeline = { command ~ ((!("||") ~ "|") ~ command)* }
+
+//
+//  And/Or List (`&&' or `||')
+//
+and_or_list = { pipeline ~ (and_or_list_sep ~ and_or_list)* }
+and_or_list_sep = { "||" | "&&" }
+
+//
+//  Compound List (`;' or `&')
+//
+compound_list = { compound_list_inner ~ (compound_list_sep ~ compound_list)* }
+compound_list_sep = { (!(";;") ~ ";") | !("&&") ~ "&" | "\n" }
+empty_line = { "" }
+compound_list_inner = _{ and_or_list | empty_line }
+
+//
+//  Script
+//
+script = _{ SOI ~ compound_list ~ EOI }

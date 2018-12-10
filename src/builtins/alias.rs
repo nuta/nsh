@@ -1,40 +1,49 @@
 use crate::builtins::InternalCommandContext;
 use crate::exec::ExitStatus;
-use crate::parser::{Input, Word, SyntaxError, is_whitespace, whitespaces, word};
+use crate::parser;
+use std::io::Write;
+use pest::Parser;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Alias {
     pub name: String,
-    pub words: Vec<Word>,
+    pub body: String,
 }
 
-named!(parse_alias_line<Input, Alias>,
-    do_parse!(
-        name: take_while1!(|c| !is_whitespace(c) && c != '=') >>
-        tag!("=") >>
-        words: many0!(word) >>
-        whitespaces >>
-        ( Alias { name: name.to_string(), words } )
-    )
-);
+#[derive(Parser)]
+#[grammar = "builtins/alias.pest"]
+struct AliasParser;
 
-pub fn parse_alias(line: &str) -> Result<Alias, SyntaxError> {
-    match parse_alias_line(Input(line)) {
-        Ok((_, alias)) => Ok(alias),
-        Err(err) => {
-            trace!("parse error: '{}'", &err);
-            Err(SyntaxError::Fatal(err.to_string()))
-        }
-    }
+fn parse_alias(alias: &str) -> Result<Alias, parser::ParseError> {
+    AliasParser::parse(Rule::alias, alias)
+    .map_err(|err| parser::ParseError::Fatal(err.to_string()))
+    .and_then(|mut pairs| {
+        let mut inner = pairs.next().unwrap().into_inner();
+        let name = inner.next().unwrap().as_span().as_str().to_owned();
+        let body = inner.next().unwrap().as_str().to_owned();
+        Ok(Alias { name, body })
+    })
 }
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("alias: {:?}", ctx.argv);
     if let Some(alias) = ctx.argv.get(1) {
-        if let Ok(Alias { name, words }) = parse_alias(alias) {
-            ctx.isolate.add_alias(&name, words);
+        match parse_alias(alias) {
+            Ok(Alias { name, body }) => {
+                ctx.isolate.add_alias(&name, body);
+                ExitStatus::ExitedWith(0)
+            }
+            Err(parser::ParseError::Fatal(err)) => {
+                writeln!(ctx.stderr, "nsh: alias: {}", err).ok();
+                ExitStatus::ExitedWith(1)
+            }
+            Err(parser::ParseError::Empty) => {
+                writeln!(ctx.stderr, "nsh: alias: alias can't be empty string").ok();
+                ExitStatus::ExitedWith(1)
+            }
         }
+    } else {
+        // TODO: list defined aliases
+        ExitStatus::ExitedWith(0)
     }
-
-    ExitStatus::ExitedWith(0)
 }

@@ -345,7 +345,7 @@ pub struct Isolate {
     /// Local scopes (variables declared with `local').
     frames: Vec<Frame>,
     exported: HashSet<String>,
-    aliases: HashMap<String, Vec<Word>>,
+    aliases: HashMap<String, String>,
 
     // Shell options.
     pub errexit: bool,
@@ -472,11 +472,11 @@ impl Isolate {
         self.exported.iter()
     }
 
-    pub fn add_alias(&mut self, name: &str, words: Vec<Word>) {
-        self.aliases.insert(name.to_string(), words);
+    pub fn add_alias(&mut self, name: &str, body: String) {
+        self.aliases.insert(name.to_string(), body);
     }
 
-    pub fn lookup_alias(&self, alias: &str) -> Option<Vec<Word>> {
+    pub fn lookup_alias(&self, alias: &str) -> Option<String> {
         self.aliases.get(&alias.to_string()).cloned()
     }
 
@@ -1108,21 +1108,6 @@ impl Isolate {
         Ok(result)
     }
 
-    fn expand_alias(&self, argv: &[Word]) -> Vec<Word> {
-        if let Some(word) = argv.get(0) {
-            if let Some(Span::Literal(lit)) = word.spans().get(0) {
-                if let Some(alias) = self.lookup_alias(lit.as_str()) {
-                    let mut new_argv = Vec::new();
-                    new_argv.extend(alias);
-                    new_argv.extend(argv.iter().skip(1).cloned());
-                    return new_argv;
-                }
-            }
-        }
-
-        argv.to_vec()
-    }
-
     fn run_simple_command(
         &mut self,
         ctx: &Context,
@@ -1130,8 +1115,8 @@ impl Isolate {
         redirects: &[parser::Redirection],
         assignments: &[parser::Assignment],
     ) -> Result<ExitStatus> {
-        let argv = self.expand_words(&self.expand_alias(argv))?;
 
+        let argv = self.expand_words(argv)?;
         if argv.is_empty() {
             // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
             // named "foo.txt".
@@ -1324,7 +1309,30 @@ impl Isolate {
         trace!("run_command: {:?}", command);
        let result = match command {
             parser::Command::SimpleCommand { argv, redirects, assignments } => {
-                self.run_simple_command(ctx, &argv, &redirects, &assignments)?
+                // Expand alias
+                // TODO: refactor
+                let alias = argv.get(0)
+                    .and_then(|word| {
+                        word.spans().get(0)
+                    })
+                    .and_then(|span| {
+                        match span {
+                            Span::Literal(lit) => Some(lit),
+                            _ => None,
+                        }
+                    })
+                    .and_then(|lit| self.lookup_alias(lit.as_str()))
+                    .map(|alias| {
+                        let mut script = String::new();
+                        script += &alias;
+                        self.run_str(&script)
+                    });
+
+                if let Some(result) = alias {
+                    result
+                } else {
+                   self.run_simple_command(ctx, &argv, &redirects, &assignments)?
+                }
             }
             parser::Command::If { condition, then_part, elif_parts, else_part, redirects } => {
                 self.run_if_command(ctx, &condition, &then_part, &elif_parts, &else_part, &redirects)?
@@ -1622,12 +1630,12 @@ impl Isolate {
             Ok(ast) => {
                 self.eval(&ast)
             },
-            Err(parser::SyntaxError::Empty) => {
+            Err(parser::ParseError::Empty) => {
                 // Just ignore.
                 ExitStatus::ExitedWith(0)
             },
-            Err(err) => {
-                eprintln!("nsh: parse error: {:?}", err);
+            Err(parser::ParseError::Fatal(err)) => {
+                eprintln!("nsh: parse error: {}", err);
                 ExitStatus::ExitedWith(-1)
             }
         }

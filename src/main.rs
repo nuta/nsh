@@ -31,6 +31,9 @@ extern crate serde_derive;
 #[macro_use]
 extern crate failure;
 extern crate test;
+extern crate pest;
+#[macro_use]
+extern crate pest_derive;
 
 mod builtins;
 mod completion;
