@@ -305,6 +305,10 @@ section {
     }
 }
 
+input, textarea {
+    font-family: "Source Code Pro", "Monaco", monospace;
+}
+
 .prompt-preview {
     width: 100%;
     padding: 20px 30px;
