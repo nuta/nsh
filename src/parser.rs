@@ -353,8 +353,8 @@ fn visit_escape_sequences(pair: Pair<Rule>, escaped_chars: Option<&str>) -> Stri
     }
 
     s
-
 }
+
 fn visit_word(pair: Pair<Rule>) -> Word {
     assert_eq!(pair.as_rule(), Rule::word);
 

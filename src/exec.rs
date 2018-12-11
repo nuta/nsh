@@ -1108,6 +1108,46 @@ impl Isolate {
         Ok(result)
     }
 
+    /// TODO: Aliases should be expanded in the parser in order to support
+    /// compound lists, e.g. alias cowsay-or-echo="cowsay hi || echo hi"
+    fn expand_alias(&self, argv: &[Word]) -> Vec<Word> {
+        argv
+            // Get the first word.
+            .get(0)
+            // Get the first span in the first word.
+            .and_then(|word| {
+                word.spans().get(0)
+            })
+            // Make sure that the span is a literal (not parameters, etc.).
+            .and_then(|span| {
+                match span {
+                    Span::Literal(lit) => Some(lit),
+                    _ => None,
+                }
+            })
+            // The very first span is literal. Search the registered aliases.
+            .and_then(|lit| self.lookup_alias(lit.as_str()))
+            .map(|alias_str| {
+                // Found the alias. Split the alias string by whitespace into words.
+                let mut alias_words: Vec<Word> = alias_str
+                    .split(" ")
+                    .map(|w|{
+                        let span = Span::Literal(w.to_owned());
+                        Word(vec![span])
+                    })
+                    .collect();
+
+                // Append argv except the first word (alias name).
+                for arg in argv.iter().skip(1) {
+                    alias_words.push(arg.clone());
+                }
+
+                alias_words
+            })
+            // Failed to expand alias. Return argv as it is.
+            .unwrap_or_else(|| argv.to_owned())
+    }
+
     fn run_simple_command(
         &mut self,
         ctx: &Context,
@@ -1116,7 +1156,7 @@ impl Isolate {
         assignments: &[parser::Assignment],
     ) -> Result<ExitStatus> {
 
-        let argv = self.expand_words(argv)?;
+        let argv = self.expand_words(&self.expand_alias(argv))?;
         if argv.is_empty() {
             // `argv` is empty. For example bash accepts `> foo.txt`; it creates an empty file
             // named "foo.txt".
@@ -1309,30 +1349,7 @@ impl Isolate {
         trace!("run_command: {:?}", command);
        let result = match command {
             parser::Command::SimpleCommand { argv, redirects, assignments } => {
-                // Expand alias
-                // TODO: refactor
-                let alias = argv.get(0)
-                    .and_then(|word| {
-                        word.spans().get(0)
-                    })
-                    .and_then(|span| {
-                        match span {
-                            Span::Literal(lit) => Some(lit),
-                            _ => None,
-                        }
-                    })
-                    .and_then(|lit| self.lookup_alias(lit.as_str()))
-                    .map(|alias| {
-                        let mut script = String::new();
-                        script += &alias;
-                        self.run_str(&script)
-                    });
-
-                if let Some(result) = alias {
-                    result
-                } else {
-                   self.run_simple_command(ctx, &argv, &redirects, &assignments)?
-                }
+                self.run_simple_command(ctx, &argv, &redirects, &assignments)?
             }
             parser::Command::If { condition, then_part, elif_parts, else_part, redirects } => {
                 self.run_if_command(ctx, &condition, &then_part, &elif_parts, &else_part, &redirects)?
