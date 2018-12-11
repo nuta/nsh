@@ -1,7 +1,7 @@
 //
 //  Misc.
 //
-WHITESPACE = _{ " " | "\t" | "\r" }
+WHITESPACE = _{ " " | "\t" | "\r" | "\\\n" }
 COMMENT = _{ "#" ~ (!("\n") ~ ANY)* }
 word_chars = _{
     !(

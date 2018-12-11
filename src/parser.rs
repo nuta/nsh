@@ -722,10 +722,7 @@ fn pairs2ast(mut pairs: Pairs<Rule>) -> Ast {
 }
 
 pub fn parse(script: &str) -> Result<Ast, ParseError> {
-    // Remove trailig backslashes.
-    let merged_script = script.to_string().replace("\\\n", "");
-
-    match ShellParser::parse(Rule::script, &merged_script) {
+    match ShellParser::parse(Rule::script, script) {
         Ok(pairs) => {
             let ast = pairs2ast(pairs);
             if ast.terms.is_empty() {
@@ -816,7 +813,7 @@ pub fn test_simple_commands() {
     );
 
     assert_eq!(
-        parse("false || false && echo unreachable; echo reachable"),
+        parse("false || false && echo unreachable; echo \\\nreachable"),
         Ok(Ast {
             terms: vec![
                 Term {
@@ -850,7 +847,7 @@ pub fn test_simple_commands() {
                     ],
                 },
                 Term {
-                    code: "echo reachable".into(),
+                    code: "echo \\\nreachable".into(),
                     background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
