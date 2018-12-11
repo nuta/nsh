@@ -157,6 +157,8 @@ fn evaluate_condition(cond: &Condition) -> bool {
             std::process::Command::new("git")
                 .arg("rev-parse")
                 .arg("--is-inside-work-tree")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
                 .status()
                 .map(|status| status.success())
                 .unwrap_or(false)
