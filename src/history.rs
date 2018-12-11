@@ -1,3 +1,8 @@
+//!
+//! History management. `~/.nsh_history` is a text file where each line is a JSON represented
+//! by `History` struct. We don't simply save the whole history as a JSON array since appending
+//! to a *large* history array would be very slow.
+//!
 use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions};
@@ -6,19 +11,33 @@ use std::sync::Mutex;
 use crate::config::Config;
 use crate::fuzzy::FuzzyVec;
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct History {
+    pub time: usize,
+    pub dir: String,
+    pub cmd: String,
+}
+
 lazy_static! {
     static ref HISTORY: Mutex<FuzzyVec> = Mutex::new(FuzzyVec::new());
 }
 
-pub fn append_history(line: &str) {
+pub fn append_history(cmd: &str) {
     let mut  hist = HISTORY.lock().unwrap();
 
     let history_path = resolve_and_create_history_file();
     if let Ok(mut file) = OpenOptions::new().append(true).open(history_path) {
-        file.write(format!("{}\n", line).as_bytes()).ok();
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("failed to get the UNIX timestamp")
+            .as_secs() as usize;
+        let dir = std::env::current_dir().unwrap().to_str().unwrap().to_owned();
+        let history = History { time, dir, cmd: cmd.to_owned() };
+        let json = serde_json::to_string(&history).unwrap();
+        file.write(format!("{}\n", json).as_bytes()).ok();
     }
 
-    hist.append(Arc::new(line.to_string()));
+    hist.append(Arc::new(cmd.to_string()));
 }
 
 fn resolve_and_create_history_file() -> PathBuf {
@@ -35,11 +54,22 @@ fn resolve_and_create_history_file() -> PathBuf {
 
 fn load_history() {
     let history_path = resolve_and_create_history_file();
+    let mut warned = false;
     if let Ok(file) = File::open(history_path) {
-        for line in BufReader::new(file).lines() {
+        for (i, line) in BufReader::new(file).lines().enumerate() {
             if let Ok(line) = line {
-                let mut hist = HISTORY.lock().unwrap();
-                hist.append(Arc::new(line));
+                let parsed: Result<History, _> = serde_json::from_str(&line);
+                match (parsed, warned) {
+                    (Ok(history), _) => {
+                        let mut hist = HISTORY.lock().unwrap();
+                        hist.append(Arc::new(history.cmd));
+                    },
+                    (Err(err), false) => {
+                        eprintln!("nsh: failed to parse ~/.nsh_history: at line {}: `{}'", i + 1, err);
+                        warned = true;
+                    },
+                    (_, _) => (),
+                }
             }
         }
     }
