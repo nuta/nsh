@@ -1,97 +1,108 @@
 <template>
 <div id="app" class="container">
     <header>
-        <h1>nshconfig</h1>
+        <h1>nshconfig editor</h1>
     </header>
     <main>
-        <section>
-            <h2>Startup Script</h2>
-            <label for="rc">Startup Script (known as <code>.bashrc</code> in Bash)</label>
-            <div class="input-group mb-3">
-                <div id="rc" type="text" class="editor"></div>
+        <ul class="nav nav-tabs" role="tablist">
+            <li class="nav-item">
+                <a class="nav-link active" id="rc-tab" data-toggle="tab" href="#rc" role="tab" aria-controls="rc" aria-selected="true">Startup Script</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" id="prompt-tab" data-toggle="tab" href="#prompt" role="tab" aria-controls="prompt" aria-selected="false">Prompt</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" id="env-tab" data-toggle="tab" href="#env" role="tab" aria-controls="env" aria-selected="false">Environment Variables</a>
+            </li>
+        </ul>
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="rc" role="tabpanel" aria-labelledby="rc-tab">
+                <h2>Startup Script</h2>
+                <label for="rc">Startup Script (known as <code>.bashrc</code> in Bash)</label>
+                <div class="input-group mb-3">
+                    <div id="rc-editor" type="text" class="editor"></div>
+                </div>
             </div>
-        </section>
+            <div class="tab-pane fade show" id="prompt" role="tabpanel" aria-labelledby="prompt-tab">
+                <h2>Prompt</h2>
+                <label for="prompt">Prompt Format (<code>$prompt</code>)</label>
+                <div class="input-group mb-3">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text">$prompt =</span>
+                  </div>
+                  <input type="text" class="form-control" id="prompt" v-model="prompt">
+                </div>
+                <p>Preview:</p>
+                <div class="prompt-preview">
+                    <span v-for="frag in prompt_preview"
+                    :class="['frag', 'color-' + frag.color, { bold: frag.bold, underline: frag.underline }]"
+                    ><template v-if="frag.text == '\n'"><br></template><template v-else>{{ frag.text }}</template></span>
+                </div>
+                <div class="alert alert-info" role="alert">
+                    <table class="table table-borderless table-sm">
+                        <tbody>
+                            <tr>
+                                <th scope="row"><code>\{username}</code></th>
+                                <td>User name</td>
+                                <th scope="row"><code>\{hostname}</code></th>
+                                <td>Host name</td>
+                                <th scope="row"><code>\{current_dir}</code></th>
+                                <td>Current directory</td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><code>\n</code></th>
+                                <td>Newline</td>
+                                <th scope="row"><code>\{bold}</code></th>
+                                <td>Bold (Color)</td>
+                                <th scope="row"><code>\{underline}</code></th>
+                                <td>Underline</td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><code>\{red}</code></th>
+                                <td>Red (Color)</td>
+                                <th scope="row"><code>\{blue}</code></th>
+                                <td>Blue (Color)</td>
+                                <th scope="row"><code>\{green}</code></th>
+                                <td>Green (Color)</td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><code>\{yellow}</code></th>
+                                <td>Yellow (Color)</td>
+                                <th scope="row"><code>\{cyan}</code></th>
+                                <td>Cyan (Color)</td>
+                                <th scope="row"><code>\{magenta}</code></th>
+                                <td>Magenta (Color)</td>
+                            </tr>
+                            <tr>
+                                <th scope="row"><code>\if{cond}{then}{else}</code></th>
+                                <td colspan="5">A ternary expression, e.g.
+                                    <code>\if{in_git_repo}{at \{git_branch}}{}</code><br>
+                                    <b>(preview is not yet implemented)</b></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
 
-        <section>
-            <h2>Prompt</h2>
-            <label for="prompt">Prompt Format (<code>$prompt</code>)</label>
-            <div class="input-group mb-3">
-              <div class="input-group-prepend">
-                <span class="input-group-text">$prompt =</span>
-              </div>
-              <input type="text" class="form-control" id="prompt" v-model="prompt">
+                <h6><code>\if</code> conditions:</h6>
+                <div class="alert alert-info" role="alert">
+                    <table class="table table-borderless table-sm">
+                        <tbody>
+                            <tr>
+                                <th scope="row"><code>in_git_repo</code></th>
+                                <td>True if the current working directory is in a Git repository.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
-            <p>Preview:</p>
-            <div class="prompt-preview">
-                <span v-for="frag in prompt_preview"
-                :class="['frag', 'color-' + frag.color, { bold: frag.bold, underline: frag.underline }]"
-                ><template v-if="frag.text == '\n'"><br></template><template v-else>{{ frag.text }}</template></span>
+            <div class="tab-pane fade show" id="env" role="tabpanel" aria-labelledby="env-tab">
+                <h2>PATH</h2>
+                <label for="env">The executable directories separated by <code>:</code> (colon).</label>
+                <div class="input-group mb-3">
+                    <textarea id="env" type="text" class="form-control" v-model="env"></textarea>
+                </div>
             </div>
-            <div class="alert alert-info" role="alert">
-                <table class="table table-borderless table-sm">
-                    <tbody>
-                        <tr>
-                            <th scope="row"><code>\{username}</code></th>
-                            <td>User name</td>
-                            <th scope="row"><code>\{hostname}</code></th>
-                            <td>Host name</td>
-                            <th scope="row"><code>\{current_dir}</code></th>
-                            <td>Current directory</td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><code>\n</code></th>
-                            <td>Newline</td>
-                            <th scope="row"><code>\{bold}</code></th>
-                            <td>Bold (Color)</td>
-                            <th scope="row"><code>\{underline}</code></th>
-                            <td>Underline</td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><code>\{red}</code></th>
-                            <td>Red (Color)</td>
-                            <th scope="row"><code>\{blue}</code></th>
-                            <td>Blue (Color)</td>
-                            <th scope="row"><code>\{green}</code></th>
-                            <td>Green (Color)</td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><code>\{yellow}</code></th>
-                            <td>Yellow (Color)</td>
-                            <th scope="row"><code>\{cyan}</code></th>
-                            <td>Cyan (Color)</td>
-                            <th scope="row"><code>\{magenta}</code></th>
-                            <td>Magenta (Color)</td>
-                        </tr>
-                        <tr>
-                            <th scope="row"><code>\if{cond}{then}{else}</code></th>
-                            <td colspan="5">A ternary expression, e.g.
-                                <code>\if{in_git_repo}{at \{git_branch}}{}</code><br>
-                                <b>(preview is not yet implemented)</b></td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <h6><code>\if</code> conditions:</h6>
-            <div class="alert alert-info" role="alert">
-                <table class="table table-borderless table-sm">
-                    <tbody>
-                        <tr>
-                            <th scope="row"><code>in_git_repo</code></th>
-                            <td>True if the current working directory is in a Git repository.</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
-
-        <section>
-            <h2>PATH</h2>
-            <label for="path">The executable directories separated by <code>:</code> (colon).</label>
-            <div class="input-group mb-3">
-                <textarea id="path" type="text" class="form-control" v-model="path"></textarea>
-            </div>
-        </section>
+        </div>
     </main>
 </div>
 </template>
@@ -113,7 +124,7 @@ const SETTINGS = [
         default: "\\{cyan}\\{bold}[\\{username}@\\{hostname}]:\\{reset} \\{current_dir} $\\{reset} "
     },
     {
-        name: "path",
+        name: "env",
         type: "string",
         default: "/bin:/usr/bin:/usr/local/bin:/sbin"
     }
@@ -226,7 +237,7 @@ export default {
         }
 
         // Initialize Ace editor.
-        var editor = ace.edit("rc");
+        var editor = ace.edit("rc-editor");
         editor.setTheme("ace/theme/monokai");
         editor.setShowPrintMargin(false);
         editor.session.setMode("ace/mode/sh");
@@ -281,8 +292,15 @@ export default {
 @import "~noty/src/themes/mint.scss";
 
 h1 {
+    color: #2a2a2a;
     margin: 15px 0px;
     text-align: center;
+    font-family: "Source Code Pro", "Monaco", monospace;
+    font-size: 28px;
+}
+
+h2 {
+    margin: 15px 0px;
 }
 
 body {
@@ -295,14 +313,6 @@ main {
     width: 900px;
     border-radius: 5px;
     background: #fefefe;
-}
-
-section {
-    &:not(:nth-child(1)) {
-        border-top: 3px solid #cacaca;
-        padding-top: 35px;
-        margin-top: 35px;
-    }
 }
 
 input, textarea {
@@ -329,6 +339,7 @@ input, textarea {
 }
 
 .editor {
+    position: relative;
     height: 400px;
     width: 100%;
 }
