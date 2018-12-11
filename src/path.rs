@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::fs::read_dir;
 use std::sync::{RwLock, Arc};
 use crate::fuzzy::FuzzyVec;
-use crate::completion::Completions;
 use crate::config::Config;
 
 lazy_static! {
@@ -24,10 +23,10 @@ pub fn lookup_external_command(cmd: &str) -> Option<String> {
 }
 
 /// Generate command name completions filtered by `query`.
-pub fn complete(query: &str) -> Completions {
+pub fn complete(query: &str) -> Vec<Arc<String>> {
     let fuzzy_vec = PATH_FUZZY_VEC.read().unwrap();
     let entries = fuzzy_vec.search(query);
-    Completions::new(entries)
+    entries
 }
 
 fn reload_paths() {

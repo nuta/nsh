@@ -1,15 +1,116 @@
-use crate::completion::{
-    call_completion, extract_completion_context, CompletionContext, Completions,
-};
+use crate::completion::complete;
+use crate::context_parser::{InputContext, parse_input_context};
 use crate::history::{HistorySelector, append_history};
 use crate::prompt::render_prompt;
 use crate::config::Config;
+use std::sync::Arc;
 use std::io::{self, Write, Stdout};
 use termion;
 use termion::cursor::DetectCursorPos;
 use termion::event::{Event, Key};
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
+
+pub struct CompletionState {
+    /// Candidate completion entries.
+    entries: Vec<Arc<String>>,
+    // The currently selected entry.
+    selected_index: usize,
+    // The number of completion lines in the prompt.
+    display_lines: usize,
+    // The beginning of entries to be displayed.
+    display_index: usize,
+}
+
+impl CompletionState {
+    pub fn new(entries: Vec<Arc<String>>) -> CompletionState {
+        const COMPLETION_LINES: usize = 5;
+
+        CompletionState {
+            entries,
+            selected_index: 0,
+            display_lines: COMPLETION_LINES,
+            display_index: 0,
+        }
+    }
+
+    /// Move to the next/previous entry.
+    pub fn move_cursor(&mut self, offset: isize) {
+        // FIXME: I think there's more sane way to handle a overflow.`
+        let mut old_selected_index = self.selected_index as isize;
+        old_selected_index += offset;
+
+        let entries_len = self.len() as isize;
+        if entries_len > 0 && old_selected_index > entries_len - 1 {
+            old_selected_index = entries_len - 1;
+        }
+
+        if old_selected_index < 0 {
+            old_selected_index = 0;
+        }
+
+        self.selected_index = old_selected_index as usize;
+
+        if self.selected_index >= self.display_index + self.display_lines {
+            self.display_index = self.selected_index - self.display_lines + 1;
+        }
+
+        if self.selected_index < self.display_index {
+            self.display_index = self.selected_index;
+        }
+
+        trace!(
+            "move_cursor: offset={}, index={}",
+            offset,
+            self.selected_index
+        );
+    }
+
+    #[inline(always)]
+    pub fn entries(&self) -> Vec<Arc<String>> {
+        self.entries.clone()
+    }
+
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    #[inline(always)]
+    pub fn selected_index(&self) -> usize {
+        self.selected_index
+    }
+
+    #[inline(always)]
+    pub fn get(&self, index: usize) -> Option<Arc<String>> {
+        self.entries.get(index).cloned()
+    }
+
+    #[inline(always)]
+    pub fn display_lines(&self) -> usize {
+        self.display_lines
+    }
+
+    #[inline(always)]
+    pub fn display_index(&self) -> usize {
+        self.display_index
+    }
+
+    pub fn select_and_update_input_and_cursor(&self, input_ctx: &InputContext, user_input: &mut String, user_cursor: &mut usize) {
+        if let Some(selected) = self.get(self.selected_index()) {
+            let prefix = user_input
+                .get(..(input_ctx.current_word_offset))
+                .unwrap_or("")
+                .to_string();
+            let suffix_offset = input_ctx.current_word_offset
+                + input_ctx.current_word_len;
+            let suffix =
+                &user_input.get((suffix_offset)..).unwrap_or("").to_string();
+            *user_input = format!("{}{}{}", prefix, selected, suffix);
+            *user_cursor = input_ctx.current_word_offset + selected.len();
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum InputError {
@@ -26,21 +127,6 @@ pub enum InputMode {
 fn get_current_yx(stdout: &mut Stdout) -> (u16, u16) {
     let (x, y) = stdout.cursor_pos().unwrap();
     (y - 1, x - 1)
-}
-
-fn select_completion(completions: &Completions, completion_ctx: &CompletionContext, selected: usize, user_input: &mut String, user_cursor: &mut usize) {
-    if let Some(selected) = completions.get(selected) {
-        let prefix = user_input
-            .get(..(completion_ctx.current_word_offset))
-            .unwrap_or("")
-            .to_string();
-        let suffix_offset = completion_ctx.current_word_offset
-            + completion_ctx.current_word_len;
-        let suffix =
-            &user_input.get((suffix_offset)..).unwrap_or("").to_string();
-        *user_input = format!("{}{}{}", prefix, selected, suffix);
-        *user_cursor = completion_ctx.current_word_offset + selected.len();
-    }
 }
 
 pub fn input(config: &Config) -> Result<String, InputError> {
@@ -67,8 +153,8 @@ pub fn input(config: &Config) -> Result<String, InputError> {
     let mut mode = InputMode::Normal;
     let mut rendered_lines = 0;
     // TODO: move these variables into InputMode::Completion.
-    let mut completions = Completions::new(vec![]);
-    let mut completion_ctx: CompletionContext = Default::default();
+    let mut completion_state = CompletionState::new(vec![]);
+    let mut input_ctx: InputContext = Default::default();
     let mut history = HistorySelector::new();
 
     'input_line: loop {
@@ -77,7 +163,7 @@ pub fn input(config: &Config) -> Result<String, InputError> {
         let (rendered_lines2, prompt_y2, prompt) = render_prompt(
             &config.prompt,
             mode,
-            &completions,
+            &completion_state,
             prompt_y,
             y_max,
             rendered_lines,
@@ -100,35 +186,23 @@ pub fn input(config: &Config) -> Result<String, InputError> {
                     Event::Key(Key::Char('\n')) => match mode {
                         InputMode::Normal => break 'input_line,
                         InputMode::Completion => {
-                            trace!("ctx: {:?}", completion_ctx);
-                            select_completion(
-                                &completions,
-                                &completion_ctx,
-                                completions.selected_index(),
-                                &mut user_input,
-                                &mut user_cursor
-                            );
+                            trace!("ctx: {:?}", input_ctx);
+                            completion_state.select_and_update_input_and_cursor(&input_ctx, &mut user_input, &mut user_cursor);
                             mode = InputMode::Normal;
                             continue 'input_line;
                         }
                     },
                     Event::Key(Key::Char('\t')) => match mode {
                         InputMode::Completion => {
-                            completions.move_cursor(1);
+                            completion_state.move_cursor(1);
                         }
                         InputMode::Normal => {
-                            completion_ctx = extract_completion_context(&user_input, user_cursor);
-                            completions = call_completion(&completion_ctx);
-                            if completions.len() == 1 {
-                                // There is only one completion candidate. Select it and continue
+                            input_ctx = parse_input_context(&user_input, user_cursor);
+                            completion_state = CompletionState::new(complete(&input_ctx));
+                            if completion_state.len() == 1 {
+                                // There is only one completion candidate. Select it and go back into
                                 // normal input mode.
-                                select_completion(
-                                    &completions,
-                                    &completion_ctx,
-                                    0,
-                                    &mut user_input,
-                                    &mut user_cursor
-                                );
+                                completion_state.select_and_update_input_and_cursor(&input_ctx, &mut user_input, &mut user_cursor);
                             } else {
                                 mode = InputMode::Completion;
                             }
@@ -141,8 +215,8 @@ pub fn input(config: &Config) -> Result<String, InputError> {
                         }
 
                         if mode == InputMode::Completion {
-                            completion_ctx = extract_completion_context(&user_input, user_cursor);
-                            completions = call_completion(&completion_ctx);
+                            input_ctx = parse_input_context(&user_input, user_cursor);
+                            completion_state = CompletionState::new(complete(&input_ctx));
                         }
                     }
                     Event::Key(Key::Up) => {
@@ -155,7 +229,7 @@ pub fn input(config: &Config) -> Result<String, InputError> {
                             },
                             InputMode::Completion => {
                                 // Move to the previous candidate.
-                                completions.move_cursor(-1);
+                                completion_state.move_cursor(-1);
                             }
                         }
                     }
@@ -169,7 +243,7 @@ pub fn input(config: &Config) -> Result<String, InputError> {
                             },
                             InputMode::Completion => {
                                 // Move to the next candidate.
-                                completions.move_cursor(1);
+                                completion_state.move_cursor(1);
                             }
                         }
                     }
@@ -226,9 +300,9 @@ pub fn input(config: &Config) -> Result<String, InputError> {
                             user_cursor += 1;
 
                             if mode == InputMode::Completion {
-                                completion_ctx =
-                                    extract_completion_context(&user_input, user_cursor);
-                                completions = call_completion(&completion_ctx);
+                                input_ctx =
+                                    parse_input_context(&user_input, user_cursor);
+                                completion_state = CompletionState::new(complete(&input_ctx));
                             }
                         }
                     },

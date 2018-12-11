@@ -40,6 +40,7 @@ mod completion;
 mod exec;
 mod input;
 mod parser;
+mod context_parser;
 mod path;
 mod prompt;
 mod utils;
