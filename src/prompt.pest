@@ -1,6 +1,7 @@
 username_span = { "\\u" }
 hostname_span = { "\\h" }
 current_dir_span = { "\\W" }
+git_branch_span = { "\\{git_branch}" }
 newline_span = { "\\n" }
 reset_span = { "\\c{reset}" }
 bold_span = { "\\c{bold}" }
@@ -16,6 +17,7 @@ special_span = _{
     username_span
     | hostname_span
     | current_dir_span
+    | git_branch_span
     | newline_span
     | reset_span
     | bold_span

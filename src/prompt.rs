@@ -37,6 +37,7 @@ pub enum Span {
     Hostname,
     CurrentDir,
     Newline,
+    GitBranch,
 }
 
 #[derive(Parser)]
@@ -50,6 +51,7 @@ fn pairs2prompt(mut pairs: Pairs<Rule>) -> Prompt {
             Rule::username_span => Span::Username,
             Rule::hostname_span => Span::Hostname,
             Rule::current_dir_span => Span::CurrentDir,
+            Rule::git_branch_span => Span::GitBranch,
             Rule::newline_span => Span::Newline,
             Rule::reset_span => Span::Color(Color::Reset),
             Rule::bold_span => Span::Color(Color::Bold),
@@ -107,6 +109,23 @@ fn get_hostname() -> String {
     hostname.to_owned()
 }
 
+fn get_current_git_branch() -> String {
+    let result = std::process::Command::new("git")
+        .arg("rev-parse")
+        .arg("--abbrev-ref")
+        .arg("HEAD")
+        .output();
+
+    if let Ok(output) = result {
+        String::from_utf8_lossy(&output.stdout)
+            .into_owned()
+            .trim()
+            .to_owned()
+    } else {
+        "".to_owned()
+    }
+}
+
 /// Returns the length of the last line excluding escape sequences.
 fn draw_prompt(prompt: &Prompt) -> (String, usize) {
     let mut len = 0;
@@ -157,6 +176,11 @@ fn draw_prompt(prompt: &Prompt) -> (String, usize) {
                     len += path.len();
                     buf.push_str(&path);
                 }
+            }
+            Span::GitBranch => {
+                let hostname = get_current_git_branch();
+                len += hostname.len();
+                buf.push_str(&hostname)
             }
         }
     }
