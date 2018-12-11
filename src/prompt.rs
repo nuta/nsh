@@ -5,7 +5,7 @@ use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
 use pest::Parser;
-use pest::iterators::Pairs;
+use pest::iterators::{Pairs, Pair};
 use std::fmt::Write;
 use termion;
 use nix::unistd;
@@ -16,7 +16,7 @@ pub struct Prompt {
     spans: Vec<Span>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Color {
     Red,
     Blue,
@@ -29,7 +29,12 @@ pub enum Color {
     Reset,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Condition {
+    InGitRepo
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Span {
     Literal(String),
     Color(Color),
@@ -38,15 +43,20 @@ pub enum Span {
     CurrentDir,
     Newline,
     GitBranch,
+    If {
+        condition: Condition,
+        then_part: Vec<Span>,
+        else_part: Vec<Span>,
+    }
 }
 
 #[derive(Parser)]
 #[grammar = "prompt.pest"]
 struct PromptParser;
 
-fn pairs2prompt(mut pairs: Pairs<Rule>) -> Prompt {
+fn visit_prompt(pair: Pair<Rule>) -> Prompt {
     let mut spans = Vec::new();
-    for pair in pairs.next().unwrap().into_inner() {
+    for pair in pair.into_inner() {
         let span = match pair.as_rule() {
             Rule::username_span => Span::Username,
             Rule::hostname_span => Span::Hostname,
@@ -63,6 +73,17 @@ fn pairs2prompt(mut pairs: Pairs<Rule>) -> Prompt {
             Rule::cyan_span => Span::Color(Color::Cyan),
             Rule::magenta_span => Span::Color(Color::Magenta),
             Rule::literal_span => Span::Literal(pair.as_span().as_str().to_owned()),
+            Rule::if_span => {
+                let mut inner = pair.into_inner();
+                let condition = match inner.next().unwrap().as_span().as_str() {
+                    "in_git_repo" => Condition::InGitRepo,
+                    _ => unreachable!(),
+                };
+
+                let then_part = visit_prompt(inner.next().unwrap()).spans;
+                let else_part = visit_prompt(inner.next().unwrap()).spans;
+                Span::If { condition, then_part, else_part }
+            },
             _ => unreachable!()
         };
 
@@ -70,6 +91,10 @@ fn pairs2prompt(mut pairs: Pairs<Rule>) -> Prompt {
     }
 
     Prompt { spans }
+}
+
+fn pairs2prompt(mut pairs: Pairs<Rule>) -> Prompt {
+    visit_prompt(pairs.next().unwrap())
 }
 
 fn parse_prompt(prompt: &str) -> Result<Prompt, pest::error::Error<Rule>> {
@@ -123,6 +148,19 @@ fn get_current_git_branch() -> String {
             .to_owned()
     } else {
         "".to_owned()
+    }
+}
+
+fn evaluate_condition(cond: &Condition) -> bool {
+    match cond {
+        Condition::InGitRepo => {
+            std::process::Command::new("git")
+                .arg("rev-parse")
+                .arg("--is-inside-work-tree")
+                .status()
+                .map(|status| status.success())
+                .unwrap_or(false)
+        }
     }
 }
 
@@ -181,6 +219,17 @@ fn draw_prompt(prompt: &Prompt) -> (String, usize) {
                 let hostname = get_current_git_branch();
                 len += hostname.len();
                 buf.push_str(&hostname)
+            },
+            Span::If { condition, then_part, else_part } => {
+                let spans = if evaluate_condition(condition) {
+                    then_part
+                } else {
+                    else_part
+                };
+
+                let (result, result_len) = draw_prompt(&Prompt { spans: spans.to_vec() });
+                len += result_len;
+                buf.push_str(&result)
             }
         }
     }
@@ -369,6 +418,26 @@ fn test_prompt_parser() {
                 Span::CurrentDir,
                 Span::Newline,
                 Span::Literal("$ ".into()),
+            ]
+        })
+    );
+
+    assert_eq!(
+        parse_prompt("\\W \\if{in_git_repo}{[\\{git_branch}]}{} $ "),
+        Ok(Prompt {
+            spans: vec![
+                Span::CurrentDir,
+                Span::Literal(" ".into()),
+                Span::If {
+                    condition: Condition::InGitRepo,
+                    then_part: vec![
+                        Span::Literal("[".into()),
+                        Span::GitBranch,
+                        Span::Literal("]".into()),
+                    ],
+                    else_part: vec![]
+                },
+                Span::Literal(" $ ".into()),
             ]
         })
     );

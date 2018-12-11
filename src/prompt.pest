@@ -13,6 +13,11 @@ yellow_span = { "\\c{yellow}" }
 cyan_span = { "\\c{cyan}" }
 magenta_span = { "\\c{magenta}" }
 
+condition = {
+    "in_git_repo"
+}
+if_span = { "\\if{" ~ condition ~ "}" ~ "{" ~ prompt ~ "}" ~ "{"~ prompt ~ "}" }
+
 special_span = _{
     username_span
     | hostname_span
@@ -28,7 +33,8 @@ special_span = _{
     | yellow_span
     | cyan_span
     | magenta_span
+    | if_span
 }
 
-literal_span = ${ (!special_span ~ ANY)+ }
+literal_span = ${ (!(special_span | "}") ~ ANY)+ }
 prompt = ${ (special_span | literal_span)* }
