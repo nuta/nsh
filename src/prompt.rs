@@ -408,7 +408,7 @@ pub fn render_prompt(
 #[test]
 fn test_prompt_parser() {
     assert_eq!(
-        parse_prompt("\\u at \\h in \\W\\n$ "),
+        parse_prompt("\\{username} at \\{hostname} in \\{current_dir}\\n$ "),
         Ok(Prompt {
             spans: vec![
                 Span::Username,
@@ -423,7 +423,7 @@ fn test_prompt_parser() {
     );
 
     assert_eq!(
-        parse_prompt("\\W \\if{in_git_repo}{[\\{git_branch}]}{} $ "),
+        parse_prompt("\\{current_dir} \\if{in_git_repo}{[\\{git_branch}]}{} $ "),
         Ok(Prompt {
             spans: vec![
                 Span::CurrentDir,
@@ -462,7 +462,7 @@ mod benchmarks {
     #[bench]
     fn complex_prompt_rendering_bench(b: &mut Bencher) {
         b.iter(|| {
-            let prompt = "\\c{cyan}\\c{bold}\\u@\\h:\\c{reset} \\W\\n$\\c{reset} ";
+            let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir}\\n$\\{reset} ";
             let mode = InputMode::Normal;
             let completions = CompletionState::new(vec![]);
             let theme = "Solarized (dark)";

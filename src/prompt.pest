@@ -1,17 +1,17 @@
-username_span = { "\\u" }
-hostname_span = { "\\h" }
-current_dir_span = { "\\W" }
-git_branch_span = { "\\{git_branch}" }
-newline_span = { "\\n" }
-reset_span = { "\\c{reset}" }
-bold_span = { "\\c{bold}" }
-underline_span = { "\\c{underline}" }
-red_span = { "\\c{red}" }
-blue_span = { "\\c{blue}" }
-green_span = { "\\c{green}" }
-yellow_span = { "\\c{yellow}" }
-cyan_span = { "\\c{cyan}" }
-magenta_span = { "\\c{magenta}" }
+username_span    = { "\\{username}" }
+hostname_span    = { "\\{hostname}" }
+current_dir_span = { "\\{current_dir}" }
+git_branch_span  = { "\\{git_branch}" }
+reset_span       = { "\\{reset}" }
+bold_span        = { "\\{bold}" }
+underline_span   = { "\\{underline}" }
+red_span         = { "\\{red}" }
+blue_span        = { "\\{blue}" }
+green_span       = { "\\{green}" }
+yellow_span      = { "\\{yellow}" }
+cyan_span        = { "\\{cyan}" }
+magenta_span     = { "\\{magenta}" }
+newline_span     = { "\\n" }
 
 condition = {
     "in_git_repo"
