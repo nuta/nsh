@@ -99,7 +99,9 @@ pub enum Command {
     },
     Break,
     Continue,
-    Return,
+    Return {
+        status: Option<i32>
+    },
     Case {
         word: Word,
         cases: Vec<CaseItem>,
@@ -637,6 +639,14 @@ fn visit_group_command(pair: Pair<Rule>) -> Command {
     Command::Group { terms }
 }
 
+// return = { return ~ num? }
+fn visit_return_command(pair: Pair<Rule>) -> Command {
+    let mut inner = pair.into_inner();
+    let status = inner.next().map(|status| status.as_span().as_str().parse().unwrap());
+
+    Command::Return { status }
+}
+
 fn visit_command(pair: Pair<Rule>) -> Command {
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
@@ -648,7 +658,7 @@ fn visit_command(pair: Pair<Rule>) -> Command {
         Rule::group => { visit_group_command(inner) },
         Rule::break_command => { Command::Break },
         Rule::continue_command => { Command::Continue },
-        Rule::return_command => { Command::Return },
+        Rule::return_command => { visit_return_command(inner) },
         Rule::assignment_command => { visit_assignment_command(inner) },
         Rule::local_definition => { visit_local_definition(inner) },
         Rule::function_definition => { visit_function_definition(inner) },
@@ -1568,11 +1578,11 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse("function func1() { echo hello; echo world; return; }; func1"),
+        parse("function func1() { echo hello; echo world; return 3; }; func1"),
         Ok(Ast {
             terms: vec![
                 Term {
-                    code: "function func1() { echo hello; echo world; return; }".into(),
+                    code: "function func1() { echo hello; echo world; return 3; }".into(),
                     background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
@@ -1605,11 +1615,11 @@ pub fn test_compound_commands() {
                                         }],
                                     },
                                     Term {
-                                        code: "return".into(),
+                                        code: "return 3".into(),
                                         background: false,
                                         pipelines: vec![Pipeline {
                                             run_if: RunIf::Always,
-                                            commands: vec![Command::Return],
+                                            commands: vec![Command::Return { status: Some(3) }],
                                         }],
                                     },
                                 ],
@@ -1634,7 +1644,7 @@ pub fn test_compound_commands() {
     );
 
     assert_eq!(
-        parse("x=$((123)); func2() { local x=456 y z; echo $((x * 2))\n }; echo $x"),
+        parse("x=$((123)); func2() { local x=456 y z; echo $((x * 2))\n return; }; echo $x"),
         Ok(Ast {
             terms: vec![
                 Term {
@@ -1658,7 +1668,7 @@ pub fn test_compound_commands() {
                     }],
                 },
                 Term {
-                    code: "func2() { local x=456 y z; echo $((x * 2))\n }".into(),
+                    code: "func2() { local x=456 y z; echo $((x * 2))\n return; }".into(),
                     background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
@@ -1702,6 +1712,14 @@ pub fn test_compound_commands() {
                                                 redirects: vec![],
                                                 assignments: vec![],
                                             }],
+                                        }],
+                                    },
+                                    Term {
+                                        code: "return".into(),
+                                        background: false,
+                                        pipelines: vec![Pipeline {
+                                            run_if: RunIf::Always,
+                                            commands: vec![Command::Return { status: None }],
                                         }],
                                     },
                                 ],

@@ -1363,7 +1363,11 @@ impl Isolate {
             parser::Command::Group { terms } => {
                 self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr)
             },
-            parser::Command::Return => {
+            parser::Command::Return { status } => {
+                if let Some(status) = status {
+                    self.last_status = *status;
+                }
+
                 ExitStatus::Return
             }
             parser::Command::Break => {

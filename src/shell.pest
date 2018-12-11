@@ -20,6 +20,7 @@ username = ${ (!("/") ~ word_chars)+ }
 special_var_name = _{ "?" | "$" | "!" | "*" | "@" | "#" | "-" | ASCII_DIGIT }
 
 index = { ("[" ~ expr ~ "]")? }
+num = ${ ASCII_DIGIT+ }
 
 //
 //  Expr
@@ -31,7 +32,6 @@ factor_op = { "*" | "/" }
 sign = { ("+" | "-")? }
 factor = { sign ~ primary }
 primary = _{ num | ("$"? ~ var_name) | param_ex_span |  ("(" ~ expr ~ ")") }
-num = ${ ASCII_DIGIT+ }
 
 //
 //  Word
@@ -186,7 +186,7 @@ local_definition = { "local" ~ (assignment | var_name)+ }
 //
 //  Return/Break/Continue Command
 //
-return_command = { "return" }
+return_command = { "return" ~ num? }
 break_command = { "break" }
 continue_command = { "continue" }
 
