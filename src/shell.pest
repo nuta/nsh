@@ -17,7 +17,7 @@ var_name_chars = _{
 wsnl = _{ ( WHITESPACE | COMMENT | "\n")+ }
 var_name = ${ var_name_chars+ }
 username = ${ (!("/") ~ word_chars)+ }
-special_var_name = _{ "?" | "$" | "!" | "*" | "@" | "#" | ASCII_DIGIT }
+special_var_name = _{ "?" | "$" | "!" | "*" | "@" | "#" | "-" | ASCII_DIGIT }
 
 index = { ("[" ~ expr ~ "]")? }
 
