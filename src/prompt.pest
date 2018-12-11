@@ -1,0 +1,32 @@
+username_span = { "\\u" }
+hostname_span = { "\\h" }
+current_dir_span = { "\\W" }
+newline_span = { "\\n" }
+reset_span = { "\\c{reset}" }
+bold_span = { "\\c{bold}" }
+underline_span = { "\\c{underline}" }
+red_span = { "\\c{red}" }
+blue_span = { "\\c{blue}" }
+green_span = { "\\c{green}" }
+yellow_span = { "\\c{yellow}" }
+cyan_span = { "\\c{cyan}" }
+magenta_span = { "\\c{magenta}" }
+
+special_span = _{
+    username_span
+    | hostname_span
+    | current_dir_span
+    | newline_span
+    | reset_span
+    | bold_span
+    | underline_span
+    | red_span
+    | blue_span
+    | green_span
+    | yellow_span
+    | cyan_span
+    | magenta_span
+}
+
+literal_span = ${ (!special_span ~ ANY)+ }
+prompt = ${ (special_span | literal_span)* }

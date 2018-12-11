@@ -1,4 +1,5 @@
 use pest::Parser;
+use pest::iterators::{Pair, Pairs};
 use termion::color::Fg;
 use termion::color;
 use termion::style;
@@ -219,9 +220,6 @@ pub fn parse_and_dump(script: &str) {
     let pairs = ShellParser::parse(Rule::script, &merged_script).unwrap_or_else(|e| panic!("{}", e));
     dump(pairs, 0);
 }
-
-use pest::iterators::Pair;
-use pest::iterators::Pairs;
 
 fn visit_command_span(pair: Pair<Rule>, quoted: bool) -> Span {
     let body = visit_compound_list(pair.into_inner().next().unwrap());

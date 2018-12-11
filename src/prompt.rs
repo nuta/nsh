@@ -1,10 +1,11 @@
 use crate::input::{InputMode, CompletionState};
-use nom::types::CompleteStr as Input;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::Style;
 use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+use pest::Parser;
+use pest::iterators::Pairs;
 use std::fmt::Write;
 use termion;
 use nix::unistd;
@@ -38,32 +39,40 @@ pub enum Span {
     Newline,
 }
 
-named!(span<Input, Span>,
-    alt!(
-        map!(tag!("\\u"), |_| Span::Username)
-        | map!(tag!("\\h"), |_| Span::Hostname)
-        | map!(tag!("\\W"), |_| Span::CurrentDir)
-        | map!(tag!("\\n"), |_| Span::Newline)
-        | map!(tag!("\\c{reset}"), |_| Span::Color(Color::Reset))
-        | map!(tag!("\\c{bold}"), |_| Span::Color(Color::Bold))
-        | map!(tag!("\\c{underline}"), |_| Span::Color(Color::Underline))
-        | map!(tag!("\\c{red}"), |_| Span::Color(Color::Red))
-        | map!(tag!("\\c{blue}"), |_| Span::Color(Color::Blue))
-        | map!(tag!("\\c{green}"), |_| Span::Color(Color::Green))
-        | map!(tag!("\\c{yellow}"), |_| Span::Color(Color::Yellow))
-        | map!(tag!("\\c{cyan}"), |_| Span::Color(Color::Cyan))
-        | map!(tag!("\\c{magenta}"), |_| Span::Color(Color::Magenta))
-        | map!(take_while!(|c| c != '\\'), |s| Span::Literal(s.to_string()))
-    )
-);
+#[derive(Parser)]
+#[grammar = "prompt.pest"]
+struct PromptParser;
 
-named!(prompt_parser<Input, Prompt>,
-    map!(many0!(span), |spans| ( Prompt { spans }))
-);
+fn pairs2prompt(mut pairs: Pairs<Rule>) -> Prompt {
+    let mut spans = Vec::new();
+    for pair in pairs.next().unwrap().into_inner() {
+        let span = match pair.as_rule() {
+            Rule::username_span => Span::Username,
+            Rule::hostname_span => Span::Hostname,
+            Rule::current_dir_span => Span::CurrentDir,
+            Rule::newline_span => Span::Newline,
+            Rule::reset_span => Span::Color(Color::Reset),
+            Rule::bold_span => Span::Color(Color::Bold),
+            Rule::underline_span => Span::Color(Color::Underline),
+            Rule::red_span => Span::Color(Color::Red),
+            Rule::blue_span => Span::Color(Color::Blue),
+            Rule::green_span => Span::Color(Color::Green),
+            Rule::yellow_span => Span::Color(Color::Yellow),
+            Rule::cyan_span => Span::Color(Color::Cyan),
+            Rule::magenta_span => Span::Color(Color::Magenta),
+            Rule::literal_span => Span::Literal(pair.as_span().as_str().to_owned()),
+            _ => unreachable!()
+        };
+
+        spans.push(span);
+    }
+
+    Prompt { spans }
+}
 
 fn parse_prompt(prompt: &str) -> Result<Prompt, ()> {
-    match prompt_parser(Input(prompt)) {
-        Ok((_, prompt)) => Ok(prompt),
+    match PromptParser::parse(Rule::prompt, prompt) {
+        Ok(pairs) => Ok(pairs2prompt(pairs)),
         Err(err) => {
             trace!("prompt parse error: '{}'", &err);
             Err(())

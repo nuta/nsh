@@ -11,8 +11,6 @@ extern crate slog_term;
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
-#[macro_use]
-extern crate nom;
 extern crate structopt;
 extern crate dirs;
 extern crate nix;
