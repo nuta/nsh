@@ -22,19 +22,28 @@ lazy_static! {
     static ref HISTORY: Mutex<FuzzyVec> = Mutex::new(FuzzyVec::new());
 }
 
+
+/// Returns true if the `cmd' should NOT be saved in a file.
+fn history_filter(cmd: &str) -> bool {
+    cmd.starts_with(" ")
+    || cmd.starts_with("\t")
+}
+
 pub fn append_history(cmd: &str) {
     let mut  hist = HISTORY.lock().unwrap();
 
     let history_path = resolve_and_create_history_file();
     if let Ok(mut file) = OpenOptions::new().append(true).open(history_path) {
-        let time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("failed to get the UNIX timestamp")
-            .as_secs() as usize;
-        let dir = std::env::current_dir().unwrap().to_str().unwrap().to_owned();
-        let history = History { time, dir, cmd: cmd.to_owned() };
-        let json = serde_json::to_string(&history).unwrap();
-        file.write(format!("{}\n", json).as_bytes()).ok();
+        if !history_filter(cmd) {
+            let time = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("failed to get the UNIX timestamp")
+                .as_secs() as usize;
+            let dir = std::env::current_dir().unwrap().to_str().unwrap().to_owned();
+            let history = History { time, dir, cmd: cmd.to_owned() };
+            let json = serde_json::to_string(&history).unwrap();
+            file.write(format!("{}\n", json).as_bytes()).ok();
+        }
     }
 
     hist.append(Arc::new(cmd.to_string()));
