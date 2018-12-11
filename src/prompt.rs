@@ -70,14 +70,8 @@ fn pairs2prompt(mut pairs: Pairs<Rule>) -> Prompt {
     Prompt { spans }
 }
 
-fn parse_prompt(prompt: &str) -> Result<Prompt, ()> {
-    match PromptParser::parse(Rule::prompt, prompt) {
-        Ok(pairs) => Ok(pairs2prompt(pairs)),
-        Err(err) => {
-            trace!("prompt parse error: '{}'", &err);
-            Err(())
-        }
-    }
+fn parse_prompt(prompt: &str) -> Result<Prompt, pest::error::Error<Rule>> {
+    PromptParser::parse(Rule::prompt, prompt).map(pairs2prompt)
 }
 
 // FIXME: remove unsafe or use external crate
@@ -244,10 +238,12 @@ pub fn render_prompt(
     }
 
     // Parse and render the prompt.
-    let (prompt_str, prompt_last_line_len) = if let Ok(fmt) = parse_prompt(prompt_fmt) {
-        draw_prompt(&fmt)
-    } else {
-        ("$ ".to_owned(), 2)
+    let (prompt_str, prompt_last_line_len) = match parse_prompt(prompt_fmt) {
+        Ok(fmt) => draw_prompt(&fmt),
+        Err(err) => {
+            eprintln!("nsh: failed to parse $PROMPT: {}", err);
+            ("$ ".to_owned(), 2)
+        }
     };
 
     use termion::clear::CurrentLine;
