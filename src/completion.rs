@@ -61,14 +61,15 @@ fn path_completion(ctx: &InputContext) -> Vec<Arc<String>> {
     let mut entries = Vec::new();
     if let Ok(dirent) = dirent {
         for entry in dirent {
-            entries.push(Arc::new(
-                entry
-                    .unwrap()
-                    .path()
-                    .to_str()
-                    .unwrap()
-                    .to_owned()
-            ));
+            let mut path = entry
+                .unwrap()
+                .path();
+
+            if path.starts_with("./") {
+                path = path.strip_prefix("./").unwrap().to_path_buf();
+            }
+
+            entries.push(Arc::new(path.to_str().unwrap().to_owned()));
         }
     }
 
