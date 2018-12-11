@@ -216,18 +216,18 @@ command = {
 //
 //  Pipeline `|'
 //
-pipeline = { command ~ ((!("||") ~ "|") ~ command)* }
+pipeline = { command ~ ((!("||") ~ "|") ~ wsnl? ~ command)* }
 
 //
 //  And/Or List (`&&' or `||')
 //
-and_or_list = { pipeline ~ (and_or_list_sep ~ and_or_list)* }
+and_or_list = { pipeline ~ (and_or_list_sep ~ wsnl? ~ and_or_list)* }
 and_or_list_sep = { "||" | "&&" }
 
 //
 //  Compound List (`;' or `&')
 //
-compound_list = { compound_list_inner ~ (compound_list_sep ~ compound_list)* }
+compound_list = { compound_list_inner ~ (compound_list_sep ~ wsnl? ~ compound_list)* }
 compound_list_sep = { (!(";;") ~ ";") | !("&&") ~ "&" | "\n" }
 empty_line = { "" }
 compound_list_inner = _{ and_or_list | empty_line }
