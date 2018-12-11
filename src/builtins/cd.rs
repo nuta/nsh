@@ -5,19 +5,22 @@ use std::io::Write;
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("cd: {:?}", ctx.argv);
+    let old_dir = std::env::current_dir().expect("failed to getcwd()");
     let dir = match ctx.argv.get(1) {
         Some(dir) => {
             if dir.starts_with('/') {
+                // absolute path
                 dir.clone()
             } else {
-                let current_dir = std::env::current_dir().expect("failed to getcwd()");
-                Path::new(&current_dir)
+                // relative path
+                Path::new(&old_dir)
                     .join(dir.clone())
                     .to_string_lossy()
                     .into_owned()
             }
         }
         None => {
+            // called with no arguments; defaults to the home directory
             if let Some(home_dir) = dirs::home_dir() {
                 home_dir.to_string_lossy().into_owned()
             } else {
@@ -25,6 +28,9 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             }
         }
     };
+
+    // TODO: make this configurable
+    ctx.isolate.pushd(old_dir.to_str().unwrap().to_owned());
 
     match std::env::set_current_dir(&dir) {
         Ok(_) => {

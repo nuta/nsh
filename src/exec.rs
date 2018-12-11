@@ -356,6 +356,9 @@ pub struct Isolate {
     last_fore_job: Option<Arc<Job>>,
     states: HashMap<Pid, ProcessState>,
     pid_job_mapping: HashMap<Pid, Arc<Job>>,
+
+    // pushd(1) / popd(1) stack
+    cd_stack: Vec<String>,
 }
 
 unsafe impl Send for Isolate {}
@@ -386,6 +389,7 @@ impl Isolate {
             jobs: HashMap::new(),
             states: HashMap::new(),
             pid_job_mapping: HashMap::new(),
+            cd_stack: Vec::new(),
             last_fore_job: None,
             last_back_job: None,
         }
@@ -478,6 +482,14 @@ impl Isolate {
 
     pub fn lookup_alias(&self, alias: &str) -> Option<String> {
         self.aliases.get(&alias.to_string()).cloned()
+    }
+
+    pub fn pushd(&mut self, path: String) {
+        self.cd_stack.push(path);
+    }
+
+    pub fn popd(&mut self) -> Option<String> {
+        self.cd_stack.pop()
     }
 
     fn evaluate_expr(&self, expr: &Expr) -> i32 {
