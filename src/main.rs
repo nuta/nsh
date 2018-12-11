@@ -82,14 +82,10 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
 
 
     //Evaluate ~/.nshrc asynchronously since it may take too long.
+    let rc = config.rc.clone();
     let nshrc_loader = std::thread::spawn(move || {
         let mut isolate = isolate_lock2.lock().unwrap();
-        if let Some(home_dir) = dirs::home_dir() {
-            let nshrc_path = Path::new(&home_dir).join(".nshrc");
-            if nshrc_path.exists() {
-                isolate.run_file(nshrc_path);
-            }
-        }
+        isolate.run_str(&rc);
     });
 
     // Render the prompt and wait for an user input.

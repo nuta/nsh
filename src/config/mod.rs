@@ -9,6 +9,10 @@ pub struct Config {
     /// `$PATH`. Separated by `:`.
     #[serde(default = "default_path")]
     pub path: String,
+
+    /// Startup script (known as `.bashrc` in Bash).
+    #[serde(default = "default_empty")]
+    pub rc: String,
 }
 
 fn default_prompt() -> String {
@@ -17,6 +21,10 @@ fn default_prompt() -> String {
 
 fn default_path() -> String {
     "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/sbin".to_owned()
+}
+
+fn default_empty() -> String {
+    String::new()
 }
 
 pub fn main() {

@@ -15,7 +15,7 @@ $ yarn
 
 2. Start local backend/frontend servers.
 ```
-$ cargo run
+$ cargo run -- --config
 ```
 
 ```

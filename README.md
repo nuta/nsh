@@ -22,8 +22,9 @@ TODO: Publish to crates.io
 
 Configuration
 -------------
-- `~/.nshrc`: A shell script like `.bashrc`.
-- `~/.nshconfig`: A JSON file which contains preferences. Use `nsh --config` to edit.
+```
+$ nsh --config
+```
 
 ----
 
@@ -95,8 +96,4 @@ Internals
 For better user experience we want to print the prompt as soon as possible.
 To achieve blazingly fast first prompt rendering, in constrast to bash, nsh
 utilizes threads to initialize the shell environment such as history loading,
-`$PATH` scanning, and even `.nshrc` execution.
-
-Since we execute `.nshrc` in a background thread nsh introduces another config
-file named `.nshconfig`, a JSON file which contains some declarative configuration
-such as `$PROMPT` (aka. `$PS1`) and `$PATH`.
+`$PATH` scanning, and even rc script execution.

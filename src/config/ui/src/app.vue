@@ -5,6 +5,14 @@
     </header>
     <main>
         <section>
+            <h2>Startup Script</h2>
+            <label for="rc">Startup Script (known as <code>.bashrc</code> in Bash)</label>
+            <div class="input-group mb-3">
+                <div id="rc" type="text" class="editor"></div>
+            </div>
+        </section>
+
+        <section>
             <h2>Prompt</h2>
             <label for="prompt">Prompt Format (<code>$prompt</code>)</label>
             <div class="input-group mb-3">
@@ -76,6 +84,11 @@ import request from 'superagent';
 import { setTimeout, clearTimeout } from 'timers';
 
 const SETTINGS = [
+    {
+        name: "rc",
+        type: "string",
+        default: ""
+    },
     {
         name: "prompt",
         type: "string",
@@ -175,11 +188,6 @@ export default {
             return parse_prompt(this.prompt);
         }
     },
-    watch: {
-
-    },
-    methods: {
-    },
     async beforeMount() {
         const resp = await request
           .get("/api/load")
@@ -188,6 +196,16 @@ export default {
         for (const s of SETTINGS) {
             this[s.name] = resp.body[s.name] || s.default;
         }
+
+        // Initialize Ace editor.
+        var editor = ace.edit("rc");
+        editor.setTheme("ace/theme/monokai");
+        editor.setShowPrintMargin(false);
+        editor.session.setMode("ace/mode/sh");
+        editor.session.setValue(this.rc);
+        editor.session.on('change', () => {
+            this.rc = editor.session.getValue();
+        });
 
         // Autosave
         let timer = null;
@@ -226,7 +244,7 @@ export default {
                 }, 1000);
             }
         );
-    }
+    },
 };
 </script>
 
@@ -257,5 +275,10 @@ section {
     .color-yellow  { color: yellow; }
     .color-cyan    { color: cyan; }
     .color-magenta { color: magenta; }
+}
+
+.editor {
+    height: 400px;
+    width: 100%;
 }
 </style>
