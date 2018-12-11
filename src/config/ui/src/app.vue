@@ -252,10 +252,29 @@ export default {
 @import "~noty/src/noty.scss";
 @import "~noty/src/themes/mint.scss";
 
+h1 {
+    margin: 15px 0px;
+    text-align: center;
+}
+
+body {
+    background: #74bed8;
+}
+
+main {
+    margin: 0px auto 30px;
+    padding: 40px 30px;
+    width: 900px;
+    border-radius: 5px;
+    background: #fefefe;
+}
+
 section {
-    border-top: 3px solid #cacaca;
-    padding-top: 35px;
-    margin-top: 35px;
+    &:not(:nth-child(1)) {
+        border-top: 3px solid #cacaca;
+        padding-top: 35px;
+        margin-top: 35px;
+    }
 }
 
 .prompt-preview {
