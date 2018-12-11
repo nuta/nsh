@@ -81,7 +81,7 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     }
 
 
-    //Evaluate ~/.nshrc asynchronously since it may take too long.
+    //Evaluate rc script asynchronously since it may take too long.
     let rc = config.rc.clone();
     let nshrc_loader = std::thread::spawn(move || {
         let mut isolate = isolate_lock2.lock().unwrap();
