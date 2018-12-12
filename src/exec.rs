@@ -564,7 +564,7 @@ impl Isolate {
             },
             _ => {
                 if let Some(var) = self.get(name) {
-                    // $<name> is defined and contains a string value.
+                    // $<name> is defined.
                     let value = var.as_str().to_string();
                     return match op {
                         ExpansionOp::Length => Ok(vec![value.len().to_string()]),
