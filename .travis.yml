@@ -39,7 +39,7 @@ script:
   - cargo build --release
   - cargo run --release -- --doctor
   - if [ "$TRAVIS_RUST_VERSION" == "nightly" ]; then cargo bench; fi
-  - if [ "$TRAVIS_RUST_VERSION" == "nightly" ]; then cargo test; fi
+  - if [ "$TRAVIS_RUST_VERSION" == "nightly" ]; then cargo test --release; fi
   - ./tools/run-blackbox-tests.py --release
 
 notifications:
