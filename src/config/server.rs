@@ -142,5 +142,5 @@ pub fn main() {
         println!("Press Ctrl-C to quit.");
     });
 
-    Iron::new(router).http("localhost:7171").unwrap();
+    Iron::new(router).http("127.0.0.1:7171").unwrap();
 }
