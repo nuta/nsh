@@ -1,11 +1,6 @@
 #![cfg_attr(test, feature(test))]
 
 #[macro_use]
-extern crate slog;
-extern crate slog_scope;
-extern crate slog_stdlog;
-extern crate slog_term;
-#[macro_use]
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
@@ -33,6 +28,7 @@ extern crate pest_derive;
 
 #[cfg(test)] extern crate test;
 
+mod logger;
 mod builtins;
 mod completion;
 mod exec;
@@ -119,32 +115,6 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     }
 }
 
-static mut GLOBAL_LOGGER: Option<slog_scope::GlobalLoggerGuard> = None;
-
-fn init_log() {
-    use slog::Drain;
-    use std::fs::OpenOptions;
-
-    let mut log_file_path = dirs::home_dir().unwrap();
-    log_file_path.push(".nsh.log");
-
-    let file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .append(true)
-        .open(log_file_path)
-        .unwrap();
-
-    let decorator = slog_term::PlainSyncDecorator::new(file);
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let logger = slog::Logger::root(drain, o!());
-    let guard = slog_scope::set_global_logger(logger);
-    unsafe {
-        GLOBAL_LOGGER = Some(guard);
-    }
-    slog_stdlog::init().unwrap();
-}
-
 #[derive(StructOpt, Debug)]
 #[structopt(name="nsh", about="A command-line shell that focuses on performance and productivity.")]
 struct Opt {
@@ -168,7 +138,7 @@ struct Opt {
 /// The entry point. In the intreactive mode, we utilize asynchronous initializaiton
 /// (background worker threads) to render the prompt as soon as possible for hunan.
 fn main() {
-    init_log();
+    logger::init();
     let opt = Opt::from_args();
 
     if opt.doctor {

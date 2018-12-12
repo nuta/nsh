@@ -6,11 +6,7 @@ edition = "2018"
 
 [dependencies]
 lazy_static = "1"
-log = { version = "*", features = ["max_level_trace", "release_max_level_off"] }
-slog = "*"
-slog-scope = "*"
-slog-stdlog = "*"
-slog-term = "*"
+log = "*" #{ version = "*", features = ["max_level_trace", "release_max_level_off"] }
 nix = "^0.12"
 libc = "*"
 dirs = "1"
