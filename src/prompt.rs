@@ -1,4 +1,5 @@
-use crate::input::{InputMode, CompletionState};
+use crate::completion::CompletionSelector;
+use crate::input::InputMode;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::Style;
 use syntect::highlighting::ThemeSet;
@@ -294,7 +295,7 @@ fn replace_newline_with_clear(text: &str, y: u16) -> String {
 pub fn render_prompt(
     prompt_fmt: &str,
     mode: InputMode,
-    completions: &CompletionState,
+    completions: &CompletionSelector,
     prompt_y: u16,
     y_max: u16,
     prev_rendered_lines: u16,
@@ -455,7 +456,7 @@ mod benchmarks {
     fn simple_prompt_rendering_bench(b: &mut Bencher) {
         b.iter(|| {
             let mode = InputMode::Normal;
-            let completions = CompletionState::new(vec![]);
+            let completions = CompletionSelector::new(vec![]);
             let theme = "Solarized (dark)";
             render_prompt("$ ", mode, &completions, 0, 64, 0, 3, "ls -alhG", &theme);
         });
@@ -466,7 +467,7 @@ mod benchmarks {
         b.iter(|| {
             let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir}\\n$\\{reset} ";
             let mode = InputMode::Normal;
-            let completions = CompletionState::new(vec![]);
+            let completions = CompletionSelector::new(vec![]);
             let theme = "Solarized (dark)";
             render_prompt(&prompt, mode, &completions, 0, 64, 64, 3, "ls -alhG", &theme);
         });

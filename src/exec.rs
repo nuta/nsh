@@ -1,4 +1,6 @@
 use crate::builtins::{InternalCommandContext, INTERNAL_COMMANDS, InternalCommandError};
+use crate::completion::{CompSpec, cmd_completion, path_completion};
+use crate::context_parser::InputContext;
 use crate::parser::{
     self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer,
     LocalDeclaration, Assignment
@@ -355,6 +357,8 @@ pub struct Isolate {
 
     // pushd(1) / popd(1) stack
     cd_stack: Vec<String>,
+
+    completions: HashMap<String, CompSpec>,
 }
 
 unsafe impl Send for Isolate {}
@@ -388,6 +392,7 @@ impl Isolate {
             cd_stack: Vec::new(),
             last_fore_job: None,
             last_back_job: None,
+            completions: HashMap::new(),
         }
     }
 
@@ -497,6 +502,79 @@ impl Isolate {
 
     pub fn popd(&mut self) -> Option<String> {
         self.cd_stack.pop()
+    }
+
+    fn call_completion_function(&mut self, func_name: &str, ctx: &InputContext) -> Vec<Arc<String>> {
+        let words = ctx.words.iter().map(|w| w.as_ref().to_owned()).collect();
+        let current_word_index = ctx.current_word_index.to_string();
+        let locals = vec![
+            ("COMP_WORDS", Value::Array(words)),
+            ("COMP_CWORD", Value::String(current_word_index))
+        ];
+
+        trace!("call_completion: ctx={:?}", ctx);
+
+        match self.call_function_in_shell_context(func_name, vec![], locals) {
+            Ok(ExitStatus::ExitedWith(0)) => {
+                self.get("COMPREPLY")
+                    .and_then(|reply| {
+                        match reply.value() {
+                            Value::Array(arr) => {
+                                debug!("arr = {:?}", arr);
+                                let entries = arr.iter()
+                                    .map(|elem| Arc::new(elem.clone()))
+                                    .collect();
+                                Some(entries)
+                            },
+                            _ => None,
+                        }
+                    })
+                    .unwrap_or_else(|| Vec::new())
+            },
+            Ok(status) => {
+                // Something went wrong within the function. Just ignore it.
+                eprintln!("nsh: failed to invoke a completion function `{}': {:?}",
+                    func_name, status);
+                Vec::new()
+            },
+            Err(err) => {
+                // Something went wrong (BUG).
+                eprintln!("nsh: BUG: failed to invoke a function `{}': {}",
+                    func_name, err);
+                Vec::new()
+            }
+        }
+    }
+
+    pub fn complete(&mut self, ctx: &InputContext) -> Vec<Arc<String>> {
+        if ctx.current_word_index == 0 {
+            // The cursor is at the first word, namely, the command.
+            cmd_completion(ctx)
+        } else if let Some(cmd) = ctx.words.get(0) {
+            let func_name = self.get_compspec(cmd.as_str())
+                .and_then(|spec| spec.func_name())
+                .map(|name| name.to_owned());
+
+            if let Some(func_name) = func_name {
+                self.call_completion_function(&func_name, ctx)
+            } else {
+                // There are no completion fuctions. Use path completion
+                // instead.
+                path_completion(ctx)
+            }
+        } else {
+            Vec::new()
+        }
+    }
+
+    #[inline]
+    pub fn get_compspec<'a>(&'a self, command: &str) -> Option<&'a CompSpec> {
+        self.completions.get(command)
+    }
+
+    #[inline]
+    pub fn set_compspec(&mut self, command: &str, compspec: CompSpec) {
+        self.completions.insert(command.to_owned(), compspec);
     }
 
     fn evaluate_expr(&self, expr: &Expr) -> i32 {

@@ -19,6 +19,8 @@ mod read;
 mod unset;
 mod pushd;
 mod popd;
+mod complete;
+mod compgen;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
@@ -71,6 +73,8 @@ lazy_static! {
         commands.insert("unset", crate::builtins::unset::command);
         commands.insert("pushd", crate::builtins::pushd::command);
         commands.insert("popd", crate::builtins::popd::command);
+        commands.insert("complete", crate::builtins::complete::command);
+        commands.insert("compgen", crate::builtins::compgen::command);
         commands
     };
 }

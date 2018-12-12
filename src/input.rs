@@ -1,116 +1,17 @@
-use crate::completion::complete;
+use crate::completion::{CompletionSelector};
+use crate::exec::Isolate;
 use crate::context_parser::{InputContext, parse_input_context};
 use crate::history::{HistorySelector, append_history};
 use crate::prompt::render_prompt;
 use crate::config::Config;
-use std::sync::Arc;
 use std::io::{self, Write, Stdout};
+use std::sync::{Arc, Mutex};
 use termion;
 use termion::cursor::DetectCursorPos;
 use termion::event::{Event, Key};
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 
-pub struct CompletionState {
-    /// Candidate completion entries.
-    entries: Vec<Arc<String>>,
-    // The currently selected entry.
-    selected_index: usize,
-    // The number of completion lines in the prompt.
-    display_lines: usize,
-    // The beginning of entries to be displayed.
-    display_index: usize,
-}
-
-impl CompletionState {
-    pub fn new(entries: Vec<Arc<String>>) -> CompletionState {
-        const COMPLETION_LINES: usize = 5;
-
-        CompletionState {
-            entries,
-            selected_index: 0,
-            display_lines: COMPLETION_LINES,
-            display_index: 0,
-        }
-    }
-
-    /// Move to the next/previous entry.
-    pub fn move_cursor(&mut self, offset: isize) {
-        // FIXME: I think there's more sane way to handle a overflow.`
-        let mut old_selected_index = self.selected_index as isize;
-        old_selected_index += offset;
-
-        let entries_len = self.len() as isize;
-        if entries_len > 0 && old_selected_index > entries_len - 1 {
-            old_selected_index = entries_len - 1;
-        }
-
-        if old_selected_index < 0 {
-            old_selected_index = 0;
-        }
-
-        self.selected_index = old_selected_index as usize;
-
-        if self.selected_index >= self.display_index + self.display_lines {
-            self.display_index = self.selected_index - self.display_lines + 1;
-        }
-
-        if self.selected_index < self.display_index {
-            self.display_index = self.selected_index;
-        }
-
-        trace!(
-            "move_cursor: offset={}, index={}",
-            offset,
-            self.selected_index
-        );
-    }
-
-    #[inline(always)]
-    pub fn entries(&self) -> Vec<Arc<String>> {
-        self.entries.clone()
-    }
-
-    #[inline(always)]
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    #[inline(always)]
-    pub fn selected_index(&self) -> usize {
-        self.selected_index
-    }
-
-    #[inline(always)]
-    pub fn get(&self, index: usize) -> Option<Arc<String>> {
-        self.entries.get(index).cloned()
-    }
-
-    #[inline(always)]
-    pub fn display_lines(&self) -> usize {
-        self.display_lines
-    }
-
-    #[inline(always)]
-    pub fn display_index(&self) -> usize {
-        self.display_index
-    }
-
-    pub fn select_and_update_input_and_cursor(&self, input_ctx: &InputContext, user_input: &mut String, user_cursor: &mut usize) {
-        if let Some(selected) = self.get(self.selected_index()) {
-            let prefix = user_input
-                .get(..(input_ctx.current_word_offset))
-                .unwrap_or("")
-                .to_string();
-            let suffix_offset = input_ctx.current_word_offset
-                + input_ctx.current_word_len;
-            let suffix =
-                &user_input.get((suffix_offset)..).unwrap_or("").to_string();
-            *user_input = format!("{}{}{}", prefix, selected, suffix);
-            *user_cursor = input_ctx.current_word_offset + selected.len();
-        }
-    }
-}
 
 #[derive(Debug)]
 pub enum InputError {
@@ -129,7 +30,7 @@ fn get_current_yx(stdout: &mut Stdout) -> (u16, u16) {
     (y - 1, x - 1)
 }
 
-pub fn input(config: &Config) -> Result<String, InputError> {
+pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<String, InputError> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
     let (_, current_x) = get_current_yx(&mut stdout);
@@ -153,7 +54,7 @@ pub fn input(config: &Config) -> Result<String, InputError> {
     let mut mode = InputMode::Normal;
     let mut rendered_lines = 0;
     // TODO: move these variables into InputMode::Completion.
-    let mut completion_state = CompletionState::new(vec![]);
+    let mut completion_state = CompletionSelector::new(vec![]);
     let mut input_ctx: InputContext = Default::default();
     let mut history = HistorySelector::new();
 
@@ -198,7 +99,8 @@ pub fn input(config: &Config) -> Result<String, InputError> {
                         }
                         InputMode::Normal => {
                             input_ctx = parse_input_context(&user_input, user_cursor);
-                            completion_state = CompletionState::new(complete(&input_ctx));
+                            let mut isolate = isolate_lock.lock().unwrap();
+                            completion_state = CompletionSelector::new(isolate.complete(&input_ctx));
                             if completion_state.len() == 1 {
                                 // There is only one completion candidate. Select it and go back into
                                 // normal input mode.
@@ -216,7 +118,8 @@ pub fn input(config: &Config) -> Result<String, InputError> {
 
                         if mode == InputMode::Completion {
                             input_ctx = parse_input_context(&user_input, user_cursor);
-                            completion_state = CompletionState::new(complete(&input_ctx));
+                            let mut isolate = isolate_lock.lock().unwrap();
+                            completion_state = CompletionSelector::new(isolate.complete(&input_ctx));
                         }
                     }
                     Event::Key(Key::Up) => {
@@ -300,9 +203,10 @@ pub fn input(config: &Config) -> Result<String, InputError> {
                             user_cursor += 1;
 
                             if mode == InputMode::Completion {
+                                let mut isolate = isolate_lock.lock().unwrap();
                                 input_ctx =
                                     parse_input_context(&user_input, user_cursor);
-                                completion_state = CompletionState::new(complete(&input_ctx));
+                                completion_state = CompletionSelector::new(isolate.complete(&input_ctx));
                             }
                         }
                     },

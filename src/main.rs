@@ -55,7 +55,6 @@ use crate::config::Config;
 
 fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     let isolate_lock = Arc::new(Mutex::new(raw_isolate));
-    let isolate_lock2 = isolate_lock.clone();
 
     // Create a process group.
     let pid = getpid();
@@ -77,13 +76,16 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
 
     //Evaluate rc script asynchronously since it may take too long.
     let rc = config.rc.clone();
+    let isolate_lock2 = isolate_lock.clone();
     let nshrc_loader = std::thread::spawn(move || {
         let mut isolate = isolate_lock2.lock().unwrap();
         isolate.run_str(&rc);
     });
 
+    // TODO: Ensure that nshrc loader grabs the lock.
+
     // Render the prompt and wait for an user input.
-    let mut line = match input::input(config) {
+    let mut line = match input::input(config, isolate_lock.clone()) {
         Ok(line) => {
             println!();
             line
@@ -96,14 +98,15 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     // Now we have to execute the first command from the prompt. Wait for the
     // nshrc loader to finish and enter the main loop.
     nshrc_loader.join().unwrap();
-    let mut isolate = isolate_lock.lock().unwrap();
 
     loop {
         trace!("line {}", line);
+        let mut isolate = isolate_lock.lock().unwrap();
         isolate.run_str(&line);
+        drop(isolate);
 
         // Read the next line.
-        line = match input::input(config) {
+        line = match input::input(config, isolate_lock.clone()) {
             Ok(line) => {
                 println!();
                 line
