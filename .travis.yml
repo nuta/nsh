@@ -36,10 +36,10 @@ install:
 script:
   - "cd src/config/ui && yarn && yarn build && cd ../../.."
   - cargo build --release
-  - cargo run -- --doctor
-  - cargo bench
-  - cargo test
-  - ./tools/run-blackbox-tests.py
+  - cargo run --release -- --doctor
+  - if [ "$TRAVIS_RUST_VERSION" == "nightly" ]; then cargo bench; fi
+  - if [ "$TRAVIS_RUST_VERSION" == "nightly" ]; then cargo test; fi
+  - ./tools/run-blackbox-tests.py --release
 
 notifications:
   email: false
