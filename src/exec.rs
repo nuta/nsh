@@ -753,11 +753,14 @@ impl Isolate {
                 Ok(Value::String(self.expand_word_into_string(word)?))
             },
             Initializer::Array(ref words) =>  {
-                let mut elems = Vec::new();
-                for word in words {
-                    elems.push(self.expand_word_into_string(word)?);
+                let elems = self.expand_words(words)?;
+                match (elems.len(), elems.get(0)) {
+                    (1, Some(ref body)) if body.is_empty() => {
+                        // Make `foo=()' an empty array.
+                        Ok(Value::Array(vec![]))
+                    },
+                    _ => Ok(Value::Array(elems))
                 }
-                Ok(Value::Array(elems))
             }
         }
     }
