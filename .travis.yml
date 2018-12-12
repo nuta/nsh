@@ -26,6 +26,7 @@ addons:
 
 before_install:
   - cargo --version
+  - node --version
   - bash --version
   - python --version
   - python3 --version
