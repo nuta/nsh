@@ -401,6 +401,11 @@ impl Isolate {
     }
 
     #[inline]
+    pub fn ifs(&self) -> String {
+        self.get_str("IFS").unwrap_or_else(|| "\n\t ".to_owned())
+    }
+
+    #[inline]
     pub fn enter_frame(&mut self) {
         self.frames.push(Frame::new());
     }
@@ -708,8 +713,7 @@ impl Isolate {
     }
 
     fn expand_word_into_string(&mut self, word: &Word) -> Result<String> {
-        let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
-        let ws: Vec<String> = self.expand_word_into_vec(word, &ifs)?
+        let ws: Vec<String> = self.expand_word_into_vec(word, &self.ifs())?
             .into_iter()
             .map(|w| w.into_string())
             .collect();
@@ -722,7 +726,7 @@ impl Isolate {
         let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
         for word in words {
             let mut ws = Vec::new();
-            for w in self.expand_word_into_vec(word, &ifs)? {
+            for w in self.expand_word_into_vec(word, &self.ifs())? {
                 for f in w.expand_glob()? {
                     ws.push(f);
                 }
@@ -1339,8 +1343,7 @@ impl Isolate {
     fn run_for_command(&mut self, ctx: &Context, var_name: &str, words: &[Word], body: &[parser::Term]) -> Result<ExitStatus> {
     'for_loop:
         for unexpanded_word in words {
-            let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
-            let expanded_words = self.expand_word_into_vec(unexpanded_word, &ifs)?;
+            let expanded_words = self.expand_word_into_vec(unexpanded_word, &self.ifs())?;
             for pattern_word in expanded_words {
                 for value in pattern_word.expand_glob()? {
                     self.set(&var_name, Value::String(value), false);
