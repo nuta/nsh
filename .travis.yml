@@ -12,11 +12,6 @@ rust:
   - beta
   - stable
 
-matrix:
-  allow_failures:
-    - rust: beta
-    - rust: stable
-
 addons:
   apt:
     packages:
