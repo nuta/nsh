@@ -723,7 +723,6 @@ impl Isolate {
 
     fn expand_words(&mut self, words: &[Word]) -> Result<Vec<String>> {
         let mut evaluated = Vec::new();
-        let ifs = self.get_str("IFS").unwrap_or_else(|| "\t ".to_owned());
         for word in words {
             let mut ws = Vec::new();
             for w in self.expand_word_into_vec(word, &self.ifs())? {
