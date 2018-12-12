@@ -1,6 +1,5 @@
 use crate::builtins::InternalCommandContext;
 use crate::exec::ExitStatus;
-use dirs;
 use std::io::Write;
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
