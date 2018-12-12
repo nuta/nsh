@@ -232,8 +232,9 @@ export default {
           .get("/api/load")
           .query({ access_token: this.access_token });
 
+        const body = resp.body || {};
         for (const s of SETTINGS) {
-            this[s.name] = resp.body[s.name] || s.default;
+            this[s.name] = body[s.name] || s.default;
         }
 
         // Initialize Ace editor.
@@ -264,8 +265,9 @@ export default {
                 timer = setTimeout(() => {
                     request
                         .post("/api/save")
+                        .set("Content-Type", "application/octet-stream")
                         .query({ access_token: this.access_token })
-                        .send(new_value)
+                        .send(JSON.stringify(new_value, null, 4))
                         .then(() => {
                             new Noty({
                                 text: '<b>saved to ~/.nshconfig</b>',

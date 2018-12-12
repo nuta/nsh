@@ -28,7 +28,9 @@ pest = "2"
 pest_derive = "2"
 
 # nsh --config dependecies
-rocket = "0.4.0-rc.1"
+iron = "0.6"
+router = "*"
+params = "*"
 rand = "0.6"
 
 # The latest version published to the crates.io does not include

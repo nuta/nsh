@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "build": "parcel build src/index.html -d build",
+    "build": "rm -rf build; parcel build src/index.html -d build",
     "dev": "node ./dev-server.js"
   },
   "devDependencies": {

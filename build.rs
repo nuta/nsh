@@ -32,5 +32,6 @@ fn main() {
    println!("cargo:rustc-env=RUSTC_VERSION={}", rustc_version());
    println!("cargo:rustc-env=CARGO_VERSION={}", cargo_version());
    println!("cargo:rustc-env=CONFIG_UI_JS_FILENAME={}", look_for(".js"));
+   println!("cargo:rustc-env=CONFIG_UI_CSS_FILENAME={}", look_for(".css"));
    println!("cargo:rustc-env=CONFIG_UI_MAP_FILENAME={}", look_for(".map"));
 }

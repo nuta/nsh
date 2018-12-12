@@ -1,6 +1,4 @@
-#![recursion_limit = "256"]
-#![feature(test)]
-#![feature(proc_macro_hygiene, decl_macro)]
+#![cfg_attr(test, feature(test))]
 
 #[macro_use]
 extern crate slog;
@@ -20,18 +18,20 @@ extern crate crossbeam;
 extern crate crossbeam_channel;
 extern crate glob;
 extern crate globset;
-#[macro_use]
-extern crate rocket;
+extern crate iron;
+extern crate router;
+extern crate params;
 extern crate serde;
 extern crate serde_json;
 #[macro_use]
 extern crate serde_derive;
 #[macro_use]
 extern crate failure;
-extern crate test;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
+
+#[cfg(test)] extern crate test;
 
 mod builtins;
 mod completion;
