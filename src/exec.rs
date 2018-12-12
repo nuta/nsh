@@ -425,6 +425,12 @@ impl Isolate {
         self.frames.last_mut().unwrap_or(&mut self.global)
     }
 
+    #[inline]
+    pub fn assign(&mut self, key: &str, value: Value) {
+        let defined_as_local = self.current_frame().get(key).is_some();
+        self.set(key, value, defined_as_local);
+    }
+
     pub fn set(&mut self, key: &str, value: Value, is_local: bool) {
         let frame = if is_local {
             self.current_frame_mut()
@@ -1385,7 +1391,7 @@ impl Isolate {
             parser::Command::Assignment { assignments } => {
                 for assign in assignments {
                     let value = self.evaluate_initializer(&assign.initializer)?;
-                    self.set(&assign.name, value, false)
+                    self.assign(&assign.name, value)
                 }
                 ExitStatus::ExitedWith(0)
             },
