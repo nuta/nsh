@@ -322,7 +322,7 @@ pub fn render_prompt(
     };
 
     use termion::clear::CurrentLine;
-    use termion::color::{Fg, Bg, White, Cyan};
+    use termion::color::{Fg, Bg, White, Red};
     use termion::style::*;
 
     // Render completions.
@@ -347,7 +347,7 @@ pub fn render_prompt(
             }
 
             write!(completion_str, "{}{}{}{} {}/{} ",
-                CurrentLine, Bold, Fg(White), Bg(Cyan),
+                CurrentLine, Reset, Invert, Bold,
                 completions.selected_index() + 1,
                 completions.len()
             ).ok();
@@ -355,7 +355,7 @@ pub fn render_prompt(
             write!(
                 completion_str,
                 "{}{}{}{}no candidates",
-                CurrentLine, Bold, Fg(White), Bg(Cyan)
+                CurrentLine, Bold, Fg(White), Bg(Red)
             )
             .ok();
         }
