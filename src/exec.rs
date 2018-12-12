@@ -1170,6 +1170,58 @@ impl Isolate {
             .unwrap_or_else(|| argv.to_owned())
     }
 
+    #[inline]
+    fn is_function(&self, name: &str) -> bool {
+        self.get(name)
+            .map(|var| {
+                match var.value() {
+                    Value::Function(_) => true,
+                    _ => false,
+                }
+            })
+            .unwrap_or(false)
+    }
+
+    #[inline]
+    fn call_function_in_shell_context(&mut self, name: &str, args: Vec<String>, locals: Vec<(&str, Value)>) -> Result<ExitStatus> {
+            let ctx = Context {
+                stdin: 0,
+                stdout: 1,
+                stderr: 2,
+                pgid: None,
+                background: false,
+                interactive: false,
+            };
+
+            self.call_function(name, &ctx, args, locals)
+    }
+
+    fn call_function(&mut self, name: &str, ctx: &Context, args: Vec<String>, locals: Vec<(&str, Value)>) -> Result<ExitStatus> {
+        if let Some(var) = self.get(name) {
+            if let Value::Function(ref body) = var.value() {
+                self.enter_frame();
+                let frame = self.current_frame_mut();
+                // Set local variables.
+                for (name, value) in locals {
+                    frame.set(name, value);
+                }
+
+                // $1, $2, ...
+                frame.set_args(&args);
+
+                let result = match self.run_command(&body, ctx)? {
+                    ExitStatus::Return => ExitStatus::ExitedWith(0),
+                    result => result,
+                };
+                self.leave_frame();
+                return Ok(result);
+            }
+        }
+
+        // No such a function.
+        Ok(ExitStatus::ExitedWith(1))
+    }
+
     fn run_simple_command(
         &mut self,
         ctx: &Context,
@@ -1186,19 +1238,10 @@ impl Isolate {
         }
 
         // Functions
-        if let Some(ref var) = self.get(argv[0].as_str()) {
-            if let Value::Function(ref body) = var.value() {
-                self.enter_frame();
-                let args: Vec<String> = argv.iter().skip(1).cloned().collect();
-                self.current_frame_mut().set_args(&args);
-                let result = match self.run_command(&body, ctx)? {
-                    ExitStatus::Return => ExitStatus::ExitedWith(0),
-                    result => result,
-                };
-
-                self.leave_frame();
-                return Ok(result);
-            }
+        let argv0 = argv[0].as_str();
+        if self.is_function(argv0) {
+            let args = argv.iter().skip(1).cloned().collect();
+            return self.call_function(argv0, ctx, args, vec![]);
         }
 
         // Internal commands
