@@ -27,10 +27,6 @@ use globset;
 use failure::Error;
 
 #[derive(Debug, Fail)]
-#[fail(display = "index out of bounds")]
-pub struct IndexOutOfBoundsError;
-
-#[derive(Debug, Fail)]
 #[fail(display = "no matches")]
 pub struct NoMatchesError;
 
@@ -622,15 +618,18 @@ impl Isolate {
                 Span::ArrayParameter { name, index, quoted } => {
                     let index = self.evaluate_expr(index);
                     if index < 0 {
-                        eprintln!("nsh: {}: the index must be larger than or equals 0", name);
-                        return Err(Error::from(IndexOutOfBoundsError));
+                        warn!("the index must be larger than or equals 0: var={}, index={}",
+                            name, index);
+                        (vec![], !quoted)
+                    } else {
+                        debug!("array_param: ${}[{}] == {:?}", name, index, self.get(name));
+                        let frag = self
+                                .get(name)
+                                .map(|v| v.value_at(index as usize).to_string())
+                                .unwrap_or_else(|| "".to_owned());
+                        debug!("frag = {}", frag);
+                        (vec![LiteralOrGlob::Literal(frag)], !quoted)
                     }
-
-                    let frag = self
-                            .get(name)
-                            .map(|v| v.value_at(index as usize).to_string())
-                            .unwrap_or_else(|| "".to_owned());
-                    (vec![LiteralOrGlob::Literal(frag)], !quoted)
                 },
                 Span::ArithExpr { expr } => {
                     let result = self.evaluate_expr(expr).to_string();
@@ -1573,12 +1572,6 @@ impl Isolate {
                     break;
                 },
                 Err(err) => {
-                    if err.find_root_cause().downcast_ref::<IndexOutOfBoundsError>().is_some() {
-                        eprintln!("nsh: error: index out of bounds");
-                        last_result = Some(ExitStatus::ExitedWith(1));
-                        break;
-                    }
-
                     if err.find_root_cause().downcast_ref::<NoMatchesError>().is_some() {
                         eprintln!("nsh: error: no matches");
                         last_result = Some(ExitStatus::ExitedWith(1));
