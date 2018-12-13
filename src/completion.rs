@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use crate::fuzzy::FuzzyVec;
 use crate::context_parser::InputContext;
 
@@ -99,11 +99,15 @@ impl CompletionSelector {
             let suffix =
                 &user_input.get((suffix_offset)..).unwrap_or("").to_string();
 
-            // add a space after the word.
-            let space = " ";
+            // add a slash or space after the word.
+            let append = if Path::new(selected.as_str()).is_dir() {
+                "/"
+            } else {
+                " "
+            };
 
-            *user_input = format!("{}{}{}{}", prefix, selected, space, suffix);
-            *user_cursor = input_ctx.current_word_offset + selected.len() + space.len();
+            *user_input = format!("{}{}{}{}", prefix, selected, append, suffix);
+            *user_cursor = input_ctx.current_word_offset + selected.len() + append.len();
         }
     }
 }
