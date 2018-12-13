@@ -547,11 +547,25 @@ impl Isolate {
     }
 
     pub fn complete(&mut self, ctx: &InputContext) -> Vec<Arc<String>> {
+        let cmd_name = if let Some(name) = ctx.words.get(0) {
+            let name = name.as_str().to_owned();
+            match self.aliases.get(&name) {
+                Some(alias) if !alias.contains(' ') => {
+                    // The alias named `name' is defined and it is a command
+                    // (does not contain whitespaces). Use its value as the
+                    // target command name.
+                    alias.to_owned()
+                },
+                _ => name
+            }
+        } else {
+            "".to_owned()
+        };
+
         if ctx.current_word_index == 0 {
             // The cursor is at the first word, namely, the command.
             cmd_completion(ctx)
-        // `ctx.words[0]' never panic since ctx.current_word_index is larger than 0.
-        } else if let Some(compspec) = self.get_compspec(ctx.words[0].as_str()) {
+        } else if let Some(compspec) = self.get_compspec(cmd_name.as_str()) {
             let compspec = compspec.clone();
             let mut results = Vec::new();
             if let Some (name) = compspec.func_name() {
