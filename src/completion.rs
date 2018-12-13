@@ -191,34 +191,50 @@ impl CompGen {
     }
 }
 
+/// Returns file paths. It scans *recursively* from the given (or current) directory.
 pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bool) -> Vec<Arc<String>> {
+    let mut remaining_dirs = Vec::new();
     let given_dir = ctx.current_word().map(|s| (&*s).clone());
+
     trace!("path_completion: current='{:?}', dir='{:?}'", ctx.current_word(), given_dir);
-    let dirent = match &given_dir {
+
+    match &given_dir {
         Some(given_dir) if given_dir.ends_with('/') => {
-            std::fs::read_dir(given_dir)
+            remaining_dirs.push(PathBuf::from(given_dir))
         },
         Some(given_dir) if given_dir.contains('/') => {
             // Remove the last part: `/Users/chandler/Docum' -> `/users/chandler'
-            std::fs::read_dir(PathBuf::from(given_dir.clone()).parent().unwrap())
+            remaining_dirs.push(PathBuf::from(given_dir.clone()).parent().unwrap().to_path_buf())
         },
         _ => {
-            std::fs::read_dir(".")
+            remaining_dirs.push(PathBuf::from("."))
         }
     };
 
     let mut entries = Vec::new();
-    if let Ok(dirent) = dirent {
-        for entry in dirent {
-            let entry = entry.unwrap();
-            let file_type = entry.file_type().unwrap();
-            if (include_files && file_type.is_file()) || (include_dirs && file_type.is_dir()) {
-                let mut path = entry.path();
-                if path.starts_with("./") {
-                    path = path.strip_prefix("./").unwrap().to_path_buf();
+    let threshold = 1000; // TODO: compute this by machine performance
+    while let Some(dir_path) = remaining_dirs.pop() {
+        if let Ok(dirent) = std::fs::read_dir(dir_path) {
+            if entries.len() > threshold {
+                break;
+            }
+
+            for entry in dirent {
+                let entry = entry.unwrap();
+                let file_type = entry.file_type().unwrap();
+
+                if file_type.is_dir() {
+                    remaining_dirs.push(entry.path());
                 }
 
-                entries.push(Arc::new(path.to_str().unwrap().to_owned()));
+                if (include_files && file_type.is_file()) || (include_dirs && file_type.is_dir()) {
+                    let mut path = entry.path();
+                    if path.starts_with("./") {
+                        path = path.strip_prefix("./").unwrap().to_path_buf();
+                    }
+
+                    entries.push(Arc::new(path.to_str().unwrap().to_owned()));
+                }
             }
         }
     }
