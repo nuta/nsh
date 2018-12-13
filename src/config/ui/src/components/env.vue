@@ -10,6 +10,11 @@
 
 <script lang="ts">
 export default {
-    props: ["path"]
+    props: ["path"],
+    watch: {
+        path() {
+            this.$emit("update:path", this.path);
+        }
+    }
 }
 </script>

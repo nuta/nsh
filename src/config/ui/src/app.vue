@@ -23,7 +23,7 @@
                 <prompt-settings :prompt.sync="prompt"></prompt-settings>
             </div>
             <div class="tab-pane fade show" id="env" role="tabpanel" aria-labelledby="env-tab">
-                <env-settings :path="path"></env-settings>
+                <env-settings :path.sync="path"></env-settings>
             </div>
         </div>
     </main>
@@ -145,7 +145,7 @@ export default {
 @import "~noty/src/themes/mint.scss";
 
 h1 {
-    color: #2a2a2a;
+    color: #fafafa;
     margin-top: 35px;
     margin-bottom: 20px;
     text-align: center;
@@ -158,7 +158,7 @@ h2 {
 }
 
 body {
-    background: #74bed8;
+    background: #343642;
 }
 
 main {
