@@ -8,8 +8,8 @@ A command-line shell that focuses on performance and productivity.
 
 Goals
 ------
-- A **Bash compatible** interactive shell.
-- **Tab compeltions** and **syntax highlighting** like [fish](http://fishshell.com/).
+- A (aims to be) **Bash compatible** interactive shell.
+- **Tab compeltions** and **syntax highlighting** like **[fish](http://fishshell.com/)**.
 - **Blazing fast startup times** by asynchronous initialization.
 - **Zero configration** features out of the box and web-based configuration tool `nsh --config`.
 - **Written in Rust** :crab:
@@ -30,7 +30,8 @@ $ nsh --config
 
 Why create a new shell?
 ------------------------
-I got tired of making my zshrc faster.
+I got tired of making my zshrc faster. Fish shell is really neat but I prefer old-fashioned, traditional,
+and ergonomic shell syntax.
 
 Comparisons
 -----------
