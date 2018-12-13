@@ -572,6 +572,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "nsh"
 version = "0.0.0"
 dependencies = [
+ "backtrace 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossbeam 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "crossbeam-channel 0.3.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "dirs 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",

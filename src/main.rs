@@ -25,6 +25,7 @@ extern crate failure;
 extern crate pest;
 #[macro_use]
 extern crate pest_derive;
+extern crate backtrace;
 
 #[cfg(test)] extern crate test;
 
@@ -138,22 +139,8 @@ struct Opt {
     file: Option<PathBuf>,
 }
 
-/// The entry point. In the intreactive mode, we utilize asynchronous initializaiton
-/// (background worker threads) to render the prompt as soon as possible for hunan.
-fn main() {
-    logger::init();
-    let opt = Opt::from_args();
 
-    if opt.doctor {
-        doctor::main();
-        return;
-    }
-
-    if opt.open_config {
-        config::main();
-        return;
-    }
-
+fn shell_main(opt: Opt) {
     // Load ~/.nshconfig.
     let home_dir = dirs::home_dir().unwrap();
     let nshconfig_path = Path::new(&home_dir).join(".nshconfig");
@@ -195,4 +182,27 @@ fn main() {
         ExitStatus::NoExec=> process::exit(0),
         _ => panic!("unexpected {:?}", status),
     }
+}
+
+fn main() {
+    logger::init();
+    let opt = Opt::from_args();
+
+    if opt.doctor {
+        doctor::main();
+        return;
+    }
+
+    if opt.open_config {
+        config::main();
+        return;
+    }
+
+    // Dump the panic reason and backtrace into the log file.
+    std::panic::set_hook(Box::new(|info| {
+        error!("{}", info);
+        error!("{:#?}", backtrace::Backtrace::new());
+    }));
+
+    shell_main(opt);
 }
