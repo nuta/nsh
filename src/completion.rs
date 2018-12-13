@@ -98,8 +98,12 @@ impl CompletionSelector {
                 + input_ctx.current_word_len;
             let suffix =
                 &user_input.get((suffix_offset)..).unwrap_or("").to_string();
-            *user_input = format!("{}{}{}", prefix, selected, suffix);
-            *user_cursor = input_ctx.current_word_offset + selected.len();
+
+            // add a space after the word.
+            let space = " ";
+
+            *user_input = format!("{}{}{}{}", prefix, selected, space, suffix);
+            *user_cursor = input_ctx.current_word_offset + selected.len() + space.len();
         }
     }
 }
