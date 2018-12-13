@@ -571,7 +571,8 @@ impl Isolate {
 
             results
         } else {
-            Vec::new()
+            // Compspec if not defined for the command. Use path completion instead.
+            path_completion(ctx, true, true)
         }
     }
 
