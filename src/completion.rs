@@ -1,6 +1,8 @@
 use dirs;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::path::{Path, PathBuf};
+use std::os::unix::fs::PermissionsExt;
 use crate::fuzzy::FuzzyVec;
 use crate::context_parser::InputContext;
 
@@ -193,8 +195,8 @@ impl CompGen {
 }
 
 /// Returns file paths. It scans *recursively* from the given (or current) directory.
-pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bool) -> Vec<Arc<String>> {
-    let mut remaining_dirs = Vec::new();
+pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bool, executable_only: bool, remove_dot_slash_prefix: bool) -> Vec<Arc<String>> {
+    let mut remaining_dirs = VecDeque::new();
     let given_dir = ctx.current_word().map(|s| (&*s).clone());
     let home_dir = dirs::home_dir().unwrap();
 
@@ -212,34 +214,44 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
             }
 
             path.push(sub_path);
-            remaining_dirs.push(path);
+            remaining_dirs.push_front(path);
         },
         Some(given_dir) if given_dir.ends_with('/') => {
-            remaining_dirs.push(PathBuf::from(given_dir));
+            remaining_dirs.push_front(PathBuf::from(given_dir));
         },
         Some(given_dir) if given_dir.contains('/') => {
             // Remove the last part: `/Users/chandler/Docum' -> `/users/chandler'
-            remaining_dirs.push(PathBuf::from(given_dir.clone()).parent().unwrap().to_path_buf());
+            remaining_dirs.push_front(PathBuf::from(given_dir.clone()).parent().unwrap().to_path_buf());
         },
         _ => {
-            remaining_dirs.push(PathBuf::from("."));
+            remaining_dirs.push_front(PathBuf::from("."));
         }
     };
 
     let mut entries = Vec::new();
-    let threshold = 1000; // TODO: compute this by machine performance
-    while let Some(dir_path) = remaining_dirs.pop() {
-        if let Ok(dirent) = std::fs::read_dir(dir_path) {
-            if entries.len() > threshold {
-                break;
-            }
+    let mut max_scan = 4096; // TODO: compute this by machine performance
 
+'scan_loop:
+    while let Some(dir_path) = remaining_dirs.pop_front() {
+        if let Ok(dirent) = std::fs::read_dir(dir_path) {
             for entry in dirent {
+                if max_scan < 0 {
+                    break 'scan_loop;
+                }
+                max_scan -= 1;
+
                 let entry = entry.unwrap();
                 let file_type = entry.file_type().unwrap();
 
                 if file_type.is_dir() {
-                    remaining_dirs.push(entry.path());
+                    remaining_dirs.push_back(entry.path());
+                }
+
+                let perm = entry.metadata().unwrap().permissions();
+                if executable_only && (file_type.is_file() && perm.mode() & 0b001001001 == 0) {
+                    // Executable_only is enabled and the file `entry' is not
+                    // a execuatble. Ignore it.
+                    continue;
                 }
 
                 if (include_files && file_type.is_file()) || (include_dirs && file_type.is_dir()) {
@@ -251,7 +263,7 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
                         ).to_path_buf();
                     }
 
-                    if path.starts_with("./") {
+                    if remove_dot_slash_prefix && path.starts_with("./") {
                         path = path.strip_prefix("./").unwrap().to_path_buf();
                     }
 
@@ -272,7 +284,11 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
 
 pub fn cmd_completion(ctx: &InputContext) -> Vec<Arc<String>> {
     match ctx.current_word() {
-        Some(query) => crate::path::complete(&query),
+        Some(query) => {
+            let mut entries = crate::path::complete(&query);
+            entries.extend(path_completion(ctx, true, false, true, false));
+            entries
+        },
         None => crate::path::complete(""),
     }
 }
