@@ -1,7 +1,7 @@
 use dirs;
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::os::unix::fs::PermissionsExt;
 use crate::fuzzy::FuzzyVec;
 use crate::context_parser::InputContext;
@@ -204,6 +204,12 @@ impl CompGen {
     }
 }
 
+/// Returns true if the directory should not be scanned.
+fn dir_scan_filter(path: &Path) -> bool {
+    // .git
+    path.iter().any(|s| s == ".git")
+}
+
 /// Returns file paths. It scans *recursively* from the given (or current) directory.
 pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bool, executable_only: bool, remove_dot_slash_prefix: bool) -> Vec<Arc<String>> {
     let mut remaining_dirs = VecDeque::new();
@@ -253,7 +259,7 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
                 let entry = entry.unwrap();
                 let file_type = entry.file_type().unwrap();
 
-                if file_type.is_dir() {
+                if file_type.is_dir() && !dir_scan_filter(&entry.path()) {
                     remaining_dirs.push_back(entry.path());
                 }
 
