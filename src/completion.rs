@@ -1,3 +1,4 @@
+use dirs;
 use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use crate::fuzzy::FuzzyVec;
@@ -100,7 +101,7 @@ impl CompletionSelector {
                 &user_input.get((suffix_offset)..).unwrap_or("").to_string();
 
             // add a slash or space after the word.
-            let append = if Path::new(selected.as_str()).is_dir() {
+            let append = if selected.starts_with("~/") || Path::new(selected.as_str()).is_dir() {
                 "/"
             } else {
                 " "
@@ -195,19 +196,33 @@ impl CompGen {
 pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bool) -> Vec<Arc<String>> {
     let mut remaining_dirs = Vec::new();
     let given_dir = ctx.current_word().map(|s| (&*s).clone());
+    let home_dir = dirs::home_dir().unwrap();
 
     trace!("path_completion: current='{:?}', dir='{:?}'", ctx.current_word(), given_dir);
-
     match &given_dir {
+        Some(given_dir) if given_dir.starts_with("~/") => {
+            let mut path = PathBuf::from(&home_dir);
+            let mut sub_path = PathBuf::from(&given_dir);
+
+            // Remove `~/': `~/Downloads/pic.jpg' -> `Downloads/pic.jpg'
+            sub_path = sub_path.strip_prefix("~/").unwrap().to_path_buf();
+            if !given_dir.ends_with('/') {
+                // `~/Downloads/pic' -> `~/Downloads'
+                sub_path = sub_path.parent().unwrap().to_path_buf();
+            }
+
+            path.push(sub_path);
+            remaining_dirs.push(path);
+        },
         Some(given_dir) if given_dir.ends_with('/') => {
-            remaining_dirs.push(PathBuf::from(given_dir))
+            remaining_dirs.push(PathBuf::from(given_dir));
         },
         Some(given_dir) if given_dir.contains('/') => {
             // Remove the last part: `/Users/chandler/Docum' -> `/users/chandler'
-            remaining_dirs.push(PathBuf::from(given_dir.clone()).parent().unwrap().to_path_buf())
+            remaining_dirs.push(PathBuf::from(given_dir.clone()).parent().unwrap().to_path_buf());
         },
         _ => {
-            remaining_dirs.push(PathBuf::from("."))
+            remaining_dirs.push(PathBuf::from("."));
         }
     };
 
@@ -229,6 +244,13 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
 
                 if (include_files && file_type.is_file()) || (include_dirs && file_type.is_dir()) {
                     let mut path = entry.path();
+
+                    if path.starts_with(&home_dir) {
+                        path = PathBuf::from("~").join(
+                            path.strip_prefix(&home_dir).unwrap()
+                        ).to_path_buf();
+                    }
+
                     if path.starts_with("./") {
                         path = path.strip_prefix("./").unwrap().to_path_buf();
                     }
@@ -242,7 +264,7 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
     let mut compgen = CompGen::new();
     compgen.entries(entries);
     if let Some(current_word) = ctx.current_word() {
-        compgen.filter_by(current_word.as_str());
+        compgen.filter_by(current_word.trim_start_matches("~/"));
     }
 
     compgen.generate()
