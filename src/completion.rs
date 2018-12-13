@@ -1,7 +1,7 @@
 use dirs;
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::os::unix::fs::PermissionsExt;
 use crate::fuzzy::FuzzyVec;
 use crate::context_parser::InputContext;
@@ -102,8 +102,18 @@ impl CompletionSelector {
             let suffix =
                 &user_input.get((suffix_offset)..).unwrap_or("").to_string();
 
+            let path = if selected.starts_with("~/") {
+                let mut path = dirs::home_dir().unwrap().to_path_buf();
+                let mut sub_path = PathBuf::from(selected.as_str());
+                sub_path = sub_path.strip_prefix("~/").unwrap().to_path_buf();
+                path.push(sub_path);
+                path
+            } else {
+                PathBuf::from(selected.as_str())
+            };
+
             // add a slash or space after the word.
-            let append = if selected.starts_with("~/") || Path::new(selected.as_str()).is_dir() {
+            let append = if path.is_dir() {
                 "/"
             } else {
                 " "
@@ -210,7 +220,7 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
             sub_path = sub_path.strip_prefix("~/").unwrap().to_path_buf();
             if !given_dir.ends_with('/') {
                 // `~/Downloads/pic' -> `~/Downloads'
-                sub_path = sub_path.parent().unwrap().to_path_buf();
+                sub_path = sub_path.parent().unwrap_or(&sub_path).to_path_buf();
             }
 
             path.push(sub_path);
