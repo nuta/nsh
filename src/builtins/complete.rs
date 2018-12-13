@@ -27,7 +27,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
                         compspec.dirnames_if_empty(true);
                     },
                     _ => {
-                        write!(ctx.stderr, "nsh: complete: unknown option: `{}'",
+                        writeln!(ctx.stderr, "nsh: complete: unknown option: `{}'",
                             option).ok();
                         return ExitStatus::ExitedWith(1);
                     }

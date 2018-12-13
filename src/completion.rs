@@ -183,7 +183,7 @@ impl CompGen {
     }
 }
 
-pub fn path_completion(ctx: &InputContext) -> Vec<Arc<String>> {
+pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bool) -> Vec<Arc<String>> {
     let given_dir = ctx.current_word().map(|s| (&*s).clone());
     trace!("path_completion: current='{:?}', dir='{:?}'", ctx.current_word(), given_dir);
     let dirent = match &given_dir {
@@ -202,15 +202,16 @@ pub fn path_completion(ctx: &InputContext) -> Vec<Arc<String>> {
     let mut entries = Vec::new();
     if let Ok(dirent) = dirent {
         for entry in dirent {
-            let mut path = entry
-                .unwrap()
-                .path();
+            let entry = entry.unwrap();
+            let file_type = entry.file_type().unwrap();
+            if (include_files && file_type.is_file()) || (include_dirs && file_type.is_dir()) {
+                let mut path = entry.path();
+                if path.starts_with("./") {
+                    path = path.strip_prefix("./").unwrap().to_path_buf();
+                }
 
-            if path.starts_with("./") {
-                path = path.strip_prefix("./").unwrap().to_path_buf();
+                entries.push(Arc::new(path.to_str().unwrap().to_owned()));
             }
-
-            entries.push(Arc::new(path.to_str().unwrap().to_owned()));
         }
     }
 
@@ -219,6 +220,7 @@ pub fn path_completion(ctx: &InputContext) -> Vec<Arc<String>> {
     if let Some(current_word) = ctx.current_word() {
         compgen.filter_by(current_word.as_str());
     }
+
     compgen.generate()
 }
 
@@ -242,6 +244,16 @@ impl CompSpec {
     #[inline]
     pub fn func_name(&self) -> Option<&String> {
         self.func_name.as_ref()
+    }
+
+    #[inline]
+    pub fn filenames_if_empty(&self) -> bool {
+        self.filenames_if_empty
+    }
+
+    #[inline]
+    pub fn dirnames_if_empty(&self) -> bool {
+        self.dirnames_if_empty
     }
 }
 

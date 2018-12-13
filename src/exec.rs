@@ -550,18 +550,26 @@ impl Isolate {
         if ctx.current_word_index == 0 {
             // The cursor is at the first word, namely, the command.
             cmd_completion(ctx)
-        } else if let Some(cmd) = ctx.words.get(0) {
-            let func_name = self.get_compspec(cmd.as_str())
-                .and_then(|spec| spec.func_name())
-                .map(|name| name.to_owned());
-
-            if let Some(func_name) = func_name {
-                self.call_completion_function(&func_name, ctx)
-            } else {
-                // There are no completion fuctions. Use path completion
-                // instead.
-                path_completion(ctx)
+        // `ctx.words[0]' never panic since ctx.current_word_index is larger than 0.
+        } else if let Some(compspec) = self.get_compspec(ctx.words[0].as_str()) {
+            let compspec = compspec.clone();
+            let mut results = Vec::new();
+            if let Some (name) = compspec.func_name() {
+                results = self.call_completion_function(&name, ctx);
             }
+
+            if results.is_empty() {
+                // No completion candidates. Try defaults.
+                results.extend(
+                    path_completion(
+                        ctx,
+                        compspec.filenames_if_empty(),
+                        compspec.dirnames_if_empty()
+                    )
+                );
+            }
+
+            results
         } else {
             Vec::new()
         }
