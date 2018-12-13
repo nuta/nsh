@@ -17,7 +17,7 @@
         </ul>
         <div class="tab-content">
             <div class="tab-pane fade show active" id="rc" role="tabpanel" aria-labelledby="rc-tab">
-                <rc-settings :script="rc" @changed="updateRc"></rc-settings>
+                <rc-settings :script.sync="rc"></rc-settings>
             </div>
             <div class="tab-pane fade show" id="prompt" role="tabpanel" aria-labelledby="prompt-tab">
                 <prompt-settings :prompt.sync="prompt"></prompt-settings>
@@ -69,11 +69,6 @@ export default {
             data[s.name] = s.default;
         }
         return data;
-    },
-    methods: {
-        updateRc(script) {
-            this.rc = script;
-        },
     },
     async beforeMount() {
         const resp = await request

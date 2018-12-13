@@ -27,7 +27,7 @@ export default {
         editor.setShowPrintMargin(false);
         editor.session.setMode("ace/mode/sh");
         editor.session.on('change', () => {
-            this.$emit("changed", editor.session.getValue());
+            this.$emit("update:script", editor.session.getValue());
         });
     }
 }
