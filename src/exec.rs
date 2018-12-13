@@ -564,7 +564,9 @@ impl Isolate {
                     path_completion(
                         ctx,
                         compspec.filenames_if_empty(),
-                        compspec.dirnames_if_empty()
+                        compspec.dirnames_if_empty(),
+                        false,
+                        true
                     )
                 );
             }
@@ -572,7 +574,7 @@ impl Isolate {
             results
         } else {
             // Compspec if not defined for the command. Use path completion instead.
-            path_completion(ctx, true, true)
+            path_completion(ctx, true, true, false, true)
         }
     }
 
@@ -1062,11 +1064,15 @@ impl Isolate {
         }
 
         // Determine the absolute path of the command.
-        let argv0 = match lookup_external_command(&argv[0]) {
-            Some(argv0) => CString::new(argv0)?,
-            None => {
-                eprintln!("nsh: command not found `{}'", argv[0]);
-                return Ok(ExitStatus::ExitedWith(1));
+        let argv0 = if argv[0].starts_with('/') || argv[0].starts_with("./") {
+            CString::new(argv[0].as_str())?
+        } else {
+            match lookup_external_command(&argv[0]) {
+                Some(argv0) => CString::new(argv0)?,
+                None => {
+                    eprintln!("nsh: command not found `{}'", argv[0]);
+                    return Ok(ExitStatus::ExitedWith(1));
+                }
             }
         };
 
