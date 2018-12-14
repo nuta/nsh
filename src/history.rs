@@ -29,8 +29,8 @@ lazy_static! {
 
 /// Returns true if the `cmd' should NOT be saved in a file.
 fn history_filter(cmd: &str) -> bool {
-    cmd.starts_with(" ")
-    || cmd.starts_with("\t")
+    cmd.starts_with(' ')
+    || cmd.starts_with('\t')
 }
 
 /// Appends a history to the history file.

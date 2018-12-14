@@ -58,7 +58,7 @@ fn index(_req: &mut Request) -> IronResult<Response> {
 }
 
 fn static_file(req: &mut Request) -> IronResult<Response> {
-    let ref file = req.extensions.get::<Router>().unwrap().find("file").unwrap_or("/");
+    let file = &req.extensions.get::<Router>().unwrap().find("file").unwrap_or("/");
     serve_static_file(file)
 }
 

@@ -530,7 +530,7 @@ impl Isolate {
 
         trace!("call_completion: ctx={:?}", ctx);
 
-        match self.call_function_in_shell_context(func_name, vec![], locals) {
+        match self.call_function_in_shell_context(func_name, &vec![], locals) {
             Ok(ExitStatus::ExitedWith(0)) => {
                 self.get("COMPREPLY")
                     .and_then(|reply| {
@@ -545,7 +545,7 @@ impl Isolate {
                             _ => None,
                         }
                     })
-                    .unwrap_or_else(|| Vec::new())
+                    .unwrap_or_else(Vec::new)
             },
             Ok(status) => {
                 // Something went wrong within the function. Just ignore it.
@@ -971,7 +971,6 @@ impl Isolate {
     }
 
     pub fn run_in_background(&mut self, job: &Arc<Job>, sigcont: bool) {
-        trace!("bak **********\n{:?}", job.pgid);
         self.last_back_job = Some(job.clone());
 
         if sigcont {
@@ -1283,7 +1282,7 @@ impl Isolate {
             .map(|alias_str| {
                 // Found the alias. Split the alias string by whitespace into words.
                 let mut alias_words: Vec<Word> = alias_str
-                    .split(" ")
+                    .split(' ')
                     .map(|w|{
                         let span = Span::Literal(w.to_owned());
                         Word(vec![span])
@@ -1314,7 +1313,7 @@ impl Isolate {
     }
 
     #[inline]
-    fn call_function_in_shell_context(&mut self, name: &str, args: Vec<String>, locals: Vec<(&str, Value)>) -> Result<ExitStatus> {
+    fn call_function_in_shell_context(&mut self, name: &str, args: &[String], locals: Vec<(&str, Value)>) -> Result<ExitStatus> {
             let ctx = Context {
                 stdin: 0,
                 stdout: 1,
@@ -1327,7 +1326,7 @@ impl Isolate {
             self.call_function(name, &ctx, args, locals)
     }
 
-    fn call_function(&mut self, name: &str, ctx: &Context, args: Vec<String>, locals: Vec<(&str, Value)>) -> Result<ExitStatus> {
+    fn call_function(&mut self, name: &str, ctx: &Context, args: &[String], locals: Vec<(&str, Value)>) -> Result<ExitStatus> {
         if let Some(var) = self.get(name) {
             if let Value::Function(ref body) = var.value() {
                 self.enter_frame();
@@ -1371,8 +1370,8 @@ impl Isolate {
         // Functions
         let argv0 = argv[0].as_str();
         if self.is_function(argv0) {
-            let args = argv.iter().skip(1).cloned().collect();
-            return self.call_function(argv0, ctx, args, vec![]);
+            let args: Vec<String> = argv.iter().skip(1).cloned().collect();
+            return self.call_function(argv0, ctx, &args, vec![]);
         }
 
         // Internal commands

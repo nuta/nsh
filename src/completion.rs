@@ -152,21 +152,21 @@ impl CompGen {
 
     /// -A command / -c
     #[inline]
-    pub fn include_commands<'a>(&'a mut self, enable: bool) -> &'a mut CompGen {
+    pub fn include_commands(&mut self, enable: bool) -> &mut CompGen {
         self.include_commands = enable;
         self
     }
 
     /// -A file / -f
     #[inline]
-    pub fn include_files<'a>(&'a mut self, enable: bool) -> &'a mut CompGen {
+    pub fn include_files(&mut self, enable: bool) -> &mut CompGen {
         self.include_files = enable;
         self
     }
 
     /// -A directory / -d
     #[inline]
-    pub fn include_dirs<'a>(&'a mut self, enable: bool) -> &'a mut CompGen {
+    pub fn include_dirs(&mut self, enable: bool) -> &mut CompGen {
         self.include_dirs = enable;
         self
     }
@@ -183,25 +183,23 @@ impl CompGen {
     }
 
     #[inline]
-    pub fn entries<'a>(&'a mut self, entries: Vec<Arc<String>>) -> &'a mut CompGen {
+    pub fn entries(&mut self, entries: Vec<Arc<String>>) -> &mut CompGen {
         self.entries = entries;
         self
     }
 
     #[inline]
-    pub fn filter_by<'a>(&'a mut self, query: &str) -> &'a mut CompGen {
+    pub fn filter_by(&mut self, query: &str) -> &mut CompGen {
         self.query = Some(query.to_owned());
         self
     }
 
     #[inline]
     pub fn generate(self) -> Vec<Arc<String>> {
-        let results = match self.query {
+        match self.query {
             Some(query) => FuzzyVec::from_vec(self.entries).search(&query),
             None => self.entries,
-        };
-
-        results
+        }
     }
 }
 
@@ -273,7 +271,7 @@ pub fn path_completion(ctx: &Asa, include_files: bool, include_dirs: bool, execu
                 }
 
                 let perm = entry.metadata().unwrap().permissions();
-                if executable_only && (file_type.is_file() && perm.mode() & 0b001001001 == 0) {
+                if executable_only && (file_type.is_file() && perm.mode() & 0b001_001_001 == 0) {
                     // Executable_only is enabled and the file `entry' is not
                     // a execuatble. Ignore it.
                     continue;
@@ -369,21 +367,21 @@ impl CompSpecBuilder {
 
     /// -F func_name
     #[inline]
-    pub fn func_name<'a>(&'a mut self, func_name: String) -> &'a mut CompSpecBuilder {
+    pub fn func_name(&mut self, func_name: String) -> &mut CompSpecBuilder {
         self.func_name = Some(func_name);
         self
     }
 
     /// -o dirnames
     #[inline]
-    pub fn dirnames_if_empty<'a>(&'a mut self, enable: bool) -> &'a mut CompSpecBuilder {
+    pub fn dirnames_if_empty(&mut self, enable: bool) -> &mut CompSpecBuilder {
         self.dirnames_if_empty = enable;
         self
     }
 
     /// -o filenames
     #[inline]
-    pub fn filenames_if_empty<'a>(&'a mut self, enable: bool) -> &'a mut CompSpecBuilder {
+    pub fn filenames_if_empty(&mut self, enable: bool) -> &mut CompSpecBuilder {
         self.filenames_if_empty = enable;
         self
     }

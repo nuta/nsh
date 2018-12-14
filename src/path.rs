@@ -29,8 +29,7 @@ pub fn lookup_external_command(cmd: &str) -> Option<String> {
 /// Generates command name completions filtered by `query`.
 pub fn complete(query: &str) -> Vec<Arc<String>> {
     let fuzzy_vec = PATH_FUZZY_VEC.read().unwrap();
-    let entries = fuzzy_vec.search(query);
-    entries
+    fuzzy_vec.search(query)
 }
 
 /// Scans `$PATH` to fill `PATH_TABLE`.
