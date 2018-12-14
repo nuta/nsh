@@ -52,6 +52,9 @@ enum LiteralOrGlob {
     AnyChar,
 }
 
+/// A word which includes patterns. We don't expand words
+/// into the `Vec<String>` directly since the patterns has
+/// two different meanings: path glob and match in `case`.
 struct PatternWord {
     fragments: Vec<LiteralOrGlob>
 }
@@ -63,6 +66,7 @@ impl PatternWord {
         }
     }
 
+    /// Returns a string. Pattern characters such as `*` are treated as a literal.
     pub fn into_string(self) -> String {
         let mut string = String::new();
         for frag in self.fragments {
@@ -76,6 +80,7 @@ impl PatternWord {
         string
     }
 
+    //// Expand patterns as a file path globbing.
     pub fn expand_glob(self) -> Result<Vec<String>> {
         let includes_glob = self.fragments.iter().any(|frag| {
             match frag {
@@ -134,7 +139,7 @@ impl PatternWord {
     }
 }
 
-
+/// The exit status or reason why the command exited.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ExitStatus {
     ExitedWith(i32),
@@ -146,27 +151,32 @@ pub enum ExitStatus {
     NoExec,
 }
 
+/// The process execution environment.
 #[derive(Debug, Copy, Clone)]
 struct Context {
     stdin: RawFd,
     stdout: RawFd,
     stderr: RawFd,
     pgid: Option<Pid>,
+    /// The process should be executed in background.
     background: bool,
+    /// Is the shell interactive?
     interactive: bool,
 }
-
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ProcessState {
     Running,
     /// Contains the exit status.
     Completed(i32),
+    /// Suspended (Ctrl-Z).
     Stopped(Pid),
 }
 
+/// A variable scope.
 #[derive(Debug)]
 pub struct Frame {
+    /// A `(variable name, varible)` map.
     vars: HashMap<String, Arc<Variable>>,
 }
 
@@ -189,6 +199,7 @@ impl Frame {
         self.vars.get(key).cloned()
     }
 
+    /// Returns `$1`, `$2`, ...
     pub fn get_args(&self) -> Vec<Arc<Variable>> {
         let mut args = Vec::new();
         for i in 1.. {
@@ -202,6 +213,7 @@ impl Frame {
         args
     }
 
+    /// Returns `$1`, `$2`, ...
     pub fn get_string_args(&self) -> Vec<String> {
         let mut args = Vec::new();
         for var in self.get_args() {
@@ -213,28 +225,29 @@ impl Frame {
         args
     }
 
-    /// Set `$1`, `$2`, ...
+    /// Sets `$1`, `$2`, ...
     pub fn set_args(&mut self, args: &[String]) {
         for (i, arg) in args.iter().enumerate() {
             self.set(&(i + 1).to_string(), Value::String(arg.clone()));
         }
     }
 
-    /// 1-origin.
+    /// Sets `$<index>`.
     pub fn set_nth_arg(&mut self, index: usize, value: Value) {
         self.set(&index.to_string(), value)
     }
 
-    /// 1-origin.
+    /// Removes `$<index>`.
     pub fn remove_nth_arg(&mut self, index: usize) -> Option<Arc<Variable>> {
         self.remove(&index.to_string())
     }
 
-    /// 1-origin.
+    /// Returns `$<index>`.
     pub fn get_nth_arg(&self, index: usize) -> Option<Arc<Variable>> {
         self.get(&index.to_string())
     }
 
+    /// The number of function arguments (`$1`, ...).
     pub fn num_args(&self) -> usize {
         let mut num_args = 0;
         for i in 1..=9 {
@@ -325,6 +338,9 @@ impl Job {
     }
 }
 
+/// A isolated shell execution environment. Please note that the shell
+/// environment is not completely isolated because there are some global
+/// states like `PATH_TABLE` in [`path`].
 pub struct Isolate {
     shell_pgid: Pid,
     interactive: bool,
@@ -546,6 +562,7 @@ impl Isolate {
         }
     }
 
+    /// Returns completion candidates.
     pub fn complete(&mut self, ctx: &Asa) -> Vec<Arc<String>> {
         let cmd_name = if let Some(name) = ctx.words.get(0) {
             let name = name.as_str().to_owned();
@@ -631,6 +648,7 @@ impl Isolate {
         }
     }
 
+    /// Expands a parameter (`$foo` in e.g. `echo $foo`).
     fn expand_param(&mut self, name: &str, op: &ExpansionOp) -> Result<Vec<String>> {
         match name {
             "?" => {
@@ -703,6 +721,7 @@ impl Isolate {
         }
     }
 
+    /// Expands a word int a `Vec`.
     fn expand_word_into_vec(&mut self, word: &Word, ifs: &str) -> Result<Vec<PatternWord>> {
         let mut words = Vec::new();
         let mut current_word = Vec::new();
@@ -814,6 +833,8 @@ impl Isolate {
         }
     }
 
+    /// Expands a word into a string. Words in a command span `"$(echo foo bar)"` are
+    /// joined by a whitespace.
     fn expand_word_into_string(&mut self, word: &Word) -> Result<String> {
         let ws: Vec<String> = self.expand_word_into_vec(word, &self.ifs())?
             .into_iter()
@@ -823,6 +844,8 @@ impl Isolate {
         Ok(ws.join(" "))
     }
 
+    /// Expands words into a `Vec<String>`. A pattern in a word are expanded as a
+    /// file path globbing.
     fn expand_words(&mut self, words: &[Word]) -> Result<Vec<String>> {
         let mut evaluated = Vec::new();
         for word in words {
