@@ -495,6 +495,7 @@ fn test_prompt_parser() {
     );
 }
 
+/* FIXME: Refactor PromptRender not to modify stdout.
 #[cfg(test)]
 mod benchmarks {
     use test::Bencher;
@@ -521,3 +522,4 @@ mod benchmarks {
         });
     }
 }
+*/
