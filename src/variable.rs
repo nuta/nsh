@@ -1,5 +1,6 @@
 use crate::parser;
 
+/// A variable value.
 #[derive(Debug)]
 pub enum Value {
     String(String),
@@ -7,24 +8,28 @@ pub enum Value {
     Function(Box<parser::Command>),
 }
 
+/// A shell variable.
 #[derive(Debug)]
 pub struct Variable {
     value: Value,
 }
 
 impl Variable {
+    /// Creates a `Variable`. This does not add to the
+    /// any scope.
     pub fn new(value: Value) -> Variable {
         Variable {
             value,
         }
     }
 
+    /// Returns a reference to the inner value.
     #[inline]
     pub fn value(&self) -> &Value {
         &self.value
     }
 
-    // References value as `$foo`.
+    /// References its value as `$foo`.
     pub fn as_str(&self) -> &str {
         match &self.value {
             Value::String(value) => value,
@@ -39,7 +44,7 @@ impl Variable {
         }
     }
 
-    // References value as `$foo[expr]`.
+    /// References its value as `$foo[expr]`.
     pub fn value_at(&self, index: usize) -> &str {
         match &self.value {
             Value::Array(elems) => {

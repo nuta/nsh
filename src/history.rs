@@ -11,17 +11,21 @@ use std::sync::Mutex;
 use crate::config::Config;
 use crate::fuzzy::FuzzyVec;
 
+/// A history entry.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct History {
+    /// The UNIX timestamp when the command executed.
     pub time: usize,
+    /// The absolute path to the directory where the command executed.
     pub dir: String,
+    /// The command.
     pub cmd: String,
 }
 
 lazy_static! {
+    /// Command history.
     static ref HISTORY: Mutex<FuzzyVec> = Mutex::new(FuzzyVec::new());
 }
-
 
 /// Returns true if the `cmd' should NOT be saved in a file.
 fn history_filter(cmd: &str) -> bool {
@@ -29,12 +33,22 @@ fn history_filter(cmd: &str) -> bool {
     || cmd.starts_with("\t")
 }
 
+/// Appends a history to the history file.
 pub fn append_history(cmd: &str) {
     let mut  hist = HISTORY.lock().unwrap();
 
     let history_path = resolve_and_create_history_file();
     if let Ok(mut file) = OpenOptions::new().append(true).open(history_path) {
         if !history_filter(cmd) {
+            // Construct JSON formatted:
+            //
+            //    {
+            //      "time": number,     /* UNIX timestamp */
+            //      "dir": string,      /* The current directory */
+            //      "history": string,  /* The command line */
+            //    }
+            //
+            //
             let time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("failed to get the UNIX timestamp")
@@ -49,6 +63,7 @@ pub fn append_history(cmd: &str) {
     hist.append(Arc::new(cmd.to_string()));
 }
 
+/// Returns the absolute path to the history file. Creates it if it doesn't exist.
 fn resolve_and_create_history_file() -> PathBuf {
     if let Some(home_dir) = dirs::home_dir() {
         let history_path = Path::new(&home_dir).join(".nsh_history");
@@ -61,6 +76,7 @@ fn resolve_and_create_history_file() -> PathBuf {
     }
 }
 
+/// Loads the history file and fill `HISTORY`.
 fn load_history() {
     let history_path = resolve_and_create_history_file();
     let mut warned = false;
@@ -84,6 +100,7 @@ fn load_history() {
     }
 }
 
+/// History-related state in the prompt.
 pub struct HistorySelector {
     offset: usize,
     user_input: String,
@@ -108,6 +125,8 @@ impl HistorySelector {
         }
     }
 
+    /// Selects the previous history entry. Save the current user (not yet executed)
+    /// input if needed.
     pub fn prev(&mut self,  user_input: &str) {
         if self.offset == 0 {
             // Entering the history selection. Save the current state.state.
@@ -121,6 +140,7 @@ impl HistorySelector {
         }
     }
 
+    /// Select the next history entry.
     pub fn next(&mut self) {
         if self.offset > 0 {
             self.offset -= 1;

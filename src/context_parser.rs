@@ -1,8 +1,11 @@
-
+//! A yet another shell script parser. In contrast to [`parser::parse`]
+//! this returns an ASA, Abstracted Syntax Array which makes it easy to
+//! implement context-aware stuffs like completion and in the future,
+//! syntax highlighting .
 use std::sync::Arc;
 
 #[derive(Default, Debug)]
-pub struct InputContext {
+pub struct Asa {
     pub words: Vec<Arc<String>>,
     /// The index of the current word in `words`.
     pub current_word_index: isize,
@@ -14,7 +17,7 @@ pub struct InputContext {
     pub user_cursor: usize,
 }
 
-impl InputContext {
+impl Asa {
     pub fn current_word(&self) -> Option<Arc<String>> {
         self.words
             .get(self.current_word_index as usize)
@@ -29,7 +32,9 @@ fn is_valid_word_char(ch: char) -> bool {
      }
  }
 
-pub fn parse_input_context(user_input: &str, user_cursor: usize) -> InputContext {
+
+/// Parses the user input and returns a Abstracted Syntax Array.
+pub fn parse(user_input: &str, user_cursor: usize) -> Asa {
     let line = user_input.to_string();
 
     // A Poor man's command line parser.
@@ -113,7 +118,7 @@ pub fn parse_input_context(user_input: &str, user_cursor: usize) -> InputContext
         current_word_len
     );
 
-    InputContext {
+    Asa {
         words,
         current_word_index,
         line,

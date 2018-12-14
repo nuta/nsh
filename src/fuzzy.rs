@@ -3,43 +3,55 @@ use std::sync::Arc;
 
 ///
 /// A ordered `Vec` which support fuzzy search.
-/// TODO: Implement smart one.
 ///
 pub struct FuzzyVec {
+    /// The *unordered* array of a haystack.
     entries: Vec<Arc<String>>,
 }
 
 impl FuzzyVec {
+    /// Creates a `FuzzyVec`.
     pub fn new() -> FuzzyVec {
         FuzzyVec {
             entries: Vec::new(),
         }
     }
 
+    /// Creates a `FuzzyVec` from `entries`.
     pub fn from_vec(entries: Vec<Arc<String>>) -> FuzzyVec {
         FuzzyVec {
             entries,
         }
     }
 
+    /// Returns the number of entiries.
     #[inline]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
+    /// Returns the nth entry from the end of the entries.
     pub fn nth_last(&self, nth: usize) -> Option<Arc<String>> {
         self.entries.get(self.entries.len() - nth - 1).cloned()
     }
 
+    /// appends a entry.
     pub fn append(&mut self, entry: Arc<String>) {
         self.entries.push(entry);
     }
 
+    /// Searches entiries for `query` in *fuzzy* way and returns the result
+    /// ordered by the similarity.
     pub fn search(&self, query: &str) -> Vec<Arc<String>> {
         fuzzy_search(&self.entries, query)
     }
 }
 
+/// Searches `entiries` for `query` in *fuzzy* way and returns the result
+/// ordered by the similarity.
+///
+/// TODO: Implement smart one.
+///
 fn fuzzy_search(entries: &[Arc<String>], query: &str) -> Vec<Arc<String>> {
         let mut filtered = Vec::new();
 

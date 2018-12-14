@@ -1,6 +1,6 @@
 use crate::builtins::{InternalCommandContext, INTERNAL_COMMANDS, InternalCommandError};
 use crate::completion::{CompSpec, cmd_completion, path_completion};
-use crate::context_parser::InputContext;
+use crate::context_parser::Asa;
 use crate::parser::{
     self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer,
     LocalDeclaration, Assignment
@@ -504,7 +504,7 @@ impl Isolate {
         self.cd_stack.pop()
     }
 
-    fn call_completion_function(&mut self, func_name: &str, ctx: &InputContext) -> Vec<Arc<String>> {
+    fn call_completion_function(&mut self, func_name: &str, ctx: &Asa) -> Vec<Arc<String>> {
         let words = ctx.words.iter().map(|w| w.as_ref().to_owned()).collect();
         let current_word_index = ctx.current_word_index.to_string();
         let locals = vec![
@@ -546,7 +546,7 @@ impl Isolate {
         }
     }
 
-    pub fn complete(&mut self, ctx: &InputContext) -> Vec<Arc<String>> {
+    pub fn complete(&mut self, ctx: &Asa) -> Vec<Arc<String>> {
         let cmd_name = if let Some(name) = ctx.words.get(0) {
             let name = name.as_str().to_owned();
             match self.aliases.get(&name) {

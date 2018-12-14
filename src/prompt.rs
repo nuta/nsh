@@ -1,5 +1,4 @@
 use crate::completion::CompletionSelector;
-use crate::input::InputMode;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::Style;
 use syntect::highlighting::ThemeSet;
@@ -9,6 +8,7 @@ use pest::Parser;
 use pest::iterators::{Pairs, Pair};
 use std::fmt::Write;
 use termion;
+use termion::cursor::DetectCursorPos;
 use nix::unistd;
 use libc;
 
@@ -290,125 +290,171 @@ fn replace_newline_with_clear(text: &str, y: u16) -> String {
     buf
 }
 
-/// Returns the new `prompt_y` and the rendered prompt.
-/// FIXME: too many arguments
-pub fn render_prompt(
-    prompt_fmt: &str,
-    mode: InputMode,
-    completions: &CompletionSelector,
+pub struct PromptRenderer {
+    prompt_fmt: String,
     prompt_y: u16,
     y_max: u16,
     x_max: u16,
     prev_rendered_lines: u16,
-    user_cursor: usize,
-    user_input: &str,
-    current_theme: &str,
-) -> (u16, u16, String) {
+    current_theme: String,
+}
 
-    // Apply syntax highlighting.
-    let mut highlighter = create_highlighter(current_theme);
-    let mut colored_user_input = String::new();
-    for line in LinesWithEndings::from(user_input) {
-        let ranges: Vec<(Style, &str)> = highlighter.highlight(line, &SYNTECT_STATIC.syntax_set);
-        let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
-        colored_user_input += &escaped;
+impl PromptRenderer {
+    pub fn new(stdout: &mut std::io::Stdout, prompt_fmt: &str, current_theme: &str) -> PromptRenderer {
+        let (x_max, y_max) = termion::terminal_size().map(|(x, y)| (x - 1, y - 1)).unwrap();
+        let (_, prompt_y) = stdout.cursor_pos().map(|(x, y)| (x - 1, y - 1)).unwrap();
+        PromptRenderer {
+            prompt_fmt: prompt_fmt.to_owned(),
+            current_theme: current_theme.to_owned(),
+            prompt_y,
+            y_max,
+            x_max,
+            prev_rendered_lines: 0,
+        }
     }
 
-    // Parse and render the prompt.
-    let (prompt_str, prompt_last_line_len) = match parse_prompt(prompt_fmt) {
-        Ok(fmt) => draw_prompt(&fmt),
-        Err(err) => {
-            eprintln!("nsh: failed to parse $PROMPT: {}", err);
-            ("$ ".to_owned(), 2)
+    /// Clear the screen. Don't forget to flush; this method does not flush `stdout` since
+    /// this method is intended to be used just before printing the prompt.
+    pub fn clear_screen(&mut self, stdout: &mut std::io::Stdout) {
+        use std::io::Write;
+        write!(stdout, "{}", termion::clear::All).ok();
+        self.prompt_y = 0;
+    }
+
+    /// Renders the prompt, the user input, and completions (if supplied).
+    /// TODO: needs refactoring
+    /// TODO: handle terminal screen size changes
+    pub fn render(&mut self, user_input: &str, user_cursor: usize, completions: Option<&CompletionSelector>) -> String {
+        // Apply syntax highlighting.
+        let mut highlighter = create_highlighter(&self.current_theme);
+        let mut colored_user_input = String::new();
+        for line in LinesWithEndings::from(user_input) {
+            let ranges: Vec<(Style, &str)> = highlighter.highlight(line, &SYNTECT_STATIC.syntax_set);
+            let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
+            colored_user_input += &escaped;
         }
-    };
 
-    use termion::clear::CurrentLine;
-    use termion::color::{Fg, Bg, White, Red};
-    use termion::style::*;
-
-    // Render completions.
-    let mut completion_str = String::new();
-    if mode == InputMode::Completion {
-        let results = completions.entries();
-        let iter = results
-            .iter()
-            .skip(completions.display_index())
-            .take(completions.display_lines());
-
-        if !results.is_empty() {
-            for (i, entry) in iter.enumerate() {
-                let current = completions.display_index() + i;
-                let selected = current == completions.selected_index();
-                if selected {
-                    write!(completion_str, "{}{}", Underline, Bold).ok();
-                } else {
-                    write!(completion_str, "{}{}", NoUnderline, NoBold).ok();
-                }
-                writeln!(completion_str, "{}{}{}", CurrentLine, entry, Reset).ok();
+        // Parse and render the prompt.
+        let (prompt_str, prompt_last_line_len) = match parse_prompt(&self.prompt_fmt) {
+            Ok(fmt) => draw_prompt(&fmt),
+            Err(err) => {
+                eprintln!("nsh: failed to parse $PROMPT: {}", err);
+                ("$ ".to_owned(), 2)
             }
+        };
 
-            write!(completion_str, "{}{}{}{} {}/{} ",
-                CurrentLine, Reset, Invert, Bold,
-                completions.selected_index() + 1,
-                completions.len()
-            ).ok();
+        use termion::clear::CurrentLine;
+        use termion::color::{Fg, Bg, White, Red};
+        use termion::style::*;
+
+        // Render completions.
+        let mut completion_str = String::new();
+        if let Some(completions) =completions {
+            let results = completions.entries();
+            let iter = results
+                .iter()
+                .skip(completions.display_index())
+                .take(completions.display_lines());
+
+            if !results.is_empty() {
+                for (i, entry) in iter.enumerate() {
+                    let current = completions.display_index() + i;
+                    let selected = current == completions.selected_index();
+                    if selected {
+                        write!(completion_str, "{}{}", Underline, Bold).ok();
+                    } else {
+                        write!(completion_str, "{}{}", NoUnderline, NoBold).ok();
+                    }
+                    writeln!(completion_str, "{}{}{}", CurrentLine, entry, Reset).ok();
+                }
+
+                write!(completion_str, "{}{}{}{} {}/{} ",
+                    CurrentLine, Reset, Invert, Bold,
+                    completions.selected_index() + 1,
+                    completions.len()
+                ).ok();
+            } else {
+                write!(
+                    completion_str,
+                    "{}{}{}{}no candidates",
+                    CurrentLine, Bold, Fg(White), Bg(Red)
+                )
+                .ok();
+            }
+        }
+
+        //
+        //                                    TERMINAL
+        //                    _________________________________________
+        //           > >     |[chandler@ross-macbook.local]            |
+        //           > > >   |$ for x in a b c d very_loooooooooooooooo|
+        //           > | >   |ooooooooooooooooooooooooooooooooooooooong| <- wrapped
+        //           > | >   |_wrapped_word do ssh[TAB]                | <- wrapped
+        //           > | | > |monica-hidden-door.local                 |
+        //           > | | > |joey-chair.local                         |
+        //           > | | > |1/2                                      |
+        //           | | | | |                                         |
+        //           | | | | |                                         |
+        //           | | | | |                                         |
+        //           | | | |  -----------------------------------------
+        //           | | | |
+        //           | | | +- completion_lines = 3
+        //           | | +- user_input_lines = 4
+        //           | +- prompt_lines = 2
+        //           |
+        //           +- rendered_lines = 9
+        //
+        let mut buf = String::new();
+        let prompt_lines = prompt_str.chars().filter(|c| *c == '\n').count() as u16 + 1;
+        let completion_lines = if completion_str.is_empty() {
+            0
         } else {
+            1 + completion_str.chars().filter(|c| *c == '\n').count() as u16
+        };
+        let user_input_lines = ((prompt_last_line_len as u16 + user_input.len() as u16) / (self.x_max + 1)) + 1;
+        let rendered_lines = prompt_lines + (user_input_lines - 1) + completion_lines;
+        let avail = std::cmp::max(0, i32::from(self.y_max) - i32::from(self.prompt_y));
+
+        // In case the prompt at the bottom of the screen some scroll are needed.
+        let scroll = std::cmp::max(0, i32::from(rendered_lines) - avail - 1) as u16;
+        let new_prompt_y = self.prompt_y - scroll;
+
+        for _ in 0..std::cmp::max(0, scroll) {
+            writeln!(buf).ok();
+        }
+
+        // Clear the current prompt.
+        for i in 0..self.prev_rendered_lines {
             write!(
-                completion_str,
-                "{}{}{}{}no candidates",
-                CurrentLine, Bold, Fg(White), Bg(Red)
+                buf,
+                "{}{}",
+                termion::cursor::Goto(1, 1 + self.prompt_y + i),
+                termion::clear::CurrentLine,
             )
             .ok();
         }
-    }
 
-    let mut buf = String::new();
-    let prompt_lines = prompt_str.chars().filter(|c| *c == '\n').count() as u16 + 1;
-    let completion_lines = if completion_str.is_empty() {
-        0
-    } else {
-        1 + completion_str.chars().filter(|c| *c == '\n').count() as u16
-    };
-
-    let user_input_lines = (prompt_last_line_len as u16 + user_input.len() as u16) / (x_max + 1);
-    let rendered_lines = prompt_lines + user_input_lines + completion_lines;
-    let avail = std::cmp::max(0, i32::from(y_max) - i32::from(prompt_y));
-    let scroll = std::cmp::max(0, i32::from(rendered_lines) - avail - 1) as u16;
-    let new_prompt_y = prompt_y - scroll;
-
-    for _ in 0..std::cmp::max(0, scroll) {
-        writeln!(buf).ok();
-    }
-
-    // Clear the current prompt.
-    for i in 0..prev_rendered_lines {
+        // Render the prompt and colored user input.
+        let cursor_y = new_prompt_y + (prompt_lines - 1) + ((prompt_last_line_len + user_cursor) as u16 / (self.x_max + 1));
+        let cursor_x = (prompt_last_line_len as u16 + user_cursor as u16) % (self.x_max + 1);
         write!(
             buf,
-            "{}{}",
-            termion::cursor::Goto(1, 1 + prompt_y + i),
-            termion::clear::CurrentLine,
-        )
-        .ok();
+            "{}{}{}{}{}{}{}",
+            replace_newline_with_clear(&prompt_str, new_prompt_y),
+            Reset,
+            colored_user_input,
+            Reset,
+            replace_newline_with_clear(&completion_str, new_prompt_y + prompt_lines),
+            termion::cursor::Goto(1 + cursor_x, 1 + cursor_y),
+            Reset,
+        ).ok();
+
+        trace!("prompt_offset: S={} M={} base={}, new_y={}", scroll, self.y_max, self.prompt_y, new_prompt_y);
+        self.prev_rendered_lines = rendered_lines;
+        self.prompt_y = new_prompt_y;
+
+        buf
     }
-
-    // Render the prompt and colored user input.
-    let cursor_y = new_prompt_y + (prompt_lines - 1) + ((prompt_last_line_len + user_cursor) as u16 / (x_max + 1));
-    let cursor_x = (prompt_last_line_len as u16 + user_cursor as u16) % (x_max + 1);
-    write!(
-        buf,
-        "{}{}{}{}{}{}{}",
-        replace_newline_with_clear(&prompt_str, new_prompt_y),
-        Reset,
-        colored_user_input,
-        Reset,
-        replace_newline_with_clear(&completion_str, new_prompt_y + prompt_lines),
-        termion::cursor::Goto(1 + cursor_x, 1 + cursor_y),
-        Reset,
-    ).ok();
-
-    trace!("prompt_offset: S={} M={} base={}, new_y={}", scroll, y_max, prompt_y, new_prompt_y);
-    (rendered_lines, new_prompt_y, buf)
 }
 
 #[test]
@@ -448,7 +494,6 @@ fn test_prompt_parser() {
         })
     );
 }
-
 
 #[cfg(test)]
 mod benchmarks {

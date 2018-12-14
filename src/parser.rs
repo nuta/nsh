@@ -200,27 +200,7 @@ impl Word {
     }
 }
 
-#[allow(unused)]
-fn dump(pairs: pest::iterators::Pairs<Rule>, level: usize) {
-    for pair in pairs {
-        for _ in 0..level {
-            print!("  ");
-        }
-        println!("{}{}{}{:?}{}: {:?}",
-            style::Reset, style::Bold, Fg(color::Magenta),
-            pair.as_rule(), style::Reset, pair.as_span().as_str());
-
-        dump(pair.into_inner(), level + 1);
-    }
-}
-
-#[allow(unused)]
-pub fn parse_and_dump(script: &str) {
-    let merged_script = script.to_string().replace("\\\n", "");
-    let pairs = ShellParser::parse(Rule::script, &merged_script).unwrap_or_else(|e| panic!("{}", e));
-    dump(pairs, 0);
-}
-
+// command_span = !{ "$(" ~ compound_list ~ ")" }
 fn visit_command_span(pair: Pair<Rule>, quoted: bool) -> Span {
     let body = visit_compound_list(pair.into_inner().next().unwrap());
     Span::Command { body, quoted}
@@ -353,6 +333,19 @@ fn visit_escape_sequences(pair: Pair<Rule>, escaped_chars: Option<&str>) -> Stri
     s
 }
 
+// word = ${ (tilde_span | span) ~ span* }
+// span = _{
+//     double_quoted_span
+//     | single_quoted_span
+//     | literal_span
+//     | any_string_span
+//     | any_char_span
+//     | expr_span
+//     | command_span
+//     | backtick_span
+//     | param_ex_span
+//     | param_span
+// }
 fn visit_word(pair: Pair<Rule>) -> Word {
     assert_eq!(pair.as_rule(), Rule::word);
 
@@ -645,6 +638,20 @@ fn visit_return_command(pair: Pair<Rule>) -> Command {
     Command::Return { status }
 }
 
+// command = {
+//     if_command
+//     | case_command
+//     | while_command
+//     | for_command
+//     | break_command
+//     | continue_command
+//     | return_command
+//     | local_definition
+//     | function_definition
+//     | group
+//     | simple_command
+//     | assignment_command
+// }
 fn visit_command(pair: Pair<Rule>) -> Command {
     let inner = pair.into_inner().next().unwrap();
     match inner.as_rule() {
@@ -664,6 +671,7 @@ fn visit_command(pair: Pair<Rule>) -> Command {
     }
 }
 
+// pipeline = { command ~ ((!("||") ~ "|") ~ wsnl? ~ command)* }
 fn visit_pipeline(pair: Pair<Rule>) -> Vec<Command> {
     let mut commands = Vec::new();
     for command in pair.into_inner() {
@@ -673,6 +681,8 @@ fn visit_pipeline(pair: Pair<Rule>) -> Vec<Command> {
     commands
 }
 
+// and_or_list = { pipeline ~ (and_or_list_sep ~ wsnl? ~ and_or_list)* }
+// and_or_list_sep = { "||" | "&&" }
 fn visit_and_or_list(pair: Pair<Rule>, run_if: RunIf) -> Vec<Pipeline> {
     let mut terms = Vec::new();
     let mut inner = pair.into_inner();
@@ -699,6 +709,10 @@ fn visit_and_or_list(pair: Pair<Rule>, run_if: RunIf) -> Vec<Pipeline> {
     terms
 }
 
+// compound_list = { compound_list_inner ~ (compound_list_sep ~ wsnl? ~ compound_list)* }
+// compound_list_sep = { (!(";;") ~ ";") | !("&&") ~ "&" | "\n" }
+// empty_line = { "" }
+// compound_list_inner = _{ and_or_list | empty_line }
 fn visit_compound_list(pair: Pair<Rule>) -> Vec<Term> {
     let mut terms = Vec::new();
     let mut inner = pair.into_inner();
@@ -724,11 +738,13 @@ fn visit_compound_list(pair: Pair<Rule>) -> Vec<Term> {
     terms
 }
 
+/// Builds an AST from given `pairs`.
 fn pairs2ast(mut pairs: Pairs<Rule>) -> Ast {
     let compound_list = pairs.next().unwrap();
     Ast { terms: visit_compound_list(compound_list) }
 }
 
+/// Parses a shell script.
 pub fn parse(script: &str) -> Result<Ast, ParseError> {
     match ShellParser::parse(Rule::script, script) {
         Ok(pairs) => {
@@ -743,6 +759,29 @@ pub fn parse(script: &str) -> Result<Ast, ParseError> {
             Err(ParseError::Fatal(err.to_string()))
         }
     }
+}
+
+/// Dumps the parsed pairs for debbuging.
+#[allow(unused)]
+fn dump(pairs: pest::iterators::Pairs<Rule>, level: usize) {
+    for pair in pairs {
+        for _ in 0..level {
+            print!("  ");
+        }
+        println!("{}{}{}{:?}{}: {:?}",
+            style::Reset, style::Bold, Fg(color::Magenta),
+            pair.as_rule(), style::Reset, pair.as_span().as_str());
+
+        dump(pair.into_inner(), level + 1);
+    }
+}
+
+/// Parses and dumps a shell  script for debbuging.
+#[allow(unused)]
+pub fn parse_and_dump(script: &str) {
+    let merged_script = script.to_string().replace("\\\n", "");
+    let pairs = ShellParser::parse(Rule::script, &merged_script).unwrap_or_else(|e| panic!("{}", e));
+    dump(pairs, 0);
 }
 
 #[allow(unused)]

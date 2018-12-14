@@ -4,8 +4,9 @@ use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use std::os::unix::fs::PermissionsExt;
 use crate::fuzzy::FuzzyVec;
-use crate::context_parser::InputContext;
+use crate::context_parser::Asa;
 
+/// A completion-related prompt states.
 pub struct CompletionSelector {
     /// Candidate completion entries.
     entries: Vec<Arc<String>>,
@@ -91,14 +92,14 @@ impl CompletionSelector {
         self.display_index
     }
 
-    pub fn select_and_update_input_and_cursor(&self, input_ctx: &InputContext, user_input: &mut String, user_cursor: &mut usize) {
+    pub fn select_and_update_input_and_cursor(&self, asa: &Asa, user_input: &mut String, user_cursor: &mut usize) {
         if let Some(selected) = self.get(self.selected_index()) {
             let prefix = user_input
-                .get(..(input_ctx.current_word_offset))
+                .get(..(asa.current_word_offset))
                 .unwrap_or("")
                 .to_string();
-            let suffix_offset = input_ctx.current_word_offset
-                + input_ctx.current_word_len;
+            let suffix_offset = asa.current_word_offset
+                + asa.current_word_len;
             let suffix =
                 &user_input.get((suffix_offset)..).unwrap_or("").to_string();
 
@@ -120,7 +121,7 @@ impl CompletionSelector {
             };
 
             *user_input = format!("{}{}{}{}", prefix, selected, append, suffix);
-            *user_cursor = input_ctx.current_word_offset + selected.len() + append.len();
+            *user_cursor = asa.current_word_offset + selected.len() + append.len();
         }
     }
 }
@@ -211,47 +212,53 @@ fn dir_scan_filter(path: &Path) -> bool {
 }
 
 /// Returns file paths. It scans *recursively* from the given (or current) directory.
-pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bool, executable_only: bool, remove_dot_slash_prefix: bool) -> Vec<Arc<String>> {
+pub fn path_completion(ctx: &Asa, include_files: bool, include_dirs: bool, executable_only: bool, remove_dot_slash_prefix: bool) -> Vec<Arc<String>> {
     let mut remaining_dirs = VecDeque::new();
     let given_dir = ctx.current_word().map(|s| (&*s).clone());
     let home_dir = dirs::home_dir().unwrap();
 
     trace!("path_completion: current='{:?}', dir='{:?}'", ctx.current_word(), given_dir);
     match &given_dir {
+        // ~/Downloads/monica-lottery
         Some(given_dir) if given_dir.starts_with("~/") => {
             let mut path = PathBuf::from(&home_dir);
             let mut sub_path = PathBuf::from(&given_dir);
 
-            // Remove `~/': `~/Downloads/pic.jpg' -> `Downloads/pic.jpg'
+            // Remove `~/': `~/Downloads/monica-lottery' -> `Downloads/monica-lottery'
             sub_path = sub_path.strip_prefix("~/").unwrap().to_path_buf();
             if !given_dir.ends_with('/') {
-                // `~/Downloads/pic' -> `~/Downloads'
+                // `~/Downloads/monica-lottery' -> `~/Downloads'
                 sub_path = sub_path.parent().unwrap_or(&sub_path).to_path_buf();
             }
 
             path.push(sub_path);
             remaining_dirs.push_front(path);
         },
+        // Downloads/
         Some(given_dir) if given_dir.ends_with('/') => {
             remaining_dirs.push_front(PathBuf::from(given_dir));
         },
+        // Downloads/monica-lotte
         Some(given_dir) if given_dir.contains('/') => {
-            // Remove the last part: `/Users/chandler/Docum' -> `/users/chandler'
+            // Remove the last part: `Downloads/monica-lotte' -> `Downloads'
             remaining_dirs.push_front(PathBuf::from(given_dir.clone()).parent().unwrap().to_path_buf());
         },
+        // Download
         _ => {
             remaining_dirs.push_front(PathBuf::from("."));
         }
     };
 
     let mut entries = Vec::new();
-    let mut max_scan = 4096; // TODO: compute this by machine performance
+    let mut max_scan = 1024; // TODO: compute this by machine performance
 
+    // Scan the directories in breadth-first way.
 'scan_loop:
     while let Some(dir_path) = remaining_dirs.pop_front() {
         if let Ok(dirent) = std::fs::read_dir(dir_path) {
             for entry in dirent {
                 if max_scan < 0 {
+                    // Too many files. Abort scanning.
                     break 'scan_loop;
                 }
                 max_scan -= 1;
@@ -260,6 +267,8 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
                 let file_type = entry.file_type().unwrap();
 
                 if file_type.is_dir() && !dir_scan_filter(&entry.path()) {
+                    // The entry is a directory. Append to the queue to scan it
+                    // later.
                     remaining_dirs.push_back(entry.path());
                 }
 
@@ -271,15 +280,19 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
                 }
 
                 if (include_files && file_type.is_file()) || (include_dirs && file_type.is_dir()) {
+                    // The entry should be added to the result.
                     let mut path = entry.path();
 
                     if path.starts_with(&home_dir) {
+                        // The path is in the home directory. Replace the prefix
+                        // with `~/'.
                         path = PathBuf::from("~").join(
                             path.strip_prefix(&home_dir).unwrap()
                         ).to_path_buf();
                     }
 
                     if remove_dot_slash_prefix && path.starts_with("./") {
+                        // `./Downloads/monica-lottery.txt` -> `Downloads/monica-lottery.txt`
                         path = path.strip_prefix("./").unwrap().to_path_buf();
                     }
 
@@ -289,6 +302,7 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
         }
     }
 
+    // Filter the results by the current word at the user cursor.
     let mut compgen = CompGen::new();
     compgen.entries(entries);
     if let Some(current_word) = ctx.current_word() {
@@ -298,7 +312,7 @@ pub fn path_completion(ctx: &InputContext, include_files: bool, include_dirs: bo
     compgen.generate()
 }
 
-pub fn cmd_completion(ctx: &InputContext) -> Vec<Arc<String>> {
+pub fn cmd_completion(ctx: &Asa) -> Vec<Arc<String>> {
     match ctx.current_word() {
         Some(query) => {
             let mut entries = crate::path::complete(&query);
@@ -309,8 +323,10 @@ pub fn cmd_completion(ctx: &InputContext) -> Vec<Arc<String>> {
     }
 }
 
+/// A completion definition.
 #[derive(Debug, Clone)]
 pub struct CompSpec {
+    /// `-F func_name`
     func_name: Option<String>,
     /// `-o filenames`
     filenames_if_empty: bool,
@@ -351,6 +367,7 @@ impl CompSpecBuilder {
         }
     }
 
+    /// -F func_name
     #[inline]
     pub fn func_name<'a>(&'a mut self, func_name: String) -> &'a mut CompSpecBuilder {
         self.func_name = Some(func_name);

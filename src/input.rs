@@ -1,10 +1,10 @@
 use crate::completion::{CompletionSelector};
 use crate::exec::Isolate;
-use crate::context_parser::{InputContext, parse_input_context};
+use crate::context_parser;
 use crate::history::{HistorySelector, append_history};
-use crate::prompt::render_prompt;
+use crate::prompt::PromptRenderer;
 use crate::config::Config;
-use std::io::{self, Write, Stdout};
+use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 use termion;
 use termion::cursor::DetectCursorPos;
@@ -12,28 +12,21 @@ use termion::event::{Event, Key};
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 
-
 #[derive(Debug)]
 pub enum InputError {
     Eof,
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
-pub enum InputMode {
+enum InputMode {
     Normal,
-    Completion,
+    Completion(CompletionSelector),
 }
 
-/// Returns the cursor position (0-origin).
-fn get_current_yx(stdout: &mut Stdout) -> (u16, u16) {
-    let (x, y) = stdout.cursor_pos().unwrap();
-    (y - 1, x - 1)
-}
-
+/// Prints the prompt and read a line from stdin.
 pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<String, InputError> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
-    let (_, current_x) = get_current_yx(&mut stdout);
+    let current_x = stdout.cursor_pos().unwrap().0 - 1;
     if current_x != 0 {
         // The prompt is not at the beginning of a line. This could be caused
         // if the previous command didn't print the trailing newline
@@ -45,69 +38,60 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
         ).ok();
     }
 
-    let (mut prompt_y, _) = get_current_yx(&mut stdout);
-
+    let current_theme = "Solarized (dark)";
     let mut user_input = String::new();
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
-    let mut stdin_events = stdin.events();
-    let current_theme = "Solarized (dark)";
     let mut mode = InputMode::Normal;
-    let mut rendered_lines = 0;
-    // TODO: move these variables into InputMode::Completion.
-    let mut completion_state = CompletionSelector::new(vec![]);
-    let mut input_ctx: InputContext = Default::default();
     let mut history = HistorySelector::new();
+    let mut renderer = PromptRenderer::new(&mut stdout, &config.prompt, &current_theme);
+    let mut stdin_events = stdin.events();
 
     'input_line: loop {
         // Print the prompt.
-        let (x_max, y_max) = termion::terminal_size().map(|(x, y)| (x -1, y - 1)).unwrap();
-        let (rendered_lines2, prompt_y2, prompt) = render_prompt(
-            &config.prompt,
-            mode,
-            &completion_state,
-            prompt_y,
-            y_max,
-            x_max,
-            rendered_lines,
-            user_cursor,
-            &user_input,
-            &current_theme,
-        );
+        let prompt = match &mode {
+            InputMode::Completion(completion) => {
+                renderer.render(&user_input, user_cursor, Some(completion))
+            }
+            InputMode::Normal => {
+                renderer.render(&user_input, user_cursor, None)
+            }
+        };
 
         write!(stdout, "{}", prompt).ok();
         stdout.flush().ok();
-        prompt_y = prompt_y2;
-        rendered_lines = rendered_lines2;
 
         // Read a line from stdin.
-        match stdin_events.next() {
+        let event = stdin_events.next();
+        // Parse the current line.
+        let asa = context_parser::parse(&user_input, user_cursor);
+
+        match event {
             Some(event) => {
                 let event = event.unwrap();
                 trace!("event: {:?}", event);
                 match event {
-                    Event::Key(Key::Char('\n')) => match mode {
+                    Event::Key(Key::Char('\n')) => match &mut mode {
                         InputMode::Normal => break 'input_line,
-                        InputMode::Completion => {
-                            trace!("ctx: {:?}", input_ctx);
-                            completion_state.select_and_update_input_and_cursor(&input_ctx, &mut user_input, &mut user_cursor);
+                        InputMode::Completion(completion) => {
+                            trace!("ctx: {:?}", asa);
+                            completion.select_and_update_input_and_cursor(&asa, &mut user_input, &mut user_cursor);
                             mode = InputMode::Normal;
                             continue 'input_line;
                         }
                     },
-                    Event::Key(Key::Char('\t')) => match mode {
-                        InputMode::Completion => {
-                            completion_state.move_cursor(1);
+                    Event::Key(Key::Char('\t')) => match &mut mode {
+                        InputMode::Completion(completion) => {
+                            completion.move_cursor(1);
                         }
                         InputMode::Normal => {
-                            input_ctx = parse_input_context(&user_input, user_cursor);
                             let mut isolate = isolate_lock.lock().unwrap();
-                            completion_state = CompletionSelector::new(isolate.complete(&input_ctx));
-                            if completion_state.len() == 1 {
+                            let completion = CompletionSelector::new(isolate.complete(&asa));
+                            if completion.len() == 1 {
                                 // There is only one completion candidate. Select it and go back into
                                 // normal input mode.
-                                completion_state.select_and_update_input_and_cursor(&input_ctx, &mut user_input, &mut user_cursor);
+                                completion.select_and_update_input_and_cursor(&asa, &mut user_input, &mut user_cursor);
                             } else {
-                                mode = InputMode::Completion;
+                                mode = InputMode::Completion(completion);
                             }
                         }
                     },
@@ -117,37 +101,37 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                             user_cursor -= 1;
                         }
 
-                        if mode == InputMode::Completion {
-                            input_ctx = parse_input_context(&user_input, user_cursor);
+                        if let InputMode::Completion(_) = mode {
                             let mut isolate = isolate_lock.lock().unwrap();
-                            completion_state = CompletionSelector::new(isolate.complete(&input_ctx));
+                            let new = CompletionSelector::new(isolate.complete(&asa));
+                            mode = InputMode::Completion(new);
                         }
                     }
                     Event::Key(Key::Up) => {
-                        match mode {
+                        match &mut mode {
                             InputMode::Normal => {
                                 history.prev(&user_input);
                                 let line = history.current();
                                 user_input = line.to_string();
                                 user_cursor = user_input.len();
                             },
-                            InputMode::Completion => {
+                            InputMode::Completion(completion) => {
                                 // Move to the previous candidate.
-                                completion_state.move_cursor(-1);
+                                completion.move_cursor(-1);
                             }
                         }
                     }
                     Event::Key(Key::Down) => {
-                        match mode {
+                        match &mut mode {
                             InputMode::Normal => {
                                 history.next();
                                 let line = history.current();
                                 user_input = line.to_string();
                                 user_cursor = user_input.len();
                             },
-                            InputMode::Completion => {
+                            InputMode::Completion(completion) => {
                                 // Move to the next candidate.
-                                completion_state.move_cursor(1);
+                                completion.move_cursor(1);
                             }
                         }
                     }
@@ -156,7 +140,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                             user_cursor -= 1;
                         }
 
-                        if mode == InputMode::Completion {
+                        if let InputMode::Completion(_) = mode {
                             mode = InputMode::Normal;
                         }
                     }
@@ -165,7 +149,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                             user_cursor += 1;
                         }
 
-                        if mode == InputMode::Completion {
+                        if let InputMode::Completion(_) = mode {
                             mode = InputMode::Normal;
                         }
                     }
@@ -222,7 +206,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                     },
                     Event::Key(Key::Ctrl('c')) => match mode {
                         InputMode::Normal => return Ok("".to_owned()),
-                        InputMode::Completion => {
+                        InputMode::Completion(_) => {
                             mode = InputMode::Normal;
                         }
                     },
@@ -234,20 +218,17 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                         }
                     },
                     Event::Key(Key::Ctrl('l')) => {
-                        // Clear the screen. Will be flushed after the prompt rendering.
-                        write!(stdout, "{}", termion::clear::All).ok();
-                        prompt_y = 0;
+                        renderer.clear_screen(&mut stdout);
                     }
-                    Event::Key(Key::Char(ch)) => match (mode, ch) {
+                    Event::Key(Key::Char(ch)) => match (&mut mode, ch) {
                         (_, ch) => {
                             user_input.insert(user_cursor, ch);
                             user_cursor += 1;
 
-                            if mode == InputMode::Completion {
+                            if let InputMode::Completion(_) = mode {
                                 let mut isolate = isolate_lock.lock().unwrap();
-                                input_ctx =
-                                    parse_input_context(&user_input, user_cursor);
-                                completion_state = CompletionSelector::new(isolate.complete(&input_ctx));
+                                let new = CompletionSelector::new(isolate.complete(&asa));
+                                mode = InputMode::Completion(new);
                             }
                         }
                     },

@@ -1,3 +1,4 @@
+//! A diagnosis program to report/fix a bug easier.
 use termion::color;
 use termion::style;
 
