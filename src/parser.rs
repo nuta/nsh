@@ -311,7 +311,7 @@ fn visit_expr_span(pair: Pair<Rule>) -> Span {
 }
 
 // `a\b\$cd' -> `echo ab$cd'
-fn visit_escape_sequences(pair: &Pair<Rule>, escaped_chars: Option<&str>) -> String {
+fn visit_escape_sequences(pair: Pair<Rule>, escaped_chars: Option<&str>) -> String {
     let mut s = String::new();
     let mut escaped = false;
     for ch in pair.as_str().chars() {
@@ -353,13 +353,13 @@ fn visit_word(pair: Pair<Rule>) -> Word {
     for span in pair.into_inner() {
         match span.as_rule() {
             Rule::literal_span => {
-                spans.push(Span::Literal(visit_escape_sequences(&span, None)));
+                spans.push(Span::Literal(visit_escape_sequences(span, None)));
             },
             Rule::double_quoted_span => {
                 for span_in_quote in span.into_inner() {
                     match span_in_quote.as_rule() {
                         Rule::literal_in_double_quoted_span => {
-                            spans.push(Span::Literal(visit_escape_sequences(&span_in_quote, Some("\"`$"))));
+                            spans.push(Span::Literal(visit_escape_sequences(span_in_quote, Some("\"`$"))));
                         }
                         Rule::backtick_span => spans.push(visit_command_span(span_in_quote, true)),
                         Rule::command_span => spans.push(visit_command_span(span_in_quote, true)),
