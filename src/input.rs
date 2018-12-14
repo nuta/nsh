@@ -176,6 +176,46 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                         user_cursor = user_input.len();
                         mode = InputMode::Normal;
                     },
+                    Event::Key(Key::Alt('b')) => {
+                        // Skip the whitespace at the current position.
+                        user_cursor = user_cursor.saturating_sub(1);
+
+                        while user_cursor > 0 {
+                            if let Some(ch) = user_input.chars().nth(user_cursor.saturating_sub(1)) {
+                                if ch == ' ' || ch == '/' {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+
+                            user_cursor -= 1;
+                        }
+
+                        mode = InputMode::Normal;
+                    },
+                    Event::Key(Key::Alt('f')) => {
+                        // Skip the whitespace at the current position.
+                        user_cursor += 1;
+                        if user_cursor > user_input.len() {
+                            user_cursor = user_input.len();
+                        }
+
+                        while user_cursor < user_input.len() {
+                            if let Some(ch) = user_input.chars().nth(user_cursor.saturating_sub(1)) {
+                                if ch == ' ' || ch == '/' {
+                                    break;
+                                }
+                            } else {
+                                break;
+                            }
+
+                            user_cursor += 1;
+                        }
+
+                        debug!("cursor: {}, {}", user_cursor, user_input.len());
+                        mode = InputMode::Normal;
+                    },
                     Event::Key(Key::Ctrl('k')) => {
                         user_input.truncate(user_cursor);
                     },
