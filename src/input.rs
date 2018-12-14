@@ -60,13 +60,14 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
 
     'input_line: loop {
         // Print the prompt.
-        let y_max = termion::terminal_size().map(|(_, y)| y - 1).unwrap();
+        let (x_max, y_max) = termion::terminal_size().map(|(x, y)| (x -1, y - 1)).unwrap();
         let (rendered_lines2, prompt_y2, prompt) = render_prompt(
             &config.prompt,
             mode,
             &completion_state,
             prompt_y,
             y_max,
+            x_max,
             rendered_lines,
             user_cursor,
             &user_input,

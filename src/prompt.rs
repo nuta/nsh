@@ -298,6 +298,7 @@ pub fn render_prompt(
     completions: &CompletionSelector,
     prompt_y: u16,
     y_max: u16,
+    x_max: u16,
     prev_rendered_lines: u16,
     user_cursor: usize,
     user_input: &str,
@@ -370,11 +371,11 @@ pub fn render_prompt(
         1 + completion_str.chars().filter(|c| *c == '\n').count() as u16
     };
 
-    let rendered_lines = prompt_lines + completion_lines;
+    let user_input_lines = (prompt_last_line_len as u16 + user_input.len() as u16) / (x_max + 1);
+    let rendered_lines = prompt_lines + user_input_lines + completion_lines;
     let avail = std::cmp::max(0, i32::from(y_max) - i32::from(prompt_y));
     let scroll = std::cmp::max(0, i32::from(rendered_lines) - avail - 1) as u16;
     let new_prompt_y = prompt_y - scroll;
-    let user_cursor_pos = (prompt_last_line_len + user_cursor) as u16;
 
     for _ in 0..std::cmp::max(0, scroll) {
         writeln!(buf).ok();
@@ -392,6 +393,8 @@ pub fn render_prompt(
     }
 
     // Render the prompt and colored user input.
+    let cursor_y = new_prompt_y + (prompt_lines - 1) + ((prompt_last_line_len + user_cursor) as u16 / (x_max + 1));
+    let cursor_x = (prompt_last_line_len as u16 + user_cursor as u16) % (x_max + 1);
     write!(
         buf,
         "{}{}{}{}{}{}{}",
@@ -400,7 +403,7 @@ pub fn render_prompt(
         colored_user_input,
         Reset,
         replace_newline_with_clear(&completion_str, new_prompt_y + prompt_lines),
-        termion::cursor::Goto(1 + user_cursor_pos, 1 + new_prompt_y + (prompt_lines - 1)),
+        termion::cursor::Goto(1 + cursor_x, 1 + cursor_y),
         Reset,
     ).ok();
 
