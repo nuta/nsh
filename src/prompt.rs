@@ -291,7 +291,8 @@ fn replace_newline_with_clear(text: &str, y: u16) -> String {
 }
 
 pub struct PromptRenderer {
-    prompt_fmt: String,
+    prompt_str: String,
+    prompt_last_line_len: usize,
     prompt_y: u16,
     y_max: u16,
     x_max: u16,
@@ -301,11 +302,22 @@ pub struct PromptRenderer {
 
 impl PromptRenderer {
     pub fn new(stdout: &mut std::io::Stdout, prompt_fmt: &str, current_theme: &str, y_max: u16, x_max: u16) -> PromptRenderer {
+        // Parse and render the prompt.
+        let (prompt_str, prompt_last_line_len) = match parse_prompt(prompt_fmt) {
+            Ok(fmt) => draw_prompt(&fmt),
+            Err(err) => {
+                eprintln!("nsh: failed to parse $PROMPT: {}", err);
+                ("$ ".to_owned(), 2)
+            }
+        };
+
         let (_, prompt_y) = stdout.cursor_pos().map(|(x, y)| (x - 1, y - 1)).unwrap();
+
         PromptRenderer {
-            prompt_fmt: prompt_fmt.to_owned(),
             current_theme: current_theme.to_owned(),
             prompt_y,
+            prompt_str,
+            prompt_last_line_len,
             y_max,
             x_max,
             prev_rendered_lines: 0,
@@ -333,22 +345,13 @@ impl PromptRenderer {
             colored_user_input += &escaped;
         }
 
-        // Parse and render the prompt.
-        let (prompt_str, prompt_last_line_len) = match parse_prompt(&self.prompt_fmt) {
-            Ok(fmt) => draw_prompt(&fmt),
-            Err(err) => {
-                eprintln!("nsh: failed to parse $PROMPT: {}", err);
-                ("$ ".to_owned(), 2)
-            }
-        };
-
         use termion::clear::CurrentLine;
         use termion::color::{Fg, Bg, White, Red};
         use termion::style::*;
 
         // Render completions.
         let mut completion_str = String::new();
-        if let Some(completions) =completions {
+        if let Some(completions) = completions {
             let results = completions.entries();
             let iter = results
                 .iter()
@@ -404,13 +407,13 @@ impl PromptRenderer {
         //           +- rendered_lines = 9
         //
         let mut buf = String::new();
-        let prompt_lines = prompt_str.chars().filter(|c| *c == '\n').count() as u16 + 1;
+        let prompt_lines = self.prompt_str.chars().filter(|c| *c == '\n').count() as u16 + 1;
         let completion_lines = if completion_str.is_empty() {
             0
         } else {
             1 + completion_str.chars().filter(|c| *c == '\n').count() as u16
         };
-        let user_input_lines = ((prompt_last_line_len as u16 + user_input.len() as u16) / self.x_max) + 1;
+        let user_input_lines = ((self.prompt_last_line_len as u16 + user_input.len() as u16) / self.x_max) + 1;
         let rendered_lines = prompt_lines + (user_input_lines - 1) + completion_lines;
         let avail = std::cmp::max(0, i32::from(self.y_max) - i32::from(self.prompt_y) - 1);
 
@@ -434,12 +437,12 @@ impl PromptRenderer {
         }
 
         // Render the prompt and colored user input.
-        let cursor_y = new_prompt_y + (prompt_lines - 1) + ((prompt_last_line_len + user_cursor) as u16 / self.x_max);
-        let cursor_x = (prompt_last_line_len as u16 + user_cursor as u16) % self.x_max;
+        let cursor_y = new_prompt_y + (prompt_lines - 1) + ((self.prompt_last_line_len + user_cursor) as u16 / self.x_max);
+        let cursor_x = (self.prompt_last_line_len as u16 + user_cursor as u16) % self.x_max;
         write!(
             buf,
             "{}{}{}{}{}{}{}",
-            replace_newline_with_clear(&prompt_str, new_prompt_y),
+            replace_newline_with_clear(&self.prompt_str, new_prompt_y),
             Reset,
             colored_user_input,
             Reset,

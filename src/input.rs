@@ -279,8 +279,6 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
 
         // Read a line from stdin.
         let event = stdin_events.next();
-        // Parse the current line.
-        let asa = context_parser::parse(&user_input, user_cursor);
 
         match event {
             Some(event) => {
@@ -290,7 +288,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                     Event::Key(Key::Char('\n')) => match &mut mode {
                         InputMode::Normal => break 'input_line,
                         InputMode::Completion(completion) => {
-                            trace!("ctx: {:?}", asa);
+                            let asa = context_parser::parse(&user_input, user_cursor);
                             completion.select_and_update_input_and_cursor(&asa, &mut user_input, &mut user_cursor);
                             mode = InputMode::Normal;
                             continue 'input_line;
@@ -302,6 +300,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                         }
                         InputMode::Normal => {
                             let mut isolate = isolate_lock.lock().unwrap();
+                            let asa = context_parser::parse(&user_input, user_cursor);
                             let completion = CompletionSelector::new(isolate.complete(&asa));
                             if completion.len() == 1 {
                                 // There is only one completion candidate. Select it and go back into
@@ -320,6 +319,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
 
                         if let InputMode::Completion(_) = mode {
                             let mut isolate = isolate_lock.lock().unwrap();
+                            let asa = context_parser::parse(&user_input, user_cursor);
                             let new = CompletionSelector::new(isolate.complete(&asa));
                             mode = InputMode::Completion(new);
                         }
@@ -447,6 +447,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                             user_cursor += 1;
 
                             if let InputMode::Completion(_) = mode {
+                                let asa = context_parser::parse(&user_input, user_cursor);
                                 let mut isolate = isolate_lock.lock().unwrap();
                                 let new = CompletionSelector::new(isolate.complete(&asa));
                                 mode = InputMode::Completion(new);
