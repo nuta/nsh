@@ -35,7 +35,7 @@ function convert(zsh_hist: string): string {
         const [_prefix, time, _repeated] = context.split(":");
 
         const entry = {
-            time,
+            time: parseInt(time.trim()),
             cwd: "",
             cmd
         };
