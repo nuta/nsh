@@ -27,6 +27,11 @@ lazy_static! {
     static ref HISTORY: Mutex<FuzzyVec> = Mutex::new(FuzzyVec::new());
 }
 
+pub fn search_history(query: &str) -> Vec<Arc<String>> {
+    let lock = HISTORY.lock().unwrap();
+    lock.search(query)
+}
+
 /// Returns true if the `cmd' should NOT be saved in a file.
 fn history_filter(cmd: &str) -> bool {
     cmd.starts_with(' ')

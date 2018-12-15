@@ -1,10 +1,10 @@
 use crate::completion::{CompletionSelector};
 use crate::exec::Isolate;
 use crate::context_parser;
-use crate::history::{HistorySelector, append_history};
+use crate::history::{HistorySelector, search_history, append_history};
 use crate::prompt::PromptRenderer;
 use crate::config::Config;
-use std::io::{self, Write};
+use std::io::{self, Write, Stdout, Stdin};
 use std::sync::{Arc, Mutex};
 use termion;
 use termion::cursor::DetectCursorPos;
@@ -20,6 +20,204 @@ pub enum InputError {
 enum InputMode {
     Normal,
     Completion(CompletionSelector),
+}
+
+#[inline]
+fn restore_main_screen(stdout: &mut Stdout) {
+    write!(stdout, "{}", termion::screen::ToMainScreen).ok();
+    stdout.flush().ok();
+}
+
+#[inline]
+fn truncate(s: &str, len: u16) -> String {
+    let mut string = s.to_owned();
+    string.truncate(len as usize);
+    string
+}
+
+#[inline]
+fn truncate_and_fill(s: &str, len: u16, fill: char) -> String {
+    let mut s = truncate(s, len);
+    for _ in s.len()..(len as usize) {
+        s.push(fill);
+    }
+
+    s
+}
+
+/// Returns true if the user wants to execute the command immediately.
+fn history_search_mode(
+    stdout: &mut Stdout,
+    y_max: u16,
+    x_max: u16,
+    events: &mut termion::input::Events<Stdin>,
+    user_input: &mut String
+) -> bool {
+    let mut selected = 0;
+    let saved_user_input = user_input.clone();
+    let mut user_cursor = user_input.len();
+    let display_len = y_max - 2;
+    let user_input_max = x_max - 9;
+    let prompt = "history> ";
+    loop {
+        //
+        //         ____________________________________
+        //         |history> user input here|          |  input_line
+        //       > |ls -alG                            |  history_lines
+        //       > |cowsay meow                        |  |
+        //       > |brew update                        |  |
+        //       > |ls                                 |  |
+        //       > |cd ~/Documents                     |  |
+        //       | |Enter: Execute, ^C: Quit           |  |
+        //       | ------------------------------------   howto_line
+        //       |
+        //       +- display_len == 4
+        //
+
+        // Render input_line.
+        let mut input_line = format!(
+            "{}{}{}{}",
+            termion::cursor::Goto(1, 1),
+            termion::style::Bold,
+            truncate(prompt, x_max),
+            termion::style::Reset
+        );
+
+        input_line += &format!(
+            "{}{}",
+            termion::cursor::Goto(1 + prompt.len() as u16, 1),
+            truncate(user_input, user_input_max)
+        );
+
+        // Render how_line.
+        let howto_line = format!(
+            "{}{}{}{}{}",
+            termion::cursor::Goto(1, 1 + y_max),
+            termion::style::Bold,
+            termion::style::Invert,
+            truncate(" Enter: Execute, ^C: Quit ", x_max),
+            termion::style::Reset
+        );
+
+        // Search history for user input.
+        let mut history_lines = String::new();
+        let entries = search_history(user_input);
+        let max = std::cmp::min(display_len as usize, entries.len());
+        if selected > max.saturating_sub(1) {
+            selected = max.saturating_sub(1);
+        }
+
+        // Render history_lines.
+        for i in 0..y_max.saturating_sub(2) {
+            if let Some(entry) = entries.get(i as usize) {
+                if i == selected as u16 {
+                    history_lines += &format!(
+                        "{}{}{}{}{}{}",
+                        termion::cursor::Goto(1, 2 + i),
+                        termion::color::Fg(termion::color::Green),
+                        termion::style::Bold,
+                        termion::style::Underline,
+                        truncate_and_fill(entry, x_max, ' '),
+                        termion::style::Reset
+                    );
+                } else {
+                    history_lines += &format!(
+                        "{}{}",
+                        termion::cursor::Goto(1, 2 + i),
+                        truncate(entry, x_max)
+                    );
+                }
+            }
+        }
+
+        // Print the screen.
+        write!(
+            stdout,
+            "{}{}{}{}{}{}{}",
+            termion::screen::ToAlternateScreen,
+            termion::clear::All,
+            termion::style::Reset,
+            input_line,
+            history_lines,
+            howto_line,
+            termion::cursor::Goto(1 + prompt.len() as u16 + user_cursor as u16, 1)
+        ).ok();
+        stdout.flush().ok();
+
+        // Wait for keyboard events.
+        match events.next() {
+            Some(event) => {
+                let event = event.unwrap();
+                match event {
+                    // Enter
+                    Event::Key(Key::Char('\n')) => {
+                        restore_main_screen(stdout);
+                        if let Some(s) = entries.get(selected) {
+                            *user_input = s.as_str().to_owned();
+                            return true;
+                        } else {
+                            // No history entries. Abort history mode.
+                            *user_input = saved_user_input;
+                            return false;
+                        }
+                    },
+                    // Move the user input cursor to left.
+                    Event::Key(Key::Left) => {
+                        user_cursor = user_cursor.saturating_sub(1);
+                    },
+                    // Move the user input cursor to right.
+                    Event::Key(Key::Right) => {
+                        user_cursor += 1;
+                        if user_cursor > user_input.len() {
+                            user_cursor = user_input.len();
+                        }
+                    },
+                    // Select the previous history.
+                    Event::Key(Key::Up) => {
+                        selected = selected.saturating_sub(1);
+                    },
+                    // Select the next history.
+                    Event::Key(Key::Down) => {
+                        selected += 1;
+                        let max = std::cmp::min(display_len as usize, entries.len());
+                        if selected > max.saturating_sub(1) {
+                            selected = max.saturating_sub(1);
+                        }
+                    },
+                    // Remove the previous character in the user input.
+                    Event::Key(Key::Backspace) => {
+                        if user_cursor > 0 {
+                            user_input.remove(user_cursor - 1);
+                            user_cursor -= 1;
+                        }
+                    },
+                    // Remove the next character in the user input.
+                    Event::Key(Key::Ctrl('d')) => {
+                        if user_cursor < user_input.len() {
+                            user_input.remove(user_cursor);
+                        }
+                    },
+                    // Abort history mode.
+                    Event::Key(Key::Ctrl('c')) => {
+                        restore_main_screen(stdout);
+                        *user_input = saved_user_input;
+                        return false;
+                    },
+                    // An any key input.
+                    Event::Key(Key::Char(ch)) => {
+                        if user_input.len() < user_input_max as usize {
+                            user_input.insert(user_cursor, ch);
+                            user_cursor += 1;
+                        }
+                    },
+                    ev => {
+                        trace!("ignored event: {:?}", ev);
+                    },
+                }
+            },
+            _ => unreachable!()
+        }
+    }
 }
 
 /// Prints the prompt and read a line from stdin.
@@ -46,6 +244,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
     let (x_max, y_max) = termion::terminal_size().unwrap();
     let mut renderer = PromptRenderer::new(&mut stdout, &config.prompt, &current_theme, y_max, x_max);
     let mut stdin_events = stdin.events();
+    let mut exec = false;
 
     'input_line: loop {
         // Print the prompt.
@@ -60,6 +259,11 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
 
         write!(stdout, "{}", prompt).ok();
         stdout.flush().ok();
+
+        if exec {
+            // The user input is filled by history search.
+            break;
+        }
 
         // Read a line from stdin.
         let event = stdin_events.next();
@@ -220,6 +424,10 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                     },
                     Event::Key(Key::Ctrl('l')) => {
                         renderer.clear_screen(&mut stdout);
+                    }
+                    Event::Key(Key::Ctrl('r')) => {
+                        exec = history_search_mode(&mut stdout, y_max, x_max, &mut stdin_events, &mut user_input);
+                        user_cursor = user_input.len();
                     }
                     Event::Key(Key::Char(ch)) => match (&mut mode, ch) {
                         (_, ch) => {
