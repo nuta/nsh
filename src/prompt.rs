@@ -416,7 +416,7 @@ impl PromptRenderer {
 
         // In case the prompt at the bottom of the screen some scroll are needed.
         let scroll = std::cmp::max(0, i32::from(rendered_lines) - avail - 1) as u16;
-        let new_prompt_y = self.prompt_y - scroll;
+        let new_prompt_y = self.prompt_y.saturating_sub(scroll);
 
         for _ in 0..std::cmp::max(0, scroll) {
             writeln!(buf).ok();
