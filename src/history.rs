@@ -40,7 +40,11 @@ fn history_filter(cmd: &str) -> bool {
 
 /// Appends a history to the history file.
 pub fn append_history(cmd: &str) {
-    let mut  hist = HISTORY.lock().unwrap();
+    if cmd.is_empty() {
+        return;
+    }
+
+    let mut hist = HISTORY.lock().unwrap();
 
     let history_path = resolve_and_create_history_file();
     if let Ok(mut file) = OpenOptions::new().append(true).open(history_path) {
