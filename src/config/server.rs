@@ -108,9 +108,37 @@ fn save(req: &mut Request) -> IronResult<Response> {
 
             let mut f = std::fs::File::create(nshconfig_path)
                 .expect("failed to save ~/.nshconfig");
-            f.write_all(body.as_bytes()).expect("failed to read to ~/.nshconfig");
+            f.write_all(body.as_bytes()).expect("failed to write to ~/.nshconfig");
 
             println!("saved to ~/.nshconfig");
+            Ok(Response::with(status::Ok))
+        }
+        _ => {
+            Ok(Response::with(status::Forbidden))
+        }
+    }
+}
+
+/// `/api/save_history?access_token=<access_token>`
+fn save_history(req: &mut Request) -> IronResult<Response> {
+    let mut body = String::new();
+    req.body.read_to_string(&mut body)
+        .expect("failed to read body");
+    let params = req.get_ref::<Params>().unwrap();
+
+    match params.find(&["access_token"]) {
+        Some(&Value::String(ref token)) if *token == *ACCESS_TOKEN => {
+            let mut nshconfig_path = dirs::home_dir().unwrap();
+            nshconfig_path.push(".nsh_history");
+
+            let mut nshconfig_path = dirs::home_dir().unwrap();
+            nshconfig_path.push(".nsh_history");
+
+            let mut f = std::fs::File::create(nshconfig_path)
+                .expect("failed to save ~/.nsh_history");
+            f.write_all(body.as_bytes()).expect("failed to write to ~/.nsh_history");
+
+            println!("saved to ~/.nsh_history");
             Ok(Response::with(status::Ok))
         }
         _ => {
@@ -132,6 +160,7 @@ pub fn main() {
     router.get("/", index, "index");
     router.get("/api/load", load, "load");
     router.post("/api/save", save, "save");
+    router.post("/api/save_history", save_history, "save_history");
     router.get("/:file", static_file, "static_file");
 
     std::thread::spawn(move || {

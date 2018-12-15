@@ -14,6 +14,9 @@
             <li class="nav-item">
                 <a class="nav-link" id="env-tab" data-toggle="tab" href="#env" role="tab" aria-controls="env" aria-selected="false">Environment Variables</a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" id="migration-tab" data-toggle="tab" href="#migration" role="tab" aria-controls="migration" aria-selected="false">Migration</a>
+            </li>
         </ul>
         <div class="tab-content">
             <div class="tab-pane fade show active" id="rc" role="tabpanel" aria-labelledby="rc-tab">
@@ -24,6 +27,9 @@
             </div>
             <div class="tab-pane fade show" id="env" role="tabpanel" aria-labelledby="env-tab">
                 <env-settings :path.sync="path"></env-settings>
+            </div>
+            <div class="tab-pane fade show" id="migration" role="tabpanel" aria-labelledby="env-migration">
+                <migration></migration>
             </div>
         </div>
     </main>
@@ -36,6 +42,7 @@ import request from 'superagent';
 import PromptSettings from './components/prompt.vue';
 import RcSettings from './components/rc.vue';
 import EnvSettings from './components/env.vue';
+import Migration from './components/migration.vue';
 import { setTimeout, clearTimeout } from 'timers';
 
 const SETTINGS = [
@@ -58,7 +65,7 @@ const SETTINGS = [
 
 
 export default {
-    components: { RcSettings, PromptSettings, EnvSettings },
+    components: { RcSettings, PromptSettings, EnvSettings, Migration },
     data () {
         const params = new URLSearchParams(window.location.search);
         let data = {
