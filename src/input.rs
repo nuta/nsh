@@ -95,7 +95,7 @@ fn history_search_mode(
             termion::cursor::Goto(1, 1 + y_max),
             termion::style::Bold,
             termion::style::Invert,
-            truncate(" Enter: Execute, ^C: Quit ", x_max),
+            truncate(" Enter: Execute, Tab: Edit, ^C: Quit ", x_max),
             termion::style::Reset
         );
 
@@ -149,7 +149,7 @@ fn history_search_mode(
             Some(event) => {
                 let event = event.unwrap();
                 match event {
-                    // Enter
+                    // Execute the selected command.
                     Event::Key(Key::Char('\n')) => {
                         restore_main_screen(stdout);
                         if let Some(s) = entries.get(selected) {
@@ -160,6 +160,18 @@ fn history_search_mode(
                             *user_input = saved_user_input;
                             return false;
                         }
+                    },
+                    // Fill user input by the selected command and continue editing.
+                    Event::Key(Key::Char('\t')) => {
+                        restore_main_screen(stdout);
+                        if let Some(s) = entries.get(selected) {
+                            *user_input = s.as_str().to_owned();
+                        } else {
+                            // No history entries. Abort history mode.
+                            *user_input = saved_user_input;
+                        }
+
+                        return false;
                     },
                     // Move the user input cursor to left.
                     Event::Key(Key::Left) => {
