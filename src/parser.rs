@@ -3,6 +3,7 @@ use pest::iterators::{Pair, Pairs};
 use termion::color::Fg;
 use termion::color;
 use termion::style;
+use std::os::unix::io::RawFd;
 
 #[derive(Parser)]
 #[grammar = "shell.pest"]
@@ -18,6 +19,7 @@ pub enum RedirectionDirection {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RedirectionType {
     File(Word),
+    Fd(RawFd)
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -406,7 +408,8 @@ fn visit_word(pair: Pair<Rule>) -> Word {
 
 // fd = { ASCII_DIGIT+ }
 // redirect_direction = { "<" | ">" | ">>" }
-// redirect = { fd? ~ redirect_direction ~ word }
+// redirect_to_fd = ${ "&" ~ ASCII_DIGIT* }
+// redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
 fn visit_redirect(pair: Pair<Rule>) -> Redirection {
     let mut inner = pair.into_inner();
     let fd     = inner.next().unwrap();
@@ -421,7 +424,14 @@ fn visit_redirect(pair: Pair<Rule>) -> Redirection {
     };
 
     let fd = fd.as_span().as_str().parse().unwrap_or(default_fd);
-    let target = RedirectionType::File(visit_word(target));
+    let target = match target.as_rule() {
+        Rule::word => RedirectionType::File(visit_word(target)),
+        Rule::redirect_to_fd => {
+            let target_fd = target.into_inner().next().unwrap().as_span().as_str().parse().unwrap();
+            RedirectionType::Fd(target_fd)
+        },
+        _ => unreachable!()
+    };
 
     Redirection {
         fd,
@@ -1039,10 +1049,10 @@ pub fn test_simple_commands() {
     );
 
     assert_eq!(
-        parse("ls -G <foo.txt 2> bar.txt"),
+        parse("ls -G <foo.txt >> bar.txt 2> baz.txt 4>&2"),
         Ok(Ast {
             terms: vec![Term {
-                code: "ls -G <foo.txt 2> bar.txt".into(),
+                code: "ls -G <foo.txt >> bar.txt 2> baz.txt 4>&2".into(),
                 background: false,
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
@@ -1055,9 +1065,19 @@ pub fn test_simple_commands() {
                                 target: RedirectionType::File(lit!("foo.txt")),
                             },
                             Redirection {
+                                direction: RedirectionDirection::Append,
+                                fd: 1,
+                                target: RedirectionType::File(lit!("bar.txt")),
+                            },
+                            Redirection {
                                 direction: RedirectionDirection::Output,
                                 fd: 2,
-                                target: RedirectionType::File(lit!("bar.txt")),
+                                target: RedirectionType::File(lit!("baz.txt")),
+                            },
+                            Redirection {
+                                direction: RedirectionDirection::Output,
+                                fd: 4,
+                                target: RedirectionType::Fd(2),
                             },
                         ],
                         assignments: vec![],

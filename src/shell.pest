@@ -102,8 +102,9 @@ assignment_command = { assignment+ }
 // Simple Command
 //
 fd = { ASCII_DIGIT* }
-redirect_direction = { "<" | ">" | ">>" }
-redirect = { fd ~ redirect_direction ~ word }
+redirect_direction = { "<" | ">>" | ">" }
+redirect_to_fd = ${ "&" ~ fd }
+redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
 word_or_redirect = _{ redirect | word }
 reserved_word = ${
     (

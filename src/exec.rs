@@ -1062,6 +1062,9 @@ impl Isolate {
         let mut fds = Vec::new();
         for r in redirects {
             match r.target {
+                parser::RedirectionType::Fd(ref fd) => {
+                    fds.push((*fd, r.fd as RawFd));
+                },
                 parser::RedirectionType::File(ref wfilepath) => {
                     let mut options = OpenOptions::new();
                     match &r.direction {
@@ -1204,6 +1207,14 @@ impl Isolate {
         let mut opened_fds = Vec::new();
         for r in redirects {
             match r.target {
+                parser::RedirectionType::Fd(ref fd) => {
+                    match r.fd {
+                        0 => stdin = *fd,
+                        1 => stdout = *fd,
+                        2 => stderr = *fd,
+                        _ => (),
+                    }
+                },
                 parser::RedirectionType::File(ref wfilepath) => {
                     let mut options = OpenOptions::new();
                     match &r.direction {
