@@ -43,19 +43,20 @@ Key Shortcuts
 ----
 
 Why create a new shell?
-------------------------
-I got tired of making my zshrc faster. Fish shell is really neat but I prefer old-fashioned, traditional,
-and ergonomic shell syntax.
+-----------------------
+Bash is the best for executing shell scripts but its interactive mode is not satisfactory. I am
+a zsh user for the last decade but I don't need *customizability* and got tired of making my zshrc
+faster. Fish is really neat but I prefer old-fashioned, traditional, and ergonomic shell syntax.
 
 Comparisons
 -----------
 | | **nsh**  | **[bash](https://www.gnu.org/software/bash)**  | **[zsh](http://www.zsh.org/)** | **[fish](http://fishshell.com/)** | **[PowerShell](https://github.com/PowerShell/PowerShell)** |
 | :-: | :-: | :-: | :-: | :-: | :-: |
-| **POSIX shell features** | almost complete | **Yes** | **Yes** | original syntax | No|
-| **Bash compatibility** | incomplete | **100% compatible** | **provides `emulate(1)`** | requires Bass | No |
-| **Prompt UX** | *(work in progress)* | minimum standard | comfortable | **awesome** | comfortable |
-| **Configuration easiness** | **web-based `nsh --config`** | insufficient | oh-my-zsh or very long zshrc | **web-based `fish_config`** | insufficient |
-| **Name** | not bad | **noble** | **cool** | **cute** | **super cool** |
+| **POSIX shell features**   | almost complete              | **Yes**             | **Yes**                      | original syntax             | No             |
+| **Bash compatibility**     | incomplete                   | **100% compatible** | **provides `emulate(1)`**    | requires Bass               | No             |
+| **Prompt UX**              | *work-in-progress*           | minimum standard    | comfortable                  | **awesome**                 | comfortable    |
+| **Configuration easiness** | **web-based `nsh --config`** | insufficient        | oh-my-zsh or very long zshrc | **web-based `fish_config`** | insufficient   |
+| **Name**                   | not bad                      | **noble**           | **cool**                     | **cute**                    | **super cool** |
 
 Future Plans
 ------------
@@ -70,18 +71,20 @@ Building
 --------
 ### Prerequisites
 - macOS or Linux
-- Rust [nightly](https://doc.rust-lang.org/book/2018-edition/appendix-06-nightly-rust.html) toolchain. Google `rustup` if you're unfamiliar with.
+- Rust 1.31.0 or higher
 - [Node.js](https://nodejs.org/en/)
 - [yarn](https://yarnpkg.com/lang/en/docs/install)
 
 ```
-$ cd src/config/ui && yarn && cd ../../..
+$ cd src/config/ui && yarn && yarn build && cd ../../..
 $ cargo build --release
 $ ./target/release/nsh
 ```
 
 Testing
 -------
+Use nightly Rust toolchain to build.
+
 ```
 $ cargo test
 $ ./tools/run-blackbox-tests.py
