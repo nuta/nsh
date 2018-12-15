@@ -282,6 +282,7 @@ impl fmt::Display for JobId {
     }
 }
 
+/// Represents a job. Refer https://www.gnu.org/software/libc/manual/html_node/Implementing-a-Shell.html
 pub struct Job {
     id: JobId,
     pgid: Pid,
@@ -371,6 +372,7 @@ pub struct Isolate {
     pub noexec: bool,
 
     jobs: HashMap<JobId, Arc<Job>>,
+    background_jobs: HashSet<JobId>,
     last_fore_job: Option<Arc<Job>>,
     states: HashMap<Pid, ProcessState>,
     pid_job_mapping: HashMap<Pid, Arc<Job>>,
@@ -407,6 +409,7 @@ impl Isolate {
             nounset: false,
             noexec: false,
             jobs: HashMap::new(),
+            background_jobs: HashSet::new(),
             states: HashMap::new(),
             pid_job_mapping: HashMap::new(),
             cd_stack: Vec::new(),
@@ -978,6 +981,7 @@ impl Isolate {
 
     pub fn run_in_foreground(&mut self, job: &Arc<Job>, sigcont: bool) -> ProcessState {
         self.last_fore_job = Some(job.clone());
+        self.background_jobs.remove(&job.id);
 
         // Put the job into the foreground.
         tcsetpgrp(0 /* stdin */, job.pgid).expect("failed to tcsetpgrp");
@@ -1004,9 +1008,44 @@ impl Isolate {
 
     pub fn run_in_background(&mut self, job: &Arc<Job>, sigcont: bool) {
         self.last_back_job = Some(job.clone());
+        self.background_jobs.insert(job.id.clone());
 
         if sigcont {
             kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
+        }
+    }
+
+    pub fn destroy_job(&mut self, job: &Arc<Job>) {
+        for proc in &*job.processes {
+            self.pid_job_mapping.remove(&proc);
+        }
+
+        if self.background_jobs.remove(&job.id) {
+            // The job was a background job. Notify the user that the job
+            // has finished.
+            println!("[{}] Done: {}", job.id, job.cmd);
+        }
+
+        self.jobs.remove(&job.id).unwrap();
+
+        if let Some(ref last_job) = self.last_fore_job {
+            if job.id == last_job.id {
+                self.last_fore_job = None;
+            }
+        }
+    }
+
+    /// Checks if background jobs have been terminated and notify the user that some jobs
+    /// have been finished.
+    pub fn check_background_jobs(&mut self) {
+        while let Some(pid) = self.wait_for_any_process(true) {
+            // This `get` won't return None.
+            let job = self.pid_job_mapping.get(&pid).unwrap().clone();
+            if job.completed(self) {
+                self.destroy_job(&job);
+            } else if job.stopped(self) {
+                println!("[{}] Done: {}", job.id, job.cmd);
+            }
         }
     }
 
@@ -1018,7 +1057,7 @@ impl Isolate {
                 break;
             }
 
-            self.wait_for_any_process();
+            self.wait_for_any_process(false);
         }
 
         // Get the exit status of the last process.
@@ -1027,19 +1066,7 @@ impl Isolate {
         match state {
             Some(ProcessState::Completed(_)) => {
                 // Remove the job and processes from the list.
-                for proc in &*job.processes {
-                    self.pid_job_mapping.remove(&proc);
-                }
-
-                println!("[{}] Done: {}", job.id, job.cmd);
-                self.jobs.remove(&job.id).unwrap();
-
-                if let Some(ref last_job) = self.last_fore_job {
-                    if job.id == last_job.id {
-                        self.last_fore_job = None;
-                    }
-                }
-
+                self.destroy_job(job);
                 state.unwrap()
             },
             Some(ProcessState::Stopped(_)) => {
@@ -1050,10 +1077,17 @@ impl Isolate {
         }
     }
 
-    /// Waits for an *any* process, i.e. `waitpid(-1)` and updates
-    /// the process state recorded in the `Isolate`.
-    pub fn wait_for_any_process(&mut self) -> Pid {
-        let result = waitpid(None, Some(WaitPidFlag::WUNTRACED));
+    /// Waits for an *any* process, i.e. `waitpid(-1)`, and then updates
+    /// the process state recorded in the `Isolate`. Returns `None` it
+    /// would block.
+    pub fn wait_for_any_process(&mut self, no_block: bool) -> Option<Pid> {
+        let options = if no_block {
+            WaitPidFlag::WUNTRACED | WaitPidFlag::WNOHANG
+        } else {
+            WaitPidFlag::WUNTRACED
+        };
+
+        let result = waitpid(None, Some(options));
         let (pid, state) = match result {
             Ok(WaitStatus::Exited(pid, status)) => {
                 trace!("nsh: pid={} status={}", pid, status);
@@ -1066,13 +1100,17 @@ impl Isolate {
             Ok(WaitStatus::Stopped(pid, _signal)) => {
                 (pid, ProcessState::Stopped(pid))
             },
+            Err(nix::Error::Sys(nix::errno::Errno::ECHILD)) | Ok(WaitStatus::StillAlive) => {
+                // No childs to be reported.
+                return None;
+            },
             status => {
                 panic!("unexpected waitpid event: {:?}", status);
             }
         };
 
         self.set_process_state(pid, state);
-        pid
+        Some(pid)
     }
 
     /// Updates the process state.
