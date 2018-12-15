@@ -59,9 +59,10 @@ Comparisons
 
 Future Plans
 ------------
+- Full **[bash-completions](https://github.com/scop/bash-completion)** support.
+- Plugins: rbenv integration, and more.
 - Smart fuzzy search in completion.
-- Auto correction as [fuck](https://github.com/nvbn/thefuck) does.
-- Plugins: Git information in prompt, rbenv, and more.
+- Auto correction as **[fuck](https://github.com/nvbn/thefuck)** does.
 
 ----
 
