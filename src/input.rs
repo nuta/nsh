@@ -43,7 +43,8 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
     let mut mode = InputMode::Normal;
     let mut history = HistorySelector::new();
-    let mut renderer = PromptRenderer::new(&mut stdout, &config.prompt, &current_theme);
+    let (x_max, y_max) = termion::terminal_size().unwrap();
+    let mut renderer = PromptRenderer::new(&mut stdout, &config.prompt, &current_theme, y_max, x_max);
     let mut stdin_events = stdin.events();
 
     'input_line: loop {

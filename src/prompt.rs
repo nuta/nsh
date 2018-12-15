@@ -300,8 +300,7 @@ pub struct PromptRenderer {
 }
 
 impl PromptRenderer {
-    pub fn new(stdout: &mut std::io::Stdout, prompt_fmt: &str, current_theme: &str) -> PromptRenderer {
-        let (x_max, y_max) = termion::terminal_size().map(|(x, y)| (x - 1, y - 1)).unwrap();
+    pub fn new(stdout: &mut std::io::Stdout, prompt_fmt: &str, current_theme: &str, y_max: u16, x_max: u16) -> PromptRenderer {
         let (_, prompt_y) = stdout.cursor_pos().map(|(x, y)| (x - 1, y - 1)).unwrap();
         PromptRenderer {
             prompt_fmt: prompt_fmt.to_owned(),
@@ -411,9 +410,9 @@ impl PromptRenderer {
         } else {
             1 + completion_str.chars().filter(|c| *c == '\n').count() as u16
         };
-        let user_input_lines = ((prompt_last_line_len as u16 + user_input.len() as u16) / (self.x_max + 1)) + 1;
+        let user_input_lines = ((prompt_last_line_len as u16 + user_input.len() as u16) / self.x_max) + 1;
         let rendered_lines = prompt_lines + (user_input_lines - 1) + completion_lines;
-        let avail = std::cmp::max(0, i32::from(self.y_max) - i32::from(self.prompt_y));
+        let avail = std::cmp::max(0, i32::from(self.y_max) - i32::from(self.prompt_y) - 1);
 
         // In case the prompt at the bottom of the screen some scroll are needed.
         let scroll = std::cmp::max(0, i32::from(rendered_lines) - avail - 1) as u16;
@@ -435,8 +434,8 @@ impl PromptRenderer {
         }
 
         // Render the prompt and colored user input.
-        let cursor_y = new_prompt_y + (prompt_lines - 1) + ((prompt_last_line_len + user_cursor) as u16 / (self.x_max + 1));
-        let cursor_x = (prompt_last_line_len as u16 + user_cursor as u16) % (self.x_max + 1);
+        let cursor_y = new_prompt_y + (prompt_lines - 1) + ((prompt_last_line_len + user_cursor) as u16 / self.x_max);
+        let cursor_x = (prompt_last_line_len as u16 + user_cursor as u16) % self.x_max;
         write!(
             buf,
             "{}{}{}{}{}{}{}",
