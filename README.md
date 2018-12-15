@@ -2,16 +2,13 @@ nsh
 ====
 [![Build Status](https://travis-ci.com/seiyanuta/nsh.svg?branch=master)](https://travis-ci.com/seiyanuta/nsh)
 
-A command-line shell that focuses on performance and productivity.
+**Currently nsh is incomplete and not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/seiyanuta/nsh/issues)!**
 
-**Currently nsh is not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/seiyanuta/nsh/issues)!**
-
-Goals
-------
-- A *(aims to be)* **Bash compatible** interactive shell.
+A command-line shell that focuses on performance and productivity featuing:
+- A not-yet-completed-but-aims-to-be **Bash compatible** interactive shell.
 - **Tab compeltions** and **syntax highlighting** like **[fish](http://fishshell.com/)**.
 - **Blazing fast startup times** by asynchronous initialization.
-- **Zero configration** features out of the box and web-based configuration tool `nsh --config`.
+- Builtin **zero configration** features and web-based configuration tool `nsh --config`.
 - **Written in Rust** :crab:
 
 ![demo animation](https://gist.githubusercontent.com/seiyanuta/6deb34b183f30f45e1d239dba1e07dd8/raw/6db512bfa2be402046a878c32a367c379526d048/demo.gif)
@@ -25,6 +22,23 @@ Configuration
 ```
 $ nsh --config
 ```
+
+Key Shortcuts
+-------------
+
+|     **Key**     |                 **Action**                 |
+|:---------------:|:------------------------------------------:|
+| Up              | Select the previous history.               |
+| Down            | Select the next history.                   |
+| ^C              | Clear the input.                           |
+| ^L              | Clear the screen.                          |
+| ^K              | Delete from cursor to the end of input.    |
+| M-f (Alt+Right) | Move the cursor to the next word.          |
+| M-b (Alt+Left)  | Move the cursor to the previous word.      |
+| ^A              | Move the cursor to the beginning of input. |
+| ^E              | Move the cursor to the beginning of input. |
+| TAB             | Enter the completion mode.                 |
+| ^R              | Enter the history search mode.             |
 
 ----
 
@@ -45,7 +59,6 @@ Comparisons
 
 Future Plans
 ------------
-- Support bash completions (`complete(1)` and `compgen(1)`).
 - Smart fuzzy search in completion.
 - Auto correction as [fuck](https://github.com/nvbn/thefuck) does.
 - Plugins: Git information in prompt, rbenv, and more.
@@ -94,7 +107,23 @@ Internals
 ---------
 
 ### Asynchronous initialization
-For better user experience we want to print the prompt as soon as possible.
-To achieve blazingly fast first prompt rendering, in constrast to bash, nsh
-utilizes threads to initialize the shell environment such as history loading,
-`$PATH` scanning, and even rc script execution.
+For better user experience it is crucial to render the first prompt as soon as possible.
+To achieve blazingly fast first prompt rendering, in constrast to bash, nsh utilizes threads
+to initialize the shell environment such as history loading, `$PATH` scanning, and even
+rc script execution.
+
+### `~/.nshconfig`
+Since we execute the rc script asynchronously we cannot use `$PROMPT` to render the first
+prompt. Instead of using environment varibles defined in the rc script we use a declarative
+configuration file named `.nshconfig`, a JSON file which contains the prompt format and `$PATH`.
+
+### Completion
+Nsh has experimental support for Bash style compeltion system, i.e. `complete(1)` and `compgen(1)`. Unfortunately
+[bunch of bash completion scripts](https://github.com/scop/bash-completion) uses Bash features which nsh does not yet
+support so you cannot use them for now. I'm going to implement them in Q1 2019. Stay tuned!
+
+### History Format
+The history file (`~/.nsh_history`) is a text file where each line is a JSON. We don't simply save the whole history
+as a big array since appending to a *large* array would be very slow. Each entry contains the command and its context:
+the directory where the command was executed, and the UNIX timestamp when the command was executed. In future I want to
+support genious history search mode as **[mcFly](https://github.com/cantino/mcfly)** does.
