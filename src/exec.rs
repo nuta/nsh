@@ -998,6 +998,8 @@ impl Isolate {
                 for proc in &*job.processes {
                     self.pid_job_mapping.remove(&proc);
                 }
+
+                println!("[{}] Done: {}", job.id, job.cmd);
                 self.jobs.remove(&job.id).unwrap();
 
                 if let Some(ref last_job) = self.last_fore_job {
@@ -1009,7 +1011,7 @@ impl Isolate {
                 state.unwrap()
             },
             Some(ProcessState::Stopped(_)) => {
-                eprintln!("nsh: [{}] Stopped: {}", job.id, job.cmd);
+                eprintln!("[{}] Stopped: {}", job.id, job.cmd);
                 state.unwrap()
             },
             _ => unreachable!(),
@@ -1637,6 +1639,7 @@ impl Isolate {
     // Creates a pipeline and runs commands.
     fn run_pipeline(
         &mut self,
+        code: &str,
         pipeline: &parser::Pipeline,
         pipeline_stdin: RawFd,
         pipeline_stdout: RawFd,
@@ -1731,7 +1734,7 @@ impl Isolate {
                 ExitStatus::ExitedWith(status)
             },
             Some(ExitStatus::Running(_)) => {
-                let cmd_name = String::new(); // TODO:
+                let cmd_name = code.to_owned();
                 let job = self.create_job(cmd_name, pgid.unwrap(), childs);
 
                 if !self.interactive {
@@ -1816,7 +1819,7 @@ impl Isolate {
                     _ => continue,
                 }
 
-                last_status = self.run_pipeline(pipeline, stdin, stdout, stderr, term.background);
+                last_status = self.run_pipeline(&term.code, pipeline, stdin, stdout, stderr, term.background);
             }
         }
 
