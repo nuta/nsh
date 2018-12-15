@@ -187,8 +187,12 @@ impl Frame {
         }
     }
 
+    pub fn define(&mut self, key: &str) {
+        self.vars.insert(key.into(), Arc::new(Variable::new(None)));
+    }
+
     pub fn set(&mut self, key: &str, value: Value) {
-        self.vars.insert(key.into(), Arc::new(Variable::new(value)));
+        self.vars.insert(key.into(), Arc::new(Variable::new(Some(value))));
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
@@ -217,7 +221,7 @@ impl Frame {
     pub fn get_string_args(&self) -> Vec<String> {
         let mut args = Vec::new();
         for var in self.get_args() {
-            if let Value::String(value) = var.value() {
+            if let Some(Value::String(value)) = var.value() {
                 args.push(value.clone());
             }
         }
@@ -453,6 +457,16 @@ impl Isolate {
         self.set(key, value, defined_as_local);
     }
 
+    pub fn define(&mut self, key: &str, is_local: bool) {
+        let frame = if is_local {
+            self.current_frame_mut()
+        } else {
+            &mut self.global
+        };
+
+        frame.define(key);
+    }
+
     pub fn set(&mut self, key: &str, value: Value, is_local: bool) {
         let frame = if is_local {
             self.current_frame_mut()
@@ -488,7 +502,7 @@ impl Isolate {
         match self.get(key) {
             Some(var) => {
                 match var.value() {
-                    Value::String(ref s) => Some(s.clone()),
+                    Some(Value::String(ref s)) => Some(s.clone()),
                     _ => None,
                 }
             },
@@ -535,7 +549,7 @@ impl Isolate {
                 self.get("COMPREPLY")
                     .and_then(|reply| {
                         match reply.value() {
-                            Value::Array(arr) => {
+                            Some(Value::Array(arr)) => {
                                 debug!("arr = {:?}", arr);
                                 let entries = arr.iter()
                                     .map(|elem| Arc::new(elem.clone()))
@@ -626,7 +640,7 @@ impl Isolate {
             Expr::Parameter { name } => {
                 if let Some(var) = self.get(name) {
                     match var.value() {
-                        Value::String(s) => s.parse().unwrap_or(0),
+                        Some(Value::String(s)) => s.parse().unwrap_or(0),
                         _ => 0,
                     }
                 } else {
@@ -691,7 +705,7 @@ impl Isolate {
             }
         }
 
-        // $<name> is not defined.
+        // $<name> is not defined. Refer 2.6.2 Parameter Expansion in http://pubs.opengroup.org/onlinepubs/009695399/utilities/xcu_chap02.html
         match op {
             ExpansionOp::Length => {
                 if self.nounset {
@@ -1318,7 +1332,7 @@ impl Isolate {
         self.get(name)
             .map(|var| {
                 match var.value() {
-                    Value::Function(_) => true,
+                    Some(Value::Function(_)) => true,
                     _ => false,
                 }
             })
@@ -1341,7 +1355,7 @@ impl Isolate {
 
     fn call_function(&mut self, name: &str, ctx: &Context, args: &[String], locals: Vec<(&str, Value)>) -> Result<ExitStatus> {
         if let Some(var) = self.get(name) {
-            if let Value::Function(ref body) = var.value() {
+            if let Some(Value::Function(ref body)) = var.value() {
                 self.enter_frame();
                 let frame = self.current_frame_mut();
                 // Set local variables.
@@ -1416,7 +1430,7 @@ impl Isolate {
                         self.set(&name, value, true)
                     },
                     LocalDeclaration::Name(name) =>  {
-                        self.set(name, Value::String("".to_string()), true)
+                        self.define(name, true)
                     }
                 }
             }

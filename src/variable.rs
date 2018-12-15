@@ -11,13 +11,14 @@ pub enum Value {
 /// A shell variable.
 #[derive(Debug)]
 pub struct Variable {
-    value: Value,
+    // The inner value. `None` represents *null*.
+    value: Option<Value>,
 }
 
 impl Variable {
     /// Creates a `Variable`. This does not add to the
     /// any scope.
-    pub fn new(value: Value) -> Variable {
+    pub fn new(value: Option<Value>) -> Variable {
         Variable {
             value,
         }
@@ -25,29 +26,30 @@ impl Variable {
 
     /// Returns a reference to the inner value.
     #[inline]
-    pub fn value(&self) -> &Value {
+    pub fn value(&self) -> &Option<Value> {
         &self.value
     }
 
     /// References its value as `$foo`.
     pub fn as_str(&self) -> &str {
         match &self.value {
-            Value::String(value) => value,
-            Value::Function(_) => "(function)",
+            Some(Value::String(value)) => value,
+            Some(Value::Function(_)) => "(function)",
             // Bash returns the first element in the array.
-            Value::Array(elems) => {
+            Some(Value::Array(elems)) => {
                 match elems.get(0) {
                     Some(elem) => elem.as_str(),
                     _ => "",
                 }
-            }
+            },
+            None => "",
         }
     }
 
     /// References its value as `$foo[expr]`.
     pub fn value_at(&self, index: usize) -> &str {
         match &self.value {
-            Value::Array(elems) => {
+            Some(Value::Array(elems)) => {
                 match elems.get(index) {
                     Some(elem) => elem.as_str(),
                     _ => "",
