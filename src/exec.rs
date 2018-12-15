@@ -662,11 +662,12 @@ impl Isolate {
         }
     }
 
-    /// Expands a parameter (`$foo` in e.g. `echo $foo`).
-    fn expand_param(&mut self, name: &str, op: &ExpansionOp) -> Result<Vec<String>> {
+    /// Expands a parameter (`$foo` in e.g. `echo $foo`). It returns `Vec` since `op` can be
+    /// an operation which expands an array. `None` value represents *null*.
+    fn expand_param(&mut self, name: &str, op: &ExpansionOp) -> Result<Vec<Option<String>>> {
         match name {
             "?" => {
-                return Ok(vec![self.last_status.to_string()]);
+                return Ok(vec![Some(self.last_status.to_string())]);
             },
             "!" => {
                 let pgid = match &self.last_back_job {
@@ -674,38 +675,53 @@ impl Isolate {
                     None => 0.to_string(),
                 };
 
-                return Ok(vec![pgid]);
+                return Ok(vec![Some(pgid)]);
             },
             "0" => {
-                return Ok(vec![self.script_name.clone()]);
+                return Ok(vec![Some(self.script_name.clone())]);
             },
             "$" => {
-                return Ok(vec![self.shell_pgid.to_string()]);
+                return Ok(vec![Some(self.shell_pgid.to_string())]);
             },
             "#" => {
-                return Ok(vec![self.current_frame().num_args().to_string()]);
+                return Ok(vec![Some(self.current_frame().num_args().to_string())]);
             },
             "*" => {
                 let args = self.current_frame().get_string_args();
                 let expanded = args.join(" ");
-                return Ok(vec![expanded]);
+                return Ok(vec![Some(expanded)]);
             },
             "@" => {
-                return Ok(self.current_frame().get_string_args());
+                let args = self.current_frame().get_string_args();
+                return Ok(args.iter().map(|a| Some(a.to_owned())).collect());
             },
             _ => {
                 if let Some(var) = self.get(name) {
                     // $<name> is defined.
-                    let value = var.as_str().to_string();
-                    return match op {
-                        ExpansionOp::Length => Ok(vec![value.len().to_string()]),
-                        _ => Ok(vec![value]),
+                    let value = var.value();
+                    match (op, value) {
+                        (ExpansionOp::Length, Some(_)) => {
+                            return Ok(vec![Some(var.as_str().len().to_string())]);
+                        }
+                        (ExpansionOp::Length, None) => {
+                            return Ok(vec![Some(0.to_string())]);
+                        }
+                        (ExpansionOp::GetNullableOrDefaultAndAssign(_), None) => {
+                            return Ok(vec![None]);
+                        },
+                        (ExpansionOp::GetNullableOrDefault(_), None) => {
+                            return Ok(vec![None]);
+                        },
+                        (_, _) => {
+                            return Ok(vec![Some(var.as_str().to_string())]);
+                        }
                     };
                 }
             }
         }
 
-        // $<name> is not defined. Refer 2.6.2 Parameter Expansion in http://pubs.opengroup.org/onlinepubs/009695399/utilities/xcu_chap02.html
+        // $<name> is not defined or null on GetOrDefault or GetOrDefaultAndAssign.
+        // http://pubs.opengroup.org/onlinepubs/009695399/utilities/xcu_chap02.html#tag_02_06_02
         match op {
             ExpansionOp::Length => {
                 if self.nounset {
@@ -713,7 +729,7 @@ impl Isolate {
                     std::process::exit(1);
                 }
 
-                Ok(vec!["0".to_owned()])
+                Ok(vec![Some("0".to_owned())])
             },
             ExpansionOp::GetOrEmpty => {
                 if self.nounset {
@@ -721,17 +737,18 @@ impl Isolate {
                     std::process::exit(1);
                 }
 
-                Ok(vec!["".to_owned()])
+                Ok(vec![Some("".to_owned())])
             },
-            ExpansionOp::GetOrDefault(word) => {
-                self.expand_word_into_string(word).map(|s| vec![s])
+            ExpansionOp::GetOrDefault(word)
+            | ExpansionOp::GetNullableOrDefault(word) => {
+                self.expand_word_into_string(word).map(|s| vec![Some(s)])
             },
-            ExpansionOp::GetOrDefaultAndAssign(word) => {
+            ExpansionOp::GetOrDefaultAndAssign(word)
+            | ExpansionOp::GetNullableOrDefaultAndAssign(word) => {
                 let content = self.expand_word_into_string(word)?;
                 self.set(name, Value::String(content.clone()), false);
-                Ok(vec![content])
+                Ok(vec![Some(content)])
             }
-            _ => panic!("TODO:"),
         }
     }
 
@@ -745,10 +762,11 @@ impl Isolate {
                     (vec![LiteralOrGlob::Literal(s.clone())], false)
                 },
                 Span::Parameter { name, op, quoted } => {
-                    let frags = self.expand_param(name, op)?
-                        .iter()
-                        .map(|frag| LiteralOrGlob::Literal(frag.to_owned()))
-                        .collect();
+                    let mut frags = Vec::new();
+                    for value in self.expand_param(name, op)? {
+                        let frag = value.unwrap_or_else(|| "".to_owned());
+                        frags.push(LiteralOrGlob::Literal(frag));
+                    }
                     (frags, !quoted)
                 },
                 Span::ArrayParameter { name, index, quoted } => {
