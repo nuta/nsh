@@ -32,6 +32,7 @@ Key Shortcuts
 | Down            | Select the next history.                   |
 | ^C              | Clear the input.                           |
 | ^L              | Clear the screen.                          |
+| ^W              | Delete the previous word.                  |
 | ^K              | Delete from cursor to the end of input.    |
 | M-f (Alt+Right) | Move the cursor to the next word.          |
 | M-b (Alt+Left)  | Move the cursor to the previous word.      |
@@ -120,6 +121,9 @@ rc script execution.
 Since we execute the rc script asynchronously we cannot use `$PROMPT` to render the first
 prompt. Instead of using environment varibles defined in the rc script we use a declarative
 configuration file named `.nshconfig`, a JSON file which contains the prompt format and `$PATH`.
+
+### Debug log
+`~/.nsh.log`
 
 ### Completion
 Nsh has experimental support for Bash style compeltion system, i.e. `complete(1)` and `compgen(1)`. Unfortunately

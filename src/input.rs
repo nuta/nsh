@@ -244,6 +244,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
     }
     */
 
+    let word_split = " /\t";
     let current_theme = "Solarized (dark)";
     let mut user_input = String::new();
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
@@ -379,7 +380,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
 
                         while user_cursor > 0 {
                             if let Some(ch) = user_input.chars().nth(user_cursor.saturating_sub(1)) {
-                                if ch == ' ' || ch == '/' {
+                                if word_split.contains(ch) {
                                     break;
                                 }
                             } else {
@@ -400,7 +401,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
 
                         while user_cursor < user_input.len() {
                             if let Some(ch) = user_input.chars().nth(user_cursor.saturating_sub(1)) {
-                                if ch == ' ' || ch == '/' {
+                                if word_split.contains(ch) {
                                     break;
                                 }
                             } else {
@@ -415,6 +416,30 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                     },
                     Event::Key(Key::Ctrl('k')) => {
                         user_input.truncate(user_cursor);
+                    },
+                    // Removes the provious word.
+                    Event::Key(Key::Ctrl('w')) => {
+                        // Remove whitespaces and slashes.
+                        while let Some(ch) = user_input.chars().nth(user_cursor.saturating_sub(1)) {
+                            if !word_split.contains(ch) {
+                                break;
+                            }
+
+                            user_input.remove(user_cursor - 1);
+                            user_cursor -= 1;
+                        }
+
+                        // Remove the word.
+                        while let Some(ch) = user_input.chars().nth(user_cursor.saturating_sub(1)) {
+                            if word_split.contains(ch) {
+                                break;
+                            }
+
+                            user_input.remove(user_cursor - 1);
+                            user_cursor -= 1;
+                        }
+
+                        mode = InputMode::Normal;
                     },
                     Event::Key(Key::Ctrl('c')) => match mode {
                         InputMode::Normal => return Ok("".to_owned()),
