@@ -7,7 +7,6 @@ use crate::config::Config;
 use std::io::{self, Write, Stdout, Stdin};
 use std::sync::{Arc, Mutex};
 use termion;
-use termion::cursor::DetectCursorPos;
 use termion::event::{Event, Key};
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
@@ -46,13 +45,8 @@ fn truncate_and_fill(s: &str, len: u16, fill: char) -> String {
 }
 
 /// Returns true if the user wants to execute the command immediately.
-fn history_search_mode(
-    stdout: &mut Stdout,
-    y_max: u16,
-    x_max: u16,
-    events: &mut termion::input::Events<Stdin>,
-    user_input: &mut String
-) -> bool {
+fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<Stdin>, user_input: &mut String) -> bool {
+    let (x_max, y_max) = termion::terminal_size().unwrap();
     let mut selected = 0;
     let saved_user_input = user_input.clone();
     let mut user_cursor = user_input.len();
@@ -236,6 +230,7 @@ fn history_search_mode(
 pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<String, InputError> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
+    /* FIXME:
     let current_x = stdout.cursor_pos().unwrap().0 - 1;
     if current_x != 0 {
         // The prompt is not at the beginning of a line. This could be caused
@@ -247,14 +242,14 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
             termion::style::Reset
         ).ok();
     }
+    */
 
     let current_theme = "Solarized (dark)";
     let mut user_input = String::new();
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
     let mut mode = InputMode::Normal;
     let mut history = HistorySelector::new();
-    let (x_max, y_max) = termion::terminal_size().unwrap();
-    let mut renderer = PromptRenderer::new(&mut stdout, &config.prompt, &current_theme, y_max, x_max);
+    let mut renderer = PromptRenderer::new(&config.prompt, &current_theme);
     let mut stdin_events = stdin.events();
     let mut exec = false;
 
@@ -438,7 +433,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                         renderer.clear_screen(&mut stdout);
                     }
                     Event::Key(Key::Ctrl('r')) => {
-                        exec = history_search_mode(&mut stdout, y_max, x_max, &mut stdin_events, &mut user_input);
+                        exec = history_search_mode(&mut stdout, &mut stdin_events, &mut user_input);
                         user_cursor = user_input.len();
                     }
                     Event::Key(Key::Char(ch)) => match (&mut mode, ch) {
@@ -461,6 +456,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
         }
     }
 
+    write!(stdout, "{}", renderer.render_clear_completions()).ok();
     append_history(&user_input);
     trace!("input: '{}'", user_input);
     Ok(user_input)
