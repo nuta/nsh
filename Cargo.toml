@@ -3,6 +3,18 @@ name = "nsh"
 version = "0.0.0"
 authors = ["Seiya Nuta <nuta@seiya.me>"]
 edition = "2018"
+description = "A command-line shell written in Rust that focuses on performance and productivity."
+license = "CC0-1.0 OR MIT"
+repository = "https://github.com/seiyanuta/nsh"
+include = [
+    "src/config/ui/build/*.js",
+    "src/config/ui/build/*.html",
+    "src/config/ui/build/*.css",
+    "src/config/ui/build/*.map",
+    "**/*.rs",
+    "**/*.pest",
+    "Cargo.toml",
+]
 
 [dependencies]
 lazy_static = "1"
