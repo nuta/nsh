@@ -510,6 +510,7 @@ impl PromptRenderer {
             write!(buf, "{}", move_cursor_y(-1, true)).ok();
         }
 
+        write!(buf, "\r{}", termion::clear::CurrentLine).ok();
         buf
     }
 
