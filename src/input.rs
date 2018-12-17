@@ -83,7 +83,7 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
             truncate(user_input, user_input_max)
         );
 
-        // Render how_line.
+        // Render howto_line.
         let howto_line = format!(
             "{}{}{}{}{}",
             termion::cursor::Goto(1, 1 + y_max),
