@@ -15,7 +15,7 @@ A command-line shell that focuses on performance and productivity featuing:
 
 Installation
 ------------
-TODO: Publish to crates.io
+Refer **Building** section. Currently you cannot install from crates.io since nsh has a dependency sourced from a repository.
 
 Configuration
 -------------
