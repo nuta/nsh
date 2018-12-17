@@ -1,0 +1,9 @@
+cd test/playground
+echo *
+echo */*
+echo */*/*.mp3
+echo */*/smelly*.mp3
+echo monty_*/spam_*.txt
+echo fri?nds
+echo friend?/*
+echo friends/*
