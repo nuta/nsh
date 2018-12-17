@@ -35,6 +35,7 @@ failure = "0.1"
 pest = "2"
 pest_derive = "2"
 backtrace = "0.3"
+pretty_assertions = "*"
 
 # nsh --config dependecies
 iron = "0.6"

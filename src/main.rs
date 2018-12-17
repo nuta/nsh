@@ -27,6 +27,7 @@ extern crate pest;
 extern crate pest_derive;
 extern crate backtrace;
 
+#[cfg(test)] #[macro_use] extern crate pretty_assertions;
 #[cfg(test)] extern crate test;
 
 mod logger;
