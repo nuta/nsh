@@ -16,7 +16,7 @@ pub struct Config {
 }
 
 fn default_prompt() -> String {
-    "\\c{cyan}\\c{bold}\\u@\\h:\\c{reset} \\W\\n$\\c{reset} ".to_owned()
+    "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ".to_owned()
 }
 
 fn default_path() -> String {
