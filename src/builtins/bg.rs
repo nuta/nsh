@@ -12,7 +12,7 @@ struct Opt {
 }
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
-    trace!("bg: {:?}", ctx.argv);
+    trace!("bg: argv={:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
             match parse_job_id(ctx, opts.job_id) {

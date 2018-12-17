@@ -9,7 +9,7 @@ struct Opt {
 }
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
-    trace!("jobs: {:?}", ctx.argv);
+    trace!("jobs: argv={:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(_) => {
             for job in ctx.isolate.jobs() {

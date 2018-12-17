@@ -53,7 +53,7 @@ pub(super) fn parse_job_id(
 }
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
-    trace!("fg: {:?}", ctx.argv);
+    trace!("fg: argv={:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
             match parse_job_id(ctx, opts.job_id) {

@@ -14,7 +14,7 @@ struct Opt {
 }
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
-    trace!("read: {:?}", ctx.argv);
+    trace!("read: argv={:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
             if ctx.isolate.interactive() {

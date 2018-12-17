@@ -12,7 +12,7 @@ struct Opt {
 }
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
-    trace!("wait: {:?}", ctx.argv);
+    trace!("wait: argv={:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
             if opts.job_id.is_some() {

@@ -433,9 +433,11 @@ impl PromptRenderer {
             write!(buf, "\r{}", termion::cursor::Right(cursor_x)).ok();
         }
 
-        trace!("cursor_pos-x_max: {} {}, offszet={}", cursor_pos / x_max, cursor_x, cursor_y_offset);
-        trace!("render_prompt: lines={}->{}", self.last_rendered_lines, rendered_lines);
-        debug!("last_cursor_y={}, comp_lines={}, prompt_lines={}", self.last_cursor_y, completion_lines, prompt_lines);
+        trace!("cursor_y={} (last_y={}), cursor_y_offset={}, cursor_x={}",
+            cursor_y, self.last_cursor_y, cursor_y_offset, cursor_x);
+        trace!("rendered_lines={} (last={}), comp_lines={}, prompt_lines={}",
+            rendered_lines, self.last_rendered_lines, completion_lines,
+            prompt_lines);
 
         self.last_cursor_x = cursor_x;
         self.last_cursor_y = cursor_y;

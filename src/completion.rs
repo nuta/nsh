@@ -56,8 +56,9 @@ impl CompletionSelector {
         }
 
         trace!(
-            "move_cursor: offset={}, index={}",
+            "completion_cursor: move_offset={}, display={}, selected={}",
             offset,
+            self.display_index,
             self.selected_index
         );
     }
@@ -215,7 +216,7 @@ pub fn path_completion(ctx: &Asa, include_files: bool, include_dirs: bool, execu
     let given_dir = ctx.current_word().map(|s| (&*s).clone());
     let home_dir = dirs::home_dir().unwrap();
 
-    trace!("path_completion: current='{:?}', dir='{:?}'", ctx.current_word(), given_dir);
+    trace!("path_completion: word='{:?}'", ctx.current_word());
     match &given_dir {
         // ~/Downloads/monica-lottery
         Some(given_dir) if given_dir.starts_with("~/") => {

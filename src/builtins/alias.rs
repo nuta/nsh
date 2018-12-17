@@ -26,7 +26,7 @@ fn parse_alias(alias: &str) -> Result<Alias, parser::ParseError> {
 }
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
-    trace!("alias: {:?}", ctx.argv);
+    trace!("alias: argv={:?}", ctx.argv);
     if let Some(alias) = ctx.argv.get(1) {
         match parse_alias(alias) {
             Ok(Alias { name, body }) => {

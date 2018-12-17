@@ -55,6 +55,7 @@ enum LiteralOrGlob {
 /// A word which includes patterns. We don't expand words
 /// into the `Vec<String>` directly since the patterns has
 /// two different meanings: path glob and match in `case`.
+#[derive(Debug)]
 struct PatternWord {
     fragments: Vec<LiteralOrGlob>
 }
@@ -116,7 +117,7 @@ impl PatternWord {
                     Ok(path) => {
                         paths.push(path.to_str().unwrap().to_string());
                     },
-                    Err(e) => trace!("glob error: {:?}", e),
+                    Err(e) => error!("glob error: {:?}", e),
                 }
             }
             if paths.is_empty() {
@@ -545,8 +546,6 @@ impl Isolate {
             ("COMP_CWORD", Value::String(current_word_index))
         ];
 
-        trace!("call_completion: ctx={:?}", ctx);
-
         match self.call_function_in_shell_context(func_name, &vec![], locals) {
             Ok(ExitStatus::ExitedWith(0)) => {
                 self.get("COMPREPLY")
@@ -581,6 +580,8 @@ impl Isolate {
 
     /// Returns completion candidates.
     pub fn complete(&mut self, ctx: &Asa) -> Vec<Arc<String>> {
+        trace!("complete: ctx={:?}", ctx);
+
         let cmd_name = if let Some(name) = ctx.words.get(0) {
             let name = name.as_str().to_owned();
             match self.aliases.get(&name) {
@@ -829,7 +830,6 @@ impl Isolate {
             };
 
             // Expand `a${foo}b` into words: `a1` `2` `3b`, where `$foo="1 2 3"`.
-            trace!("expand = {}, frags = {:?}", expand, frags);
             let frags_len = frags.len();
             for frag in frags {
                 match frag {
@@ -839,9 +839,7 @@ impl Isolate {
                             current_word = Vec::new();
                         }
 
-                        trace!("lit = '{}'", lit);
                         for word in lit.split(|c| ifs.contains(c)) {
-                            trace!("expanded = '{}'", word);
                             words.push(PatternWord::new(vec![LiteralOrGlob::Literal(word.into())]));
                         }
                     },
@@ -861,6 +859,7 @@ impl Isolate {
             words.push(PatternWord::new(current_word));
         }
 
+        trace!("expand_word: word={:?}, to={:?}", word, words);
         if words.is_empty() {
             Ok(vec![PatternWord::new(vec![LiteralOrGlob::Literal("".into())])])
         } else {
@@ -1090,7 +1089,7 @@ impl Isolate {
         let result = waitpid(None, Some(options));
         let (pid, state) = match result {
             Ok(WaitStatus::Exited(pid, status)) => {
-                trace!("nsh: pid={} status={}", pid, status);
+                trace!("exited: pid={} status={}", pid, status);
                 (pid, ProcessState::Completed(status))
             },
             Ok(WaitStatus::Signaled(pid, _signal, _)) => {
@@ -1156,7 +1155,7 @@ impl Isolate {
                     if let Ok(file) = options.open(&filepath) {
                         fds.push((file.into_raw_fd(), r.fd as RawFd))
                     } else {
-                        warn!("nsh: failed to open file: `{}'", filepath);
+                        warn!("failed to open file: `{}'", filepath);
                         return Ok(ExitStatus::ExitedWith(1));
                     }
                 }
@@ -1314,7 +1313,7 @@ impl Isolate {
                             _ => (),
                         }
                     } else {
-                        warn!("nsh: failed to open file: `{}'", filepath);
+                        warn!("failed to open file: `{}'", filepath);
                         return Err(Error::from(InternalCommandError::BadRedirection));
                     }
                 }

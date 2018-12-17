@@ -12,7 +12,7 @@ struct Opt {
 }
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
-    trace!("shift: {:?}", ctx.argv);
+    trace!("shift: argv={:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
             let current = ctx.isolate.current_frame_mut();
@@ -28,7 +28,6 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
 
             for (i, var) in args.iter().skip(opts.n.unwrap_or(1)).enumerate() {
                 let value = Value::String(var.as_str().to_string());
-                trace!("value: ${} = {:?}", i + 1, value);
                 current.set_nth_arg(i + 1, value);
             }
 

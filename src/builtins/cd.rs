@@ -4,7 +4,7 @@ use std::path::Path;
 use std::io::Write;
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
-    trace!("cd: {:?}", ctx.argv);
+    trace!("cd: argv={:?}", ctx.argv);
     let old_dir = std::env::current_dir().expect("failed to getcwd()");
     let dir = match ctx.argv.get(1) {
         Some(dir) => {

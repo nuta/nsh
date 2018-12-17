@@ -101,7 +101,6 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     nshrc_loader.join().unwrap();
 
     loop {
-        trace!("line {}", line);
         let mut isolate = isolate_lock.lock().unwrap();
         isolate.run_str(&line);
         isolate.check_background_jobs();
