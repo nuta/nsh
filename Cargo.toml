@@ -16,6 +16,17 @@ include = [
     "Cargo.toml",
 ]
 
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = false
+debug-assertions = false
+codegen-units = 1
+panic = 'unwind'
+incremental = false
+overflow-checks = false
+
 [dependencies]
 lazy_static = "1"
 log = { version = "*", features = ["max_level_trace", "release_max_level_warn"] }
