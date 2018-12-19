@@ -29,9 +29,9 @@ overflow-checks = false
 
 [dependencies]
 lazy_static = "1"
-log = { version = "*", features = ["max_level_trace", "release_max_level_warn"] }
+log = { version = "^0.4.6", features = ["max_level_trace", "release_max_level_warn"] }
 nix = "^0.12"
-libc = "*"
+libc = "0.2"
 dirs = "1"
 syntect = "3"
 crossbeam = "0.5"
@@ -46,11 +46,13 @@ failure = "0.1"
 pest = "2"
 pest_derive = "2"
 backtrace = "0.3"
-pretty_assertions = "*"
-termion = "*"
+termion = "^1.5.1"
 
 # nsh --config dependecies
 iron = "0.6"
-router = "*"
-params = "*"
+router = "0"
+params = "0"
 rand = "0.6"
+
+[dev-dependencies]
+pretty_assertions = "0"
