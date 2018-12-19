@@ -1,6 +1,7 @@
 nsh
 ====
 [![Build Status](https://travis-ci.com/seiyanuta/nsh.svg?branch=master)](https://travis-ci.com/seiyanuta/nsh)
+[![Latest version](https://img.shields.io/crates/v/nsh.svg)](https://crates.io/crates/nsh)
 
 **Currently nsh is incomplete and not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/seiyanuta/nsh/issues)!**
 
@@ -15,7 +16,9 @@ A command-line shell that focuses on performance and productivity featuing:
 
 Installation
 ------------
-Refer **Building** section. Currently you cannot install from crates.io since nsh has a dependency sourced from a repository.
+```
+$ cargo install nsh
+```
 
 Configuration
 -------------
