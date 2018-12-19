@@ -47,15 +47,10 @@ pest = "2"
 pest_derive = "2"
 backtrace = "0.3"
 pretty_assertions = "*"
+termion = "*"
 
 # nsh --config dependecies
 iron = "0.6"
 router = "*"
 params = "*"
 rand = "0.6"
-
-# The latest version published to the crates.io does not include
-# a bug fix to DetectCursorPos: https://github.com/redox-os/termion/pull/145
-[dependencies.termion]
-git = "https://gitlab.redox-os.org/redox-os/termion"
-rev = "ce6b43d071cd6edfc4b366bb945b45e06c239e2c"

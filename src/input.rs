@@ -230,12 +230,15 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
 pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<String, InputError> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
-    /* FIXME:
+
+    // FIXME: The latest termion published to the crates.io does not include
+    // a bug fix to DetectCursorPos: https://github.com/redox-os/termion/pull/145
+    /*
     let current_x = stdout.cursor_pos().unwrap().0 - 1;
     if current_x != 0 {
         // The prompt is not at the beginning of a line. This could be caused
         // if the previous command didn't print the trailing newline
-        // (e.g. `echo -n hello`). Print a marker `%' and a newline.
+        // (e.g. `echo -n hello`). Print a marker `(newline)' and a newline.
         writeln!(stdout, "{}{}(no newline){}",
             termion::style::Bold,
             termion::style::Invert,
