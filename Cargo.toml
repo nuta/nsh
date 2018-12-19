@@ -1,9 +1,12 @@
 [package]
 name = "nsh"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["Seiya Nuta <nuta@seiya.me>"]
 edition = "2018"
 description = "A command-line shell written in Rust that focuses on performance and productivity."
+keywords = ["shell"]
+categories = ["command-line-utilities"]
+readme = "README.md"
 license = "CC0-1.0 OR MIT"
 repository = "https://github.com/seiyanuta/nsh"
 include = [
