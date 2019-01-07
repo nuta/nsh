@@ -1,4 +1,5 @@
 #![cfg_attr(test, feature(test))]
+#![cfg_attr(test, feature(extern_crate_item_prelude))]
 
 #[macro_use]
 extern crate log;

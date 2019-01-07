@@ -563,31 +563,45 @@ fn test_prompt_parser() {
     );
 }
 
-/* FIXME: Refactor PromptRender not to modify stdout.
 #[cfg(test)]
 mod benchmarks {
     use test::Bencher;
     use super::*;
 
     #[bench]
-    fn simple_prompt_rendering_bench(b: &mut Bencher) {
+    fn simple_prompt_rendering(b: &mut Bencher) {
         b.iter(|| {
-            let mode = InputMode::Normal;
-            let completions = CompletionSelector::new(vec![]);
-            let theme = "Solarized (dark)";
-            render_prompt("$ ", mode, &completions, 0, 64, 0, 3, "ls -alhG", &theme);
+            let mut renderer = PromptRenderer::new("$ ", "Solarized (dark)");
+            renderer.render("ls -alhG", 0, None);
         });
     }
 
     #[bench]
-    fn complex_prompt_rendering_bench(b: &mut Bencher) {
+    fn complex_prompt_rendering(b: &mut Bencher) {
         b.iter(|| {
-            let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir}\\n$\\{reset} ";
-            let mode = InputMode::Normal;
-            let completions = CompletionSelector::new(vec![]);
-            let theme = "Solarized (dark)";
-            render_prompt(&prompt, mode, &completions, 0, 64, 64, 3, "ls -alhG", &theme);
+            use std::sync::Arc;
+
+            let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
+            let mut renderer = PromptRenderer::new(prompt, "Solarized (dark)");
+            let completions = CompletionSelector::new(vec![
+                Arc::new("Desktop".to_owned()),
+                Arc::new("Documents".to_owned()),
+                Arc::new("Downloads".to_owned()),
+                Arc::new("Pictures".to_owned()),
+                Arc::new("Videos".to_owned()),
+                Arc::new("Dropbox".to_owned()),
+            ]);
+
+            renderer.render("ls -alhG ~", 10, Some(&completions));
+        });
+    }
+
+    #[bench]
+    fn complex_prompt_rendering_without_completions(b: &mut Bencher) {
+        b.iter(|| {
+            let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
+            let mut renderer = PromptRenderer::new(prompt, "Solarized (dark)");
+            renderer.render("ls -alhG ~", 10, None);
         });
     }
 }
-*/
