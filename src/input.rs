@@ -259,12 +259,13 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
 
     'input_line: loop {
         // Print the prompt.
+        let x_max = termion::terminal_size().unwrap().0 as usize;
         let prompt = match &mode {
             InputMode::Completion(completion) => {
-                renderer.render(&user_input, user_cursor, Some(completion))
+                renderer.render(&user_input, user_cursor, x_max, Some(completion))
             }
             InputMode::Normal => {
-                renderer.render(&user_input, user_cursor, None)
+                renderer.render(&user_input, user_cursor, x_max, None)
             }
         };
 

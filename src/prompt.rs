@@ -353,7 +353,7 @@ impl PromptRenderer {
     /// Renders the prompt, the user input, and completions (if supplied).
     /// TODO: needs refactoring
     /// TODO: handle terminal screen size changes
-    pub fn render(&mut self, user_input: &str, user_cursor: usize, completions: Option<&CompletionSelector>) -> String {
+    pub fn render(&mut self, user_input: &str, user_cursor: usize, x_max: usize, completions: Option<&CompletionSelector>) -> String {
         // Apply syntax highlighting.
         let mut highlighter = create_highlighter(&self.current_theme);
         let mut colored_user_input = String::new();
@@ -410,9 +410,8 @@ impl PromptRenderer {
         //
         let prompt_lines = self.prompt_str.chars().filter(|c| *c == '\n').count() as u16 + 1;
         let cursor_pos = self.prompt_last_line_len as u16 + user_cursor as u16;
-        let x_max = termion::terminal_size().unwrap().0;
-        let cursor_y = cursor_pos / x_max + (prompt_lines - 1);
-        let user_input_lines = ((self.prompt_last_line_len as u16 + user_input.len() as u16) / x_max) + 1;
+        let cursor_y = cursor_pos / x_max as u16 + (prompt_lines - 1);
+        let user_input_lines = ((self.prompt_last_line_len as u16 + user_input.len() as u16) / x_max as u16) + 1;
         let rendered_lines = prompt_lines + (user_input_lines - 1) + completion_lines;
 
         // Move the cursor (y-axis).
@@ -420,7 +419,7 @@ impl PromptRenderer {
         write!(buf, "{}", move_cursor_y(cursor_y_offset, false)).ok();
 
         // Move the cursor to the beginning of the line.
-        let cursor_x = cursor_pos % x_max;
+        let cursor_x = cursor_pos % x_max as u16;
         write!(buf, "\r").ok();
 
         // Wrapping.
@@ -572,7 +571,7 @@ mod benchmarks {
     fn simple_prompt_rendering(b: &mut Bencher) {
         b.iter(|| {
             let mut renderer = PromptRenderer::new("$ ", "Solarized (dark)");
-            renderer.render("ls -alhG", 0, None);
+            renderer.render("ls -alhG", 0, 80, None);
         });
     }
 
@@ -592,7 +591,7 @@ mod benchmarks {
                 Arc::new("Dropbox".to_owned()),
             ]);
 
-            renderer.render("ls -alhG ~", 10, Some(&completions));
+            renderer.render("ls -alhG ~", 10, 80, Some(&completions));
         });
     }
 
@@ -601,7 +600,7 @@ mod benchmarks {
         b.iter(|| {
             let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
             let mut renderer = PromptRenderer::new(prompt, "Solarized (dark)");
-            renderer.render("ls -alhG ~", 10, None);
+            renderer.render("ls -alhG ~", 10, 80, None);
         });
     }
 }
