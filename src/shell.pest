@@ -6,7 +6,7 @@ COMMENT = _{ "#" ~ (!("\n") ~ ANY)* }
 word_chars = _{
     !(
         "|" | "&" | ";" | " " | "\t" | "\r" | "\n" | "`"
-        | "{" | "}" | "(" | ")" | "$" | "\"" | "'" | "*" | "?"
+        | "{" | "}" | "<" | ">" | "(" | ")" | "$" | "\"" | "'" | "*" | "?"
     )
     ~ ANY
 }
@@ -45,6 +45,7 @@ span = _{
     | any_char_span
     | expr_span
     | command_span
+    | proc_subst_span
     | backtick_span
     | param_ex_span
     | param_span
@@ -54,6 +55,8 @@ tilde_span = { "~" ~ username? }
 any_string_span = { "*" }
 any_char_span = { "?" }
 command_span = !{ "$(" ~ compound_list ~ ")" }
+proc_subst_direction = { "<(" | ">(" }
+proc_subst_span = !{ proc_subst_direction ~ compound_list ~ ")" }
 backtick_span = !{ "`" ~ compound_list ~ "`" }
 expr_span = !{ "$((" ~ expr ~ "))" }
 expandable_var_name = { var_name | special_var_name }
@@ -102,7 +105,7 @@ assignment_command = { assignment+ }
 // Simple Command
 //
 fd = { ASCII_DIGIT* }
-redirect_direction = { "<" | ">>" | ">" }
+redirect_direction = { !("<(" | ">(") ~ ("<" | ">>" | ">") }
 redirect_to_fd = ${ "&" ~ fd }
 redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
 word_or_redirect = _{ redirect | word }

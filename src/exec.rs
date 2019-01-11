@@ -3,7 +3,7 @@ use crate::completion::{CompSpec, cmd_completion, path_completion};
 use crate::context_parser::Asa;
 use crate::parser::{
     self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer,
-    LocalDeclaration, Assignment
+    LocalDeclaration, Assignment, ProcSubstType
 };
 use crate::path::{lookup_external_command,wait_for_path_loader};
 use crate::variable::{Variable, Value};
@@ -803,8 +803,16 @@ impl Isolate {
                     (vec![LiteralOrGlob::Literal(dir)], false)
                 },
                 Span::Command { body, quoted } => {
-                    let raw_stdout = self.run_in_subshell(body);
-                    let stdout = std::str::from_utf8(&raw_stdout)
+                    let (stdin, stdout) = self.run_in_subshell(body);
+                    close(stdin).ok();
+
+                    let mut raw_stdout = Vec::new();
+                    unsafe {
+                        File::from_raw_fd(stdout)
+                            .read_to_end(&mut raw_stdout).ok()
+                    };
+
+                    let output = std::str::from_utf8(&raw_stdout)
                         .map_err(|err| {
                             // TODO: support binary output
                             eprintln!("binary (invalid utf-8) variable/expansion is not supported");
@@ -813,7 +821,24 @@ impl Isolate {
                         .to_string()
                         .trim_end_matches('\n')
                         .to_owned();
-                    (vec![LiteralOrGlob::Literal(stdout)], !quoted)
+
+                    (vec![LiteralOrGlob::Literal(output)], !quoted)
+                },
+                Span::ProcSubst { body, subst_type } => {
+                    let (stdin, stdout) = self.run_in_subshell(body);
+                    match subst_type {
+                        // <()
+                        ProcSubstType::StdoutToFile => {
+                            close(stdin).ok();
+                            let file_name = format!("/dev/fd/{}", stdout);
+                            (vec![LiteralOrGlob::Literal(file_name)], false)
+                        },
+                        // >()
+                        ProcSubstType::FileToStdin => {
+                            // TODO:
+                            unimplemented!();
+                        }
+                    }
                 },
                 Span::AnyChar { quoted } if !*quoted => {
                     (vec![LiteralOrGlob::AnyChar], false)
@@ -1674,8 +1699,8 @@ impl Isolate {
         Ok(result)
     }
 
-    /// Runs commands in a subshell (`$()`).
-    pub fn run_in_subshell(&mut self, terms: &[parser::Term]) -> Vec<u8> {
+    /// Runs commands in a subshell (`$()` or `<()`).
+    pub fn run_in_subshell(&mut self, terms: &[parser::Term]) -> (i32, i32) {
         let (pipe_out, pipe_in) = pipe().expect("failed to create a pipe");
 
         // Since child process has its own isolated address space, `RELOAD_WORK.wait()`
@@ -1686,10 +1711,7 @@ impl Isolate {
         match fork().expect("failed to fork") {
             ForkResult::Parent { child } => {
                 waitpid(child, None).ok();
-                let mut stdout = Vec::new();
-                close(pipe_in).ok();
-                unsafe { File::from_raw_fd(pipe_out) }.read_to_end(&mut stdout).ok();
-                stdout
+                (pipe_in, pipe_out)
             },
             ForkResult::Child => {
                 let stdin = 0;

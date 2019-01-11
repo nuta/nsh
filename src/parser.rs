@@ -174,6 +174,14 @@ pub enum Expr {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ProcSubstType {
+    // <(echo hello)
+    StdoutToFile,
+    // >(grep hello)
+    FileToStdin,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Span {
     Literal(String),
     // ~, ~mike, ...
@@ -184,6 +192,8 @@ pub enum Span {
     ArrayParameter { name: String, index: Expr, quoted: bool },
     // $(echo hello && echo world)
     Command { body: Vec<Term>, quoted: bool },
+    // <(echo hello)
+    ProcSubst { body: Vec<Term>, subst_type: ProcSubstType },
     // $((1 + 2 * 3))
     ArithExpr { expr: Expr },
     // *
@@ -200,6 +210,23 @@ impl Word {
     pub fn spans(&self) -> &[Span] {
         &self.0
     }
+}
+
+// proc_subst_direction = { "<" | ">" }
+// proc_subst_span = !{ proc_subst_direction ~ "(" ~ compound_list ~ ")" }
+fn visit_proc_subst_span(pair: Pair<Rule>) -> Span {
+    let mut inner = pair.into_inner();
+    let direction = inner.next().unwrap();
+    let compound_list = inner.next().unwrap();
+
+    let subst_type = match direction.as_span().as_str() {
+        "<(" => ProcSubstType::StdoutToFile,
+        ">(" => ProcSubstType::FileToStdin,
+        _ => unreachable!()
+    };
+
+    let body = visit_compound_list(compound_list);
+    Span::ProcSubst { body, subst_type }
 }
 
 // command_span = !{ "$(" ~ compound_list ~ ")" }
@@ -386,6 +413,7 @@ fn visit_word(pair: Pair<Rule>) -> Word {
             Rule::param_ex_span => spans.push(visit_param_ex_span(span, false)),
             Rule::backtick_span => spans.push(visit_command_span(span, false)),
             Rule::command_span => spans.push(visit_command_span(span, false)),
+            Rule::proc_subst_span => spans.push(visit_proc_subst_span(span)),
             Rule::tilde_span => {
                 let username = span.into_inner().next().map(|p| p.as_span().as_str().to_owned());
                 spans.push(Span::Tilde(username));
@@ -2411,6 +2439,50 @@ pub fn test_courner_cases() {
     assert!(parse(";;;;;;").is_err());
     assert!(parse("||").is_err());
     assert!(parse("& &&").is_err());
+}
+
+#[test]
+pub fn test_process_substitution() {
+    assert_eq!(
+        parse("cat <(echo hello from a file)"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "cat <(echo hello from a file)".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                            Word(vec![Span::Literal("cat".into())]),
+                            Word(vec![Span::ProcSubst {
+                                subst_type: ProcSubstType::StdoutToFile,
+                                body: vec![Term {
+                                    code: "echo hello from a file".into(),
+                                    background: false,
+                                    pipelines: vec![Pipeline {
+                                        run_if: RunIf::Always,
+                                        commands: vec![Command::SimpleCommand {
+                                            argv: vec![
+                                                Word(vec![Span::Literal("echo".into())]),
+                                                Word(vec![Span::Literal("hello".into())]),
+                                                Word(vec![Span::Literal("from".into())]),
+                                                Word(vec![Span::Literal("a".into())]),
+                                                Word(vec![Span::Literal("file".into())]),
+                                            ],
+                                            redirects: vec![],
+                                            assignments: vec![],
+                                        }],
+                                    }],
+                                }],
+                            }]),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        })
+    );
 }
 
 #[cfg(test)]
