@@ -119,6 +119,25 @@ pub enum Command {
     Group {
         terms: Vec<Term>,
     },
+    Cond(Box<CondExpr>)
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum CondExpr {
+    Or(Box<CondExpr>, Box<CondExpr>),
+    And(Box<CondExpr>, Box<CondExpr>),
+    // = or ==
+    StrEq(Box<CondExpr>, Box<CondExpr>),
+    // !=
+    StrNe(Box<CondExpr>, Box<CondExpr>),
+    // -eq
+    Eq(Box<CondExpr>, Box<CondExpr>),
+    Ne(Box<CondExpr>, Box<CondExpr>),
+    Lt(Box<CondExpr>, Box<CondExpr>),
+    Le(Box<CondExpr>, Box<CondExpr>),
+    Gt(Box<CondExpr>, Box<CondExpr>),
+    Ge(Box<CondExpr>, Box<CondExpr>),
+    Word(Word),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -360,6 +379,77 @@ fn visit_escape_sequences(pair: Pair<Rule>, escaped_chars: Option<&str>) -> Stri
     }
 
     s
+}
+
+fn visit_cond_primary(pair: Pair<Rule>) -> Box<CondExpr> {
+    let mut inner = pair.into_inner();
+    let primary = inner.next().unwrap();
+    match primary.as_rule() {
+        Rule::word => {
+            let word = visit_word(primary);
+            Box::new(CondExpr::Word(word))
+        },
+        Rule::cond_expr => {
+            visit_cond_expr(primary)
+        },
+        _ => unreachable!(),
+    }
+}
+
+fn visit_cond_term(pair: Pair<Rule>) -> Box<CondExpr> {
+    let mut inner = pair.into_inner();
+    let lhs = visit_cond_primary(inner.next().unwrap());
+    if let Some(op) = inner.next() {
+        let rhs = visit_cond_term(inner.next().unwrap());
+        match op.as_span().as_str() {
+            "-eq" => Box::new(CondExpr::Eq(lhs, rhs)),
+            "-ne" => Box::new(CondExpr::Ne(lhs, rhs)),
+            "-lt" => Box::new(CondExpr::Lt(lhs, rhs)),
+            "-le" => Box::new(CondExpr::Le(lhs, rhs)),
+            "-gt" => Box::new(CondExpr::Gt(lhs, rhs)),
+            "-ge" => Box::new(CondExpr::Ge(lhs, rhs)),
+            "==" | "=" => Box::new(CondExpr::StrEq(lhs, rhs)),
+            "!=" => Box::new(CondExpr::StrNe(lhs, rhs)),
+            _ => unimplemented!()
+        }
+    } else {
+        lhs
+    }
+}
+
+fn visit_cond_and(pair: Pair<Rule>) -> Box<CondExpr> {
+    let mut inner = pair.into_inner();
+    let lhs = visit_cond_term(inner.next().unwrap());
+    if let Some(rhs) = inner.next() {
+        let rhs = visit_cond_and(rhs);
+        Box::new(CondExpr::And(lhs, rhs))
+    } else {
+        lhs
+    }
+}
+
+fn visit_cond_or(pair: Pair<Rule>) -> Box<CondExpr> {
+    let mut inner = pair.into_inner();
+    let lhs = visit_cond_and(inner.next().unwrap());
+    if let Some(rhs) = inner.next() {
+        let rhs = visit_cond_or(rhs);
+        Box::new(CondExpr::Or(lhs, rhs))
+    } else {
+        lhs
+    }
+}
+
+// cond_expr =  _{ cond_or }
+fn visit_cond_expr(pair: Pair<Rule>) -> Box<CondExpr> {
+    visit_cond_or(pair)
+}
+
+// cond_ex = { "[[" ~ cond_expr ~ "]]" }
+fn visit_cond_ex(pair: Pair<Rule>) -> Command {
+    let mut inner = pair.into_inner();
+    let expr = visit_cond_expr(inner.next().unwrap());
+
+    Command::Cond(expr)
 }
 
 // word = ${ (tilde_span | span) ~ span* }
@@ -687,6 +777,7 @@ fn visit_return_command(pair: Pair<Rule>) -> Command {
 //     | local_definition
 //     | function_definition
 //     | group
+//     | cond_ex
 //     | simple_command
 //     | assignment_command
 // }
@@ -705,6 +796,7 @@ fn visit_command(pair: Pair<Rule>) -> Command {
         Rule::assignment_command => { visit_assignment_command(inner) },
         Rule::local_definition => { visit_local_definition(inner) },
         Rule::function_definition => { visit_function_definition(inner) },
+        Rule::cond_ex => { visit_cond_ex(inner) },
         _ => unreachable!()
     }
 }
@@ -2481,6 +2573,58 @@ pub fn test_process_substitution() {
                     }],
                 }],
             }],
+        })
+    );
+}
+
+#[test]
+pub fn test_cond_ex() {
+    assert_eq!(
+        parse("hello=world; [[ $hello == world ]]"),
+        Ok(Ast {
+            terms: vec![
+                Term {
+                    code: "hello=world".into(),
+                    background: false,
+                    pipelines: vec![Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![Command::Assignment {
+                            assignments: vec![
+                                Assignment {
+                                    name: "hello".into(),
+                                    initializer: Initializer::String(lit!("world")),
+                                    index: None,
+                                }
+                            ],
+                        }],
+                    }],
+                },
+                Term {
+                    code: "[[ $hello == world ]]".into(),
+                    background: false,
+                    pipelines: vec![
+                        Pipeline {
+                            run_if: RunIf::Always,
+                            commands: vec![
+                                Command::Cond(Box::new(
+                                    CondExpr::StrEq(
+                                        Box::new(CondExpr::Word(
+                                            Word(vec![Span::Parameter {
+                                                name: "hello".into(),
+                                                op: ExpansionOp::GetOrEmpty,
+                                                quoted: false,
+                                            }])
+                                        )),
+                                        Box::new(CondExpr::Word(
+                                            lit!("world"),
+                                        ))
+                                    )
+                                ))
+                            ]
+                        }
+                    ],
+                },
+            ]
         })
     );
 }

@@ -3,7 +3,7 @@ use crate::completion::{CompSpec, cmd_completion, path_completion};
 use crate::context_parser::Asa;
 use crate::parser::{
     self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer,
-    LocalDeclaration, Assignment, ProcSubstType
+    LocalDeclaration, Assignment, ProcSubstType, CondExpr
 };
 use crate::path::{lookup_external_command,wait_for_path_loader};
 use crate::variable::{Variable, Value};
@@ -1678,6 +1678,14 @@ impl Isolate {
                 }
                 ExitStatus::ExitedWith(0)
             },
+            parser::Command::Cond(expr) => {
+                let result = self.evaluate_cond(expr)?;
+                if result {
+                    ExitStatus::ExitedWith(0)
+                } else {
+                    ExitStatus::ExitedWith(1)
+                }
+            },
             parser::Command::Group { terms } => {
                 self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr)
             },
@@ -1915,6 +1923,56 @@ impl Isolate {
         }
 
         last_status
+    }
+
+    /// Run CondEx command (`[[ ... ]]`).
+    pub fn evaluate_cond_primary(&mut self, cond: &CondExpr) -> Result<String> {
+        match cond {
+            CondExpr::Word(word) => {
+                self.expand_word_into_string(word)
+            },
+            _ => {
+                Err(format_err!("cond: expected word"))
+            }
+        }
+    }
+
+    /// Run CondEx command (`[[ ... ]]`).
+    pub fn evaluate_cond(&mut self, cond: &CondExpr) -> Result<bool> {
+        macro_rules! eval_as_string {
+            ($expr:expr) => {
+                self.evaluate_cond_primary($expr)?
+            };
+        }
+
+        macro_rules! eval_as_bool {
+            ($expr:expr) => {
+                self.evaluate_cond($expr)?
+            };
+        }
+
+        macro_rules! parse_as_int {
+            ($expr:expr) => {
+                self.evaluate_cond_primary($expr)?
+                    .parse().unwrap_or(0) as i32
+            };
+        }
+
+        let result = match cond {
+            CondExpr::And(lhs, rhs) => eval_as_bool!(lhs) && eval_as_bool!(rhs),
+            CondExpr::Or(lhs, rhs) => eval_as_bool!(lhs) || eval_as_bool!(rhs),
+            CondExpr::StrEq(lhs, rhs) => eval_as_string!(lhs) == eval_as_string!(rhs),
+            CondExpr::StrNe(lhs, rhs) => eval_as_string!(lhs) != eval_as_string!(rhs),
+            CondExpr::Eq(lhs, rhs) => parse_as_int!(lhs) == parse_as_int!(rhs),
+            CondExpr::Ne(lhs, rhs) => parse_as_int!(lhs) != parse_as_int!(rhs),
+            CondExpr::Lt(lhs, rhs) => parse_as_int!(lhs) < parse_as_int!(rhs),
+            CondExpr::Le(lhs, rhs) => parse_as_int!(lhs) <= parse_as_int!(rhs),
+            CondExpr::Gt(lhs, rhs) => parse_as_int!(lhs) > parse_as_int!(rhs),
+            CondExpr::Ge(lhs, rhs) => parse_as_int!(lhs) >= parse_as_int!(rhs),
+            CondExpr::Word(_) => true,
+        };
+
+        Ok(result)
     }
 
     /// Runs commands.

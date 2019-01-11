@@ -40,7 +40,6 @@ word = ${ (tilde_span | span) ~ span* }
 span = _{
     double_quoted_span
     | single_quoted_span
-    | literal_span
     | any_string_span
     | any_char_span
     | expr_span
@@ -49,6 +48,7 @@ span = _{
     | backtick_span
     | param_ex_span
     | param_span
+    | literal_span
 }
 literal_span = ${ (("\\" ~ ANY) | word_chars)+ }
 tilde_span = { "~" ~ username? }
@@ -128,6 +128,7 @@ reserved_word = ${
         | "return"
         | "then"
         | "while"
+        | "[["
     ) ~ !(word_chars)
 }
 argv0 = { !reserved_word ~ word }
@@ -200,6 +201,21 @@ continue_command = { "continue" }
 group = { "{" ~ compound_list ~ "}" }
 
 //
+//  Condition Command, Extended. (`[[ ]]')
+//
+cond_ex = { "[[" ~ cond_expr ~ "]]" }
+cond_expr =  _{ cond_or }
+cond_or = { cond_and ~ ("||" ~ cond_or)? }
+cond_and = { cond_term ~ ("&&" ~ cond_and)? }
+cond_term = { cond_primary ~ (cond_op ~ cond_term)? }
+cond_op = { "==" | "=" | "!=" | "-gt" | "-lt" | "-ge" | "-le" | "-eq" | "-ne" }
+cond_primary = { cond_primary_inner }
+cond_primary_inner = _{
+    word
+    | "(" ~ cond_expr ~ ")"
+}
+
+//
 //  Command
 //
 command = {
@@ -213,6 +229,7 @@ command = {
     | local_definition
     | function_definition
     | group
+    | cond_ex
     | simple_command
     | assignment_command
 }
