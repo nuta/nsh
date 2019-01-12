@@ -62,7 +62,7 @@ expr_span = !{ "$((" ~ expr ~ "))" }
 expandable_var_name = { var_name | special_var_name }
 length_op ={ "#"? }
 param_op = { ":=" | ":-" | "-"  | "=" }
-param_opt = { param_op ~ word }
+param_opt = { param_op ~ word? }
 param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ index ~ param_opt? ~ "}" }
 param_span = { "$" ~ expandable_var_name }
 
