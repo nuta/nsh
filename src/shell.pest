@@ -221,9 +221,14 @@ break_command = { "break" }
 continue_command = { "continue" }
 
 //
-//  Group (`{}')
+//  Group (`{...}')
 //
 group = { "{" ~ compound_list ~ "}" }
+
+//
+//  Subshell Group (`(...)')
+//
+subshell_group = { "(" ~ compound_list ~ ")" }
 
 //
 //  Condition Command, Extended. (`[[ ]]')
@@ -254,6 +259,7 @@ command = {
     | local_definition
     | function_definition
     | group
+    | subshell_group
     | cond_ex
     | simple_command
     | assignment_command

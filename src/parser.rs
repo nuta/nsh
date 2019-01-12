@@ -125,6 +125,9 @@ pub enum Command {
     Group {
         terms: Vec<Term>,
     },
+    SubShellGroup {
+        terms: Vec<Term>,
+    },
     Cond(Box<CondExpr>)
 }
 
@@ -820,6 +823,14 @@ impl ShellParser {
         Command::Group { terms }
     }
 
+    // group = { "(" ~ compound_list ~ ")" }
+    fn visit_subshell_group_command(&mut self, pair: Pair<Rule>) -> Command {
+        let mut inner = pair.into_inner();
+        let terms = self.visit_compound_list(inner.next().unwrap());
+
+        Command::SubShellGroup { terms }
+    }
+
     // return = { return ~ num? }
     fn visit_return_command(&mut self, pair: Pair<Rule>) -> Command {
         let mut inner = pair.into_inner();
@@ -852,6 +863,7 @@ impl ShellParser {
             Rule::for_command => { self.visit_for_command(inner) },
             Rule::case_command => { self.visit_case_command(inner) },
             Rule::group => { self.visit_group_command(inner) },
+            Rule::subshell_group => { self.visit_subshell_group_command(inner) },
             Rule::break_command => { Command::Break },
             Rule::continue_command => { Command::Continue },
             Rule::return_command => { self.visit_return_command(inner) },
@@ -1804,6 +1816,47 @@ pub fn test_compound_commands() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Group {
+                        terms: vec![
+                            Term {
+                                code: "echo hello".into(),
+                                background: false,
+                                pipelines: vec![Pipeline {
+                                    run_if: RunIf::Always,
+                                    commands: vec![Command::SimpleCommand {
+                                        argv: literal_word_vec!["echo", "hello"],
+                                        redirects: vec![],
+                                        assignments: vec![],
+                                    }],
+                                }],
+                            },
+                            Term {
+                                code: "echo world".into(),
+                                background: false,
+                                pipelines: vec![Pipeline {
+                                    run_if: RunIf::Always,
+                                    commands: vec![Command::SimpleCommand {
+                                        argv: literal_word_vec!["echo", "world"],
+                                        redirects: vec![],
+                                        assignments: vec![],
+                                    }],
+                                }],
+                            },
+                        ],
+                    }],
+                }],
+            }],
+        })
+    );
+
+    assert_eq!(
+        parse("( echo hello; echo world; )"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "( echo hello; echo world; )".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SubShellGroup {
                         terms: vec![
                             Term {
                                 code: "echo hello".into(),

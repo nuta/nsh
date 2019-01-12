@@ -45,6 +45,21 @@ fn move_fd(src: RawFd, dst: RawFd) {
     }
 }
 
+fn wait_child(pid: Pid) -> Result<i32> {
+    let wait_status = waitpid(pid, None)?;
+    match wait_status {
+        WaitStatus::Exited(_, status) => Ok(status),
+        // TODO: Handle errors.
+        _ => {
+            let err = format_err!("waitpid returned an unexpected value: {:?}",
+                wait_status);
+
+            warn!("waitpid: {}", err);
+            Err(err)
+        }
+    }
+}
+
 #[derive(Debug)]
 enum LiteralOrGlob {
     Literal(String),
@@ -803,8 +818,7 @@ impl Isolate {
                     (vec![LiteralOrGlob::Literal(dir)], false)
                 },
                 Span::Command { body, quoted } => {
-                    let (stdin, stdout) = self.run_in_subshell(body);
-                    close(stdin).ok();
+                    let (_, stdout) = self.eval_in_subshell(body)?;
 
                     let mut raw_stdout = Vec::new();
                     unsafe {
@@ -825,11 +839,10 @@ impl Isolate {
                     (vec![LiteralOrGlob::Literal(output)], !quoted)
                 },
                 Span::ProcSubst { body, subst_type } => {
-                    let (stdin, stdout) = self.run_in_subshell(body);
+                    let (_, stdout) = self.eval_in_subshell(body)?;
                     match subst_type {
                         // <()
                         ProcSubstType::StdoutToFile => {
-                            close(stdin).ok();
                             let file_name = format!("/dev/fd/{}", stdout);
                             (vec![LiteralOrGlob::Literal(file_name)], false)
                         },
@@ -1734,6 +1747,11 @@ impl Isolate {
             parser::Command::Group { terms } => {
                 self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr)
             },
+            parser::Command::SubShellGroup { terms } => {
+                let pid = self.spawn_subshell(terms, ctx)?;
+                let status = wait_child(pid).unwrap_or(1);
+                ExitStatus::ExitedWith(status)
+            },
             parser::Command::Return { status } => {
                 if let Some(status) = status {
                     self.last_status = *status;
@@ -1753,9 +1771,26 @@ impl Isolate {
     }
 
     /// Runs commands in a subshell (`$()` or `<()`).
-    pub fn run_in_subshell(&mut self, terms: &[parser::Term]) -> (i32, i32) {
+    pub fn eval_in_subshell(&mut self, terms: &[parser::Term]) -> Result<(i32, i32)> {
         let (pipe_out, pipe_in) = pipe().expect("failed to create a pipe");
 
+        let ctx = Context {
+                stdin: 0,
+                stdout: pipe_in,
+                stderr: 2,
+                pgid: None,
+                background: false,
+                interactive: false,
+        };
+
+        let pid = self.spawn_subshell(terms, &ctx)?;
+        close(pipe_in).ok();
+        let status = wait_child(pid).unwrap_or(1);
+        Ok((status, pipe_out))
+    }
+
+
+    fn spawn_subshell(&mut self, terms: &[parser::Term], ctx: &Context) -> Result<Pid> {
         // Since child process has its own isolated address space, `RELOAD_WORK.wait()`
         // would block forever. Wait for the path loader before forking to make sure
         // that `RELOAD_WORK.wait()` does not block.
@@ -1763,14 +1798,10 @@ impl Isolate {
 
         match fork().expect("failed to fork") {
             ForkResult::Parent { child } => {
-                waitpid(child, None).ok();
-                (pipe_in, pipe_out)
+                Ok(child)
             },
             ForkResult::Child => {
-                let stdin = 0;
-                let stdout = pipe_in;
-                let stderr = 2;
-                let status = match self.run_terms(terms, stdin, stdout, stderr) {
+                let status = match self.run_terms(terms, ctx.stdin, ctx.stdout, ctx.stderr) {
                     ExitStatus::ExitedWith(status) => status,
                     _ => 1,
                 };
