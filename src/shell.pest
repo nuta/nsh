@@ -1,7 +1,7 @@
 //
 //  Misc.
 //
-WHITESPACE = _{ " " | "\t" | "\r" | "\\\n" }
+WHITESPACE = _{ " " | "\t" | "\r" | "\\\n" } // TODO: remove \\\n
 COMMENT = _{ "#" ~ (!("\n") ~ ANY)* }
 word_chars = _{
     !(
@@ -14,7 +14,7 @@ var_name_chars = _{
     "_" | ASCII_ALPHANUMERIC
 }
 
-wsnl = _{ ( WHITESPACE | COMMENT | "\n")+ }
+wsnl = _{ (WHITESPACE | COMMENT | newline)+ }
 var_name = ${ var_name_chars+ }
 username = ${ (!("/") ~ word_chars)+ }
 special_var_name = _{ "?" | "$" | "!" | "*" | "@" | "#" | "-" | ASCII_DIGIT }
@@ -105,10 +105,10 @@ assignment_command = { assignment+ }
 // Simple Command
 //
 fd = { ASCII_DIGIT* }
-redirect_direction = { !("<(" | ">(") ~ ("<" | ">>" | ">") }
+redirect_direction = { !("<(" | ">(" | "<<") ~ ("<" | ">>" | ">") }
 redirect_to_fd = ${ "&" ~ fd }
 redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
-word_or_redirect = _{ redirect | word }
+word_or_redirect = _{ redirect | word | heredoc }
 reserved_word = ${
     (
         "break"
@@ -135,6 +135,31 @@ argv0 = { !reserved_word ~ word }
 args = { word_or_redirect* }
 assignments = { assignment* }
 simple_command = { assignments ~ argv0 ~ args }
+
+heredoc = { "<<" ~ PUSH(heredoc_marker) }
+newline = {
+    // Entering a here document. Use `PEEK_ALL` instead of `PEEK` to
+    // prevent a panic on an empty stack. `(PEEK_ALL)` succeeds if
+    // the stack is empty since PEEK_ALLS equals "". `!(PEEK_ALL) suceeeds
+    // otherwise (i.e., there is a here document thus the stack is not empty).
+    //
+    // TODO: support multiple here documents for example:
+    //
+    //  $ cat << EOF1; cat << EOF2
+    //  hello1
+    //  EOF1
+    //  hello2
+    //  EOF2
+    //
+    !(PEEK_ALL) ~ "\n" ~ heredoc_body ~ POP
+    // No here documents. Just consume a newline character.
+    | (PEEK_ALL) ~ normal_newline
+}
+
+normal_newline = { "\n" }
+heredoc_marker = ${ word_chars+ }
+heredoc_body = { heredoc_line* }
+heredoc_line = { !(PEEK) ~ (word *) ~ "\n" }
 
 //
 //  If Command
@@ -249,7 +274,9 @@ and_or_list_sep = { "||" | "&&" }
 //  Compound List (`;' or `&')
 //
 compound_list = { compound_list_inner ~ (compound_list_sep ~ wsnl? ~ compound_list)* }
-compound_list_sep = { (!(";;") ~ ";") | !("&&") ~ "&" | "\n" }
+compound_list_sep = { (!(";;") ~ seq_sep) | !("&&") ~ background | newline }
+seq_sep = { ";" }
+background = { "&" }
 empty_line = { "" }
 compound_list_inner = _{ and_or_list | empty_line }
 

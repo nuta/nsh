@@ -1,5 +1,5 @@
 use pest::Parser;
-use pest::iterators::{Pair, Pairs};
+use pest::iterators::Pair;
 use termion::color::Fg;
 use termion::color;
 use termion::style;
@@ -7,11 +7,11 @@ use std::os::unix::io::RawFd;
 
 #[derive(Parser)]
 #[grammar = "shell.pest"]
-struct ShellParser;
+struct PestShellParser;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RedirectionDirection {
-    Input,  // cat < foo.txt
+    Input,  // cat < foo.txt or here document
     Output, // cat > foo.txt
     Append, // cat >> foo.txt
 }
@@ -19,7 +19,13 @@ pub enum RedirectionDirection {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RedirectionType {
     File(Word),
-    Fd(RawFd)
+    Fd(RawFd),
+    HereDoc(HereDoc),
+    /// Since the contents of a here document comes after the current
+    /// elemenet (e.g., Command::SimpleCommand), the parser memorizes the
+    /// index of here document in `UnresolvedHereDoc` and replace this
+    /// with `HereDoc` later. Used internally by the parser.
+    UnresolvedHereDoc(usize),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -231,688 +237,833 @@ impl Word {
     }
 }
 
-// proc_subst_direction = { "<" | ">" }
-// proc_subst_span = !{ proc_subst_direction ~ "(" ~ compound_list ~ ")" }
-fn visit_proc_subst_span(pair: Pair<Rule>) -> Span {
-    let mut inner = pair.into_inner();
-    let direction = inner.next().unwrap();
-    let compound_list = inner.next().unwrap();
+/// Contains heredoc body. The outer Vec represents lines and
+/// `Vec<Word>` represents the contents of a line.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct HereDoc(Vec<Vec<Word>>);
 
-    let subst_type = match direction.as_span().as_str() {
-        "<(" => ProcSubstType::StdoutToFile,
-        ">(" => ProcSubstType::FileToStdin,
-        _ => unreachable!()
-    };
-
-    let body = visit_compound_list(compound_list);
-    Span::ProcSubst { body, subst_type }
+impl HereDoc {
+    pub fn lines(&self) -> &[Vec<Word>] {
+        &self.0
+    }
 }
 
-// command_span = !{ "$(" ~ compound_list ~ ")" }
-fn visit_command_span(pair: Pair<Rule>, quoted: bool) -> Span {
-    let body = visit_compound_list(pair.into_inner().next().unwrap());
-    Span::Command { body, quoted}
-}
-
-// param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ param_opt? ~ "}" }
-fn visit_param_ex_span(pair: Pair<Rule>, quoted: bool) -> Span {
-    let mut inner = pair.into_inner();
-    let length_op = inner.next().unwrap().as_span().as_str().to_owned();
-    let name = inner.next().unwrap().as_span().as_str().to_owned();
-    let index = inner.next().unwrap().into_inner().next().map(visit_expr);
-
-    let op = if length_op == "#" {
-        ExpansionOp::Length
-    } else if let Some(param_opt) = inner.next() {
-        let mut inner = param_opt.into_inner();
-        let symbol = inner.next().unwrap().as_span().as_str();
-        let default_word = inner.next().map(visit_word).unwrap_or_else(|| Word(vec![]));
-        match symbol {
-            "-"  => ExpansionOp::GetNullableOrDefault(default_word),
-            ":-" => ExpansionOp::GetOrDefault(default_word),
-            "="  => ExpansionOp::GetNullableOrDefaultAndAssign(default_word),
-            ":=" => ExpansionOp::GetOrDefaultAndAssign(default_word),
-            _ => unreachable!(),
+macro_rules! wsnl {
+    ($self:expr, $pairs:expr) => {
+        if let Some(next) = $pairs.next() {
+            match next.as_rule() {
+                Rule::newline => {
+                    $self.visit_newline(next);
+                    $pairs.next()
+                },
+                _ => Some(next),
+            }
+        } else {
+            None
         }
-    } else {
-        ExpansionOp::GetOrEmpty
-    };
+    }
+}
 
-    if let Some(index) = index {
-        Span::ArrayParameter { name, index, quoted }
-    } else {
+struct ShellParser {
+    heredocs: Vec<HereDoc>,
+    next_heredoc_index: usize,
+}
+
+impl ShellParser {
+    pub fn new() -> ShellParser {
+        ShellParser {
+            heredocs: Vec::new(),
+            next_heredoc_index: 0,
+        }
+    }
+
+    // proc_subst_direction = { "<" | ">" }
+    // proc_subst_span = !{ proc_subst_direction ~ "(" ~ compound_list ~ ")" }
+    fn visit_proc_subst_span(&mut self, pair: Pair<Rule>) -> Span {
+        let mut inner = pair.into_inner();
+        let direction = inner.next().unwrap();
+        let compound_list = inner.next().unwrap();
+
+        let subst_type = match direction.as_span().as_str() {
+            "<(" => ProcSubstType::StdoutToFile,
+            ">(" => ProcSubstType::FileToStdin,
+            _ => unreachable!()
+        };
+
+        let body = self.visit_compound_list(compound_list);
+        Span::ProcSubst { body, subst_type }
+    }
+
+    // command_span = !{ "$(" ~ compound_list ~ ")" }
+    fn visit_command_span(&mut self, pair: Pair<Rule>, quoted: bool) -> Span {
+        let body = self.visit_compound_list(pair.into_inner().next().unwrap());
+        Span::Command { body, quoted}
+    }
+
+    // param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ param_opt? ~ "}" }
+    fn visit_param_ex_span(&mut self, pair: Pair<Rule>, quoted: bool) -> Span {
+        let mut inner = pair.into_inner();
+        let length_op = inner.next().unwrap().as_span().as_str().to_owned();
+        let name = inner.next().unwrap().as_span().as_str().to_owned();
+        let index = inner.next().unwrap().into_inner().next().map(|p| self.visit_expr(p));
+
+        let op = if length_op == "#" {
+            ExpansionOp::Length
+        } else if let Some(param_opt) = inner.next() {
+            let mut inner = param_opt.into_inner();
+            let symbol = inner.next().unwrap().as_span().as_str();
+            let default_word = inner.next().map(|p| self.visit_word(p)).unwrap_or_else(|| Word(vec![]));
+            match symbol {
+                "-"  => ExpansionOp::GetNullableOrDefault(default_word),
+                ":-" => ExpansionOp::GetOrDefault(default_word),
+                "="  => ExpansionOp::GetNullableOrDefaultAndAssign(default_word),
+                ":=" => ExpansionOp::GetOrDefaultAndAssign(default_word),
+                _ => unreachable!(),
+            }
+        } else {
+            ExpansionOp::GetOrEmpty
+        };
+
+        if let Some(index) = index {
+            Span::ArrayParameter { name, index, quoted }
+        } else {
+            Span::Parameter { name, op, quoted }
+        }
+    }
+
+    // param_span = { "$" ~ expandable_var_name }
+    fn visit_param_span(&mut self, pair: Pair<Rule>, quoted: bool) -> Span {
+        let name = pair.into_inner().next().unwrap().as_span().as_str().to_owned();
+        let op = ExpansionOp::GetOrEmpty;
         Span::Parameter { name, op, quoted }
     }
-}
 
-// param_span = { "$" ~ expandable_var_name }
-fn visit_param_span(pair: Pair<Rule>, quoted: bool) -> Span {
-    let name = pair.into_inner().next().unwrap().as_span().as_str().to_owned();
-    let op = ExpansionOp::GetOrEmpty;
-    Span::Parameter { name, op, quoted }
-}
-
-// factor = { sign ~ primary }
-// primary = _{ num | ("$"? ~ var_name) |  ("(" ~ expr ~ ")") }
-// num = { ASCII_DIGIT+ }
-fn visit_factor(pair: Pair<Rule>) -> Expr {
-    let mut inner = pair.into_inner();
-    let sign = if inner.next().unwrap().as_span().as_str() == "-" {
-        -1
-    } else {
-        1
-    };
-
-    let primary = inner.next().unwrap();
-    match primary.as_rule() {
-        Rule::num => {
-            let lit: i32 = primary.as_span().as_str().parse().unwrap();
-            Expr::Literal(sign * lit)
-        },
-        Rule::var_name => {
-            let name = primary.as_span().as_str().to_owned();
-            Expr::Parameter { name }
-        },
-        Rule::expr => Expr::Expr(Box::new(visit_expr(primary))),
-        _ => unreachable!(),
-    }
-}
-
-// term = { factor ~ (factor_op ~ expr)? }
-// factor_op = { "*" | "/" }
-fn visit_term(pair: Pair<Rule>) -> Expr {
-    let mut inner = pair.into_inner();
-    let lhs = visit_factor(inner.next().unwrap());
-    if let Some(op) = inner.next() {
-        let rhs = visit_term(inner.next().unwrap());
-        match op.as_span().as_str() {
-            "*" => Expr::Mul(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
-            "/" => Expr::Div(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
-            _ => unreachable!()
-        }
-    } else {
-        lhs
-    }
-}
-
-// expr = { term ~ (term_op ~ expr)? }
-// term_op = { "+" | "-" }
-fn visit_expr(pair: Pair<Rule>) -> Expr {
-    let mut inner = pair.into_inner();
-    let lhs = visit_term(inner.next().unwrap());
-    if let Some(op) = inner.next() {
-        let rhs = visit_expr(inner.next().unwrap());
-        match op.as_span().as_str() {
-            "+" => Expr::Add(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
-            "-" => Expr::Sub(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
-            _ => unreachable!()
-        }
-    } else {
-        lhs
-    }
-}
-
-// expr_span = !{ "$((" ~ expr ~ "))" }
-fn visit_expr_span(pair: Pair<Rule>) -> Span {
-    let expr = visit_expr(pair.into_inner().next().unwrap());
-    Span::ArithExpr { expr }
-}
-
-// `a\b\$cd' -> `echo ab$cd'
-fn visit_escape_sequences(pair: Pair<Rule>, escaped_chars: Option<&str>) -> String {
-    let mut s = String::new();
-    let mut escaped = false;
-    for ch in pair.as_str().chars() {
-        if escaped {
-            escaped = false;
-            if let Some(escaped_chars) = escaped_chars {
-                if !escaped_chars.contains(ch) {
-                    s.push('\\');
-                }
-            }
-            s.push(ch);
-        } else if ch == '\\' {
-            escaped = true;
+    // factor = { sign ~ primary }
+    // primary = _{ num | ("$"? ~ var_name) |  ("(" ~ expr ~ ")") }
+    // num = { ASCII_DIGIT+ }
+    fn visit_factor(&mut self, pair: Pair<Rule>) -> Expr {
+        let mut inner = pair.into_inner();
+        let sign = if inner.next().unwrap().as_span().as_str() == "-" {
+            -1
         } else {
-            s.push(ch);
-        }
-    }
+            1
+        };
 
-    s
-}
-
-fn visit_cond_primary(pair: Pair<Rule>) -> Box<CondExpr> {
-    let mut inner = pair.into_inner();
-    let primary = inner.next().unwrap();
-    match primary.as_rule() {
-        Rule::word => {
-            let word = visit_word(primary);
-            Box::new(CondExpr::Word(word))
-        },
-        Rule::cond_expr => {
-            visit_cond_expr(primary)
-        },
-        _ => unreachable!(),
-    }
-}
-
-fn visit_cond_term(pair: Pair<Rule>) -> Box<CondExpr> {
-    let mut inner = pair.into_inner();
-    let lhs = visit_cond_primary(inner.next().unwrap());
-    if let Some(op) = inner.next() {
-        let rhs = visit_cond_term(inner.next().unwrap());
-        match op.as_span().as_str() {
-            "-eq" => Box::new(CondExpr::Eq(lhs, rhs)),
-            "-ne" => Box::new(CondExpr::Ne(lhs, rhs)),
-            "-lt" => Box::new(CondExpr::Lt(lhs, rhs)),
-            "-le" => Box::new(CondExpr::Le(lhs, rhs)),
-            "-gt" => Box::new(CondExpr::Gt(lhs, rhs)),
-            "-ge" => Box::new(CondExpr::Ge(lhs, rhs)),
-            "==" | "=" => Box::new(CondExpr::StrEq(lhs, rhs)),
-            "!=" => Box::new(CondExpr::StrNe(lhs, rhs)),
-            _ => unimplemented!()
-        }
-    } else {
-        lhs
-    }
-}
-
-fn visit_cond_and(pair: Pair<Rule>) -> Box<CondExpr> {
-    let mut inner = pair.into_inner();
-    let lhs = visit_cond_term(inner.next().unwrap());
-    if let Some(rhs) = inner.next() {
-        let rhs = visit_cond_and(rhs);
-        Box::new(CondExpr::And(lhs, rhs))
-    } else {
-        lhs
-    }
-}
-
-fn visit_cond_or(pair: Pair<Rule>) -> Box<CondExpr> {
-    let mut inner = pair.into_inner();
-    let lhs = visit_cond_and(inner.next().unwrap());
-    if let Some(rhs) = inner.next() {
-        let rhs = visit_cond_or(rhs);
-        Box::new(CondExpr::Or(lhs, rhs))
-    } else {
-        lhs
-    }
-}
-
-// cond_expr =  _{ cond_or }
-fn visit_cond_expr(pair: Pair<Rule>) -> Box<CondExpr> {
-    visit_cond_or(pair)
-}
-
-// cond_ex = { "[[" ~ cond_expr ~ "]]" }
-fn visit_cond_ex(pair: Pair<Rule>) -> Command {
-    let mut inner = pair.into_inner();
-    let expr = visit_cond_expr(inner.next().unwrap());
-
-    Command::Cond(expr)
-}
-
-// word = ${ (tilde_span | span) ~ span* }
-// span = _{
-//     double_quoted_span
-//     | single_quoted_span
-//     | literal_span
-//     | any_string_span
-//     | any_char_span
-//     | expr_span
-//     | command_span
-//     | backtick_span
-//     | param_ex_span
-//     | param_span
-// }
-fn visit_word(pair: Pair<Rule>) -> Word {
-    assert_eq!(pair.as_rule(), Rule::word);
-
-    let mut spans = Vec::new();
-    for span in pair.into_inner() {
-        match span.as_rule() {
-            Rule::literal_span => {
-                spans.push(Span::Literal(visit_escape_sequences(span, None)));
+        let primary = inner.next().unwrap();
+        match primary.as_rule() {
+            Rule::num => {
+                let lit: i32 = primary.as_span().as_str().parse().unwrap();
+                Expr::Literal(sign * lit)
             },
-            Rule::double_quoted_span => {
-                for span_in_quote in span.into_inner() {
-                    match span_in_quote.as_rule() {
-                        Rule::literal_in_double_quoted_span => {
-                            spans.push(Span::Literal(visit_escape_sequences(span_in_quote, Some("\"`$"))));
-                        }
-                        Rule::backtick_span => spans.push(visit_command_span(span_in_quote, true)),
-                        Rule::command_span => spans.push(visit_command_span(span_in_quote, true)),
-                        Rule::param_span => spans.push(visit_param_span(span_in_quote, true)),
-                        Rule::param_ex_span => spans.push(visit_param_ex_span(span_in_quote, true)),
-                        _ => unreachable!(),
+            Rule::var_name => {
+                let name = primary.as_span().as_str().to_owned();
+                Expr::Parameter { name }
+            },
+            Rule::expr => Expr::Expr(Box::new(self.visit_expr(primary))),
+            _ => unreachable!(),
+        }
+    }
+
+    // term = { factor ~ (factor_op ~ expr)? }
+    // factor_op = { "*" | "/" }
+    fn visit_term(&mut self, pair: Pair<Rule>) -> Expr {
+        let mut inner = pair.into_inner();
+        let lhs = self.visit_factor(inner.next().unwrap());
+        if let Some(op) = inner.next() {
+            let rhs = self.visit_term(inner.next().unwrap());
+            match op.as_span().as_str() {
+                "*" => Expr::Mul(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
+                "/" => Expr::Div(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
+                _ => unreachable!()
+            }
+        } else {
+            lhs
+        }
+    }
+
+    // expr = { term ~ (term_op ~ expr)? }
+    // term_op = { "+" | "-" }
+    fn visit_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        let mut inner = pair.into_inner();
+        let lhs = self.visit_term(inner.next().unwrap());
+        if let Some(op) = inner.next() {
+            let rhs = self.visit_expr(inner.next().unwrap());
+            match op.as_span().as_str() {
+                "+" => Expr::Add(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
+                "-" => Expr::Sub(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
+                _ => unreachable!()
+            }
+        } else {
+            lhs
+        }
+    }
+
+    // expr_span = !{ "$((" ~ expr ~ "))" }
+    fn visit_expr_span(&mut self, pair: Pair<Rule>) -> Span {
+        let expr = self.visit_expr(pair.into_inner().next().unwrap());
+        Span::ArithExpr { expr }
+    }
+
+    // `a\b\$cd' -> `echo ab$cd'
+    fn visit_escape_sequences(&mut self, pair: Pair<Rule>, escaped_chars: Option<&str>) -> String {
+        let mut s = String::new();
+        let mut escaped = false;
+        for ch in pair.as_str().chars() {
+            if escaped {
+                escaped = false;
+                if let Some(escaped_chars) = escaped_chars {
+                    if !escaped_chars.contains(ch) {
+                        s.push('\\');
                     }
                 }
+                s.push(ch);
+            } else if ch == '\\' {
+                escaped = true;
+            } else {
+                s.push(ch);
+            }
+        }
+
+        s
+    }
+
+    fn visit_cond_primary(&mut self, pair: Pair<Rule>) -> Box<CondExpr> {
+        let mut inner = pair.into_inner();
+        let primary = inner.next().unwrap();
+        match primary.as_rule() {
+            Rule::word => {
+                let word = self.visit_word(primary);
+                Box::new(CondExpr::Word(word))
             },
-            Rule::single_quoted_span => {
-                for span_in_quote in span.into_inner() {
-                    match span_in_quote.as_rule() {
-                        Rule::literal_in_single_quoted_span => {
-                            spans.push(Span::Literal(span_in_quote.as_str().to_owned()));
-                        }
-                        _ => unreachable!(),
-                    }
-                }
+            Rule::cond_expr => {
+                self.visit_cond_expr(primary)
             },
-            Rule::expr_span => spans.push(visit_expr_span(span)),
-            Rule::param_span => spans.push(visit_param_span(span, false)),
-            Rule::param_ex_span => spans.push(visit_param_ex_span(span, false)),
-            Rule::backtick_span => spans.push(visit_command_span(span, false)),
-            Rule::command_span => spans.push(visit_command_span(span, false)),
-            Rule::proc_subst_span => spans.push(visit_proc_subst_span(span)),
-            Rule::tilde_span => {
-                let username = span.into_inner().next().map(|p| p.as_span().as_str().to_owned());
-                spans.push(Span::Tilde(username));
-            },
-            Rule::any_string_span => {
-                spans.push(Span::AnyString { quoted: false });
-            },
-            Rule::any_char_span => {
-                spans.push(Span::AnyChar { quoted: false });
-            },
-            _ => {
-                println!("unimpl: {:?}", span);
-                unimplemented!();
-            },
+            _ => unreachable!(),
         }
     }
 
-    Word(spans)
-}
-
-// fd = { ASCII_DIGIT+ }
-// redirect_direction = { "<" | ">" | ">>" }
-// redirect_to_fd = ${ "&" ~ ASCII_DIGIT* }
-// redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
-fn visit_redirect(pair: Pair<Rule>) -> Redirection {
-    let mut inner = pair.into_inner();
-    let fd     = inner.next().unwrap();
-    let symbol = inner.next().unwrap();
-    let target = inner.next().unwrap();
-
-    let (direction, default_fd) = match symbol.as_span().as_str() {
-        "<" => (RedirectionDirection::Input, 0),
-        ">" => (RedirectionDirection::Output, 1),
-        ">>" => (RedirectionDirection::Append, 1),
-        _ => unreachable!(),
-    };
-
-    let fd = fd.as_span().as_str().parse().unwrap_or(default_fd);
-    let target = match target.as_rule() {
-        Rule::word => RedirectionType::File(visit_word(target)),
-        Rule::redirect_to_fd => {
-            let target_fd = target.into_inner().next().unwrap().as_span().as_str().parse().unwrap();
-            RedirectionType::Fd(target_fd)
-        },
-        _ => unreachable!()
-    };
-
-    Redirection {
-        fd,
-        direction,
-        target,
+    fn visit_cond_term(&mut self, pair: Pair<Rule>) -> Box<CondExpr> {
+        let mut inner = pair.into_inner();
+        let lhs = self.visit_cond_primary(inner.next().unwrap());
+        if let Some(op) = inner.next() {
+            let rhs = self.visit_cond_term(inner.next().unwrap());
+            match op.as_span().as_str() {
+                "-eq" => Box::new(CondExpr::Eq(lhs, rhs)),
+                "-ne" => Box::new(CondExpr::Ne(lhs, rhs)),
+                "-lt" => Box::new(CondExpr::Lt(lhs, rhs)),
+                "-le" => Box::new(CondExpr::Le(lhs, rhs)),
+                "-gt" => Box::new(CondExpr::Gt(lhs, rhs)),
+                "-ge" => Box::new(CondExpr::Ge(lhs, rhs)),
+                "==" | "=" => Box::new(CondExpr::StrEq(lhs, rhs)),
+                "!=" => Box::new(CondExpr::StrNe(lhs, rhs)),
+                _ => unimplemented!()
+            }
+        } else {
+            lhs
+        }
     }
-}
 
-// assignment = { var_name ~ index ~ "=" ~ initializer ~ WHITESPACE? }
-// index = { ("[" ~ expr ~ "]")? }
-// initializer = { array_initializer | string_initializer }
-// string_initializer = { word }
-// array_initializer = { ("(" ~ word* ~ ")") }
-fn visit_assignment(pair: Pair<Rule>) -> Assignment {
-    let mut inner = pair.into_inner();
-
-    let name = inner.next().unwrap().as_span().as_str().to_owned();
-    let index = inner.next().unwrap().into_inner().next().map(visit_expr);
-    let initializer = inner.next().unwrap().into_inner().next().unwrap();
-    match initializer.as_rule() {
-        Rule::string_initializer => {
-            let word = Initializer::String(visit_word(initializer.into_inner().next().unwrap()));
-            Assignment { name, initializer: word, index }
-        },
-        Rule::array_initializer => {
-            let word = Initializer::Array(initializer.into_inner().map(visit_word).collect());
-            let index = None;
-            Assignment { name, initializer: word, index }
-        },
-        _ => unreachable!()
+    fn visit_cond_and(&mut self, pair: Pair<Rule>) -> Box<CondExpr> {
+        let mut inner = pair.into_inner();
+        let lhs = self.visit_cond_term(inner.next().unwrap());
+        if let Some(rhs) = inner.next() {
+            let rhs = self.visit_cond_and(rhs);
+            Box::new(CondExpr::And(lhs, rhs))
+        } else {
+            lhs
+        }
     }
-}
 
-fn visit_simple_command(pair: Pair<Rule>) -> Command {
-    assert_eq!(pair.as_rule(), Rule::simple_command);
+    fn visit_cond_or(&mut self, pair: Pair<Rule>) -> Box<CondExpr> {
+        let mut inner = pair.into_inner();
+        let lhs = self.visit_cond_and(inner.next().unwrap());
+        if let Some(rhs) = inner.next() {
+            let rhs = self.visit_cond_or(rhs);
+            Box::new(CondExpr::Or(lhs, rhs))
+        } else {
+            lhs
+        }
+    }
 
-    let mut argv = Vec::new();
-    let mut redirects = Vec::new();
+    // cond_expr =  _{ cond_or }
+    fn visit_cond_expr(&mut self, pair: Pair<Rule>) -> Box<CondExpr> {
+        self.visit_cond_or(pair)
+    }
 
-    let mut inner = pair.into_inner();
-    let assignments_pairs = inner.next().unwrap().into_inner();
-    let argv0 = inner.next().unwrap().into_inner().next().unwrap();
-    let args = inner.next().unwrap().into_inner();
+    // cond_ex = { "[[" ~ cond_expr ~ "]]" }
+    fn visit_cond_ex(&mut self, pair: Pair<Rule>) -> Command {
+        let mut inner = pair.into_inner();
+        let expr = self.visit_cond_expr(inner.next().unwrap());
 
-    argv.push(visit_word(argv0));
-    for word_or_redirect in args {
-        match word_or_redirect.as_rule() {
-            Rule::word => argv.push(visit_word(word_or_redirect)),
-            Rule::redirect => redirects.push(visit_redirect(word_or_redirect)),
+        Command::Cond(expr)
+    }
+
+    // word = ${ (tilde_span | span) ~ span* }
+    // span = _{
+    //     double_quoted_span
+    //     | single_quoted_span
+    //     | literal_span
+    //     | any_string_span
+    //     | any_char_span
+    //     | expr_span
+    //     | command_span
+    //     | backtick_span
+    //     | param_ex_span
+    //     | param_span
+    // }
+    fn visit_word(&mut self, pair: Pair<Rule>) -> Word {
+        assert_eq!(pair.as_rule(), Rule::word);
+
+        let mut spans = Vec::new();
+        for span in pair.into_inner() {
+            match span.as_rule() {
+                Rule::literal_span => {
+                    spans.push(Span::Literal(self.visit_escape_sequences(span, None)));
+                },
+                Rule::double_quoted_span => {
+                    for span_in_quote in span.into_inner() {
+                        match span_in_quote.as_rule() {
+                            Rule::literal_in_double_quoted_span => {
+                                spans.push(Span::Literal(self.visit_escape_sequences(span_in_quote, Some("\"`$"))));
+                            }
+                            Rule::backtick_span => spans.push(self.visit_command_span(span_in_quote, true)),
+                            Rule::command_span => spans.push(self.visit_command_span(span_in_quote, true)),
+                            Rule::param_span => spans.push(self.visit_param_span(span_in_quote, true)),
+                            Rule::param_ex_span => spans.push(self.visit_param_ex_span(span_in_quote, true)),
+                            _ => unreachable!(),
+                        }
+                    }
+                },
+                Rule::single_quoted_span => {
+                    for span_in_quote in span.into_inner() {
+                        match span_in_quote.as_rule() {
+                            Rule::literal_in_single_quoted_span => {
+                                spans.push(Span::Literal(span_in_quote.as_str().to_owned()));
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                },
+                Rule::expr_span => spans.push(self.visit_expr_span(span)),
+                Rule::param_span => spans.push(self.visit_param_span(span, false)),
+                Rule::param_ex_span => spans.push(self.visit_param_ex_span(span, false)),
+                Rule::backtick_span => spans.push(self.visit_command_span(span, false)),
+                Rule::command_span => spans.push(self.visit_command_span(span, false)),
+                Rule::proc_subst_span => spans.push(self.visit_proc_subst_span(span)),
+                Rule::tilde_span => {
+                    let username = span.into_inner().next().map(|p| p.as_span().as_str().to_owned());
+                    spans.push(Span::Tilde(username));
+                },
+                Rule::any_string_span => {
+                    spans.push(Span::AnyString { quoted: false });
+                },
+                Rule::any_char_span => {
+                    spans.push(Span::AnyChar { quoted: false });
+                },
+                _ => {
+                    println!("unimpl: {:?}", span);
+                    unimplemented!();
+                },
+            }
+        }
+
+        Word(spans)
+    }
+
+    // fd = { ASCII_DIGIT+ }
+    // redirect_direction = { "<" | ">" | ">>" }
+    // redirect_to_fd = ${ "&" ~ ASCII_DIGIT* }
+    // redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
+    fn visit_redirect(&mut self, pair: Pair<Rule>) -> Redirection {
+        let mut inner = pair.into_inner();
+        let fd     = inner.next().unwrap();
+        let symbol = inner.next().unwrap();
+        let target = inner.next().unwrap();
+
+        let (direction, default_fd) = match symbol.as_span().as_str() {
+            "<" => (RedirectionDirection::Input, 0),
+            ">" => (RedirectionDirection::Output, 1),
+            ">>" => (RedirectionDirection::Append, 1),
+            _ => unreachable!(),
+        };
+
+        let fd = fd.as_span().as_str().parse().unwrap_or(default_fd);
+        let target = match target.as_rule() {
+            Rule::word => RedirectionType::File(self.visit_word(target)),
+            Rule::redirect_to_fd => {
+                let target_fd = target.into_inner().next().unwrap().as_span().as_str().parse().unwrap();
+                RedirectionType::Fd(target_fd)
+            },
+            _ => unreachable!()
+        };
+
+        Redirection {
+            fd,
+            direction,
+            target,
+        }
+    }
+
+    // assignment = { var_name ~ index ~ "=" ~ initializer ~ WHITESPACE? }
+    // index = { ("[" ~ expr ~ "]")? }
+    // initializer = { array_initializer | string_initializer }
+    // string_initializer = { word }
+    // array_initializer = { ("(" ~ word* ~ ")") }
+    fn visit_assignment(&mut self, pair: Pair<Rule>) -> Assignment {
+        let mut inner = pair.into_inner();
+
+        let name = inner.next().unwrap().as_span().as_str().to_owned();
+        let index = inner.next().unwrap().into_inner().next().map(|p| self.visit_expr(p));
+        let initializer = inner.next().unwrap().into_inner().next().unwrap();
+        match initializer.as_rule() {
+            Rule::string_initializer => {
+                let word = Initializer::String(self.visit_word(initializer.into_inner().next().unwrap()));
+                Assignment { name, initializer: word, index }
+            },
+            Rule::array_initializer => {
+                let word = Initializer::Array(initializer.into_inner().map(|p| self.visit_word(p)).collect());
+                let index = None;
+                Assignment { name, initializer: word, index }
+            },
             _ => unreachable!()
         }
     }
 
-    let mut assignments = Vec::new();
-    for assignment in assignments_pairs {
-        assignments.push(visit_assignment(assignment));
+    fn fetch_and_add_heredoc_index(&mut self) -> usize {
+        let old = self.next_heredoc_index;
+        self.next_heredoc_index += 1;
+        old
     }
 
-    Command::SimpleCommand {
-        argv,
-        redirects,
-        assignments,
-    }
-}
+    fn visit_simple_command(&mut self, pair: Pair<Rule>) -> Command {
+        assert_eq!(pair.as_rule(), Rule::simple_command);
 
-// if_command = {
-//     "if" ~ compound_list ~
-//     "then" ~ compound_list ~
-//     elif_part* ~
-//     else_part? ~
-//     "fi"
-// }
-// elif_part = { "elif" ~ compound_list ~ "then" ~ compound_list }
-// else_part = { "else" ~ compound_list }
-fn visit_if_command(pair: Pair<Rule>) -> Command {
-    assert_eq!(pair.as_rule(), Rule::if_command);
+        let mut argv = Vec::new();
+        let mut redirects = Vec::new();
 
-    let mut inner = pair.into_inner();
-    let condition = visit_compound_list(inner.next().unwrap());
-    let then_part = visit_compound_list(inner.next().unwrap());
-    let mut elif_parts = Vec::new();
-    let mut else_part = None;
-    for elif in inner {
-        match elif.as_rule() {
-            Rule::elif_part => {
-                let mut inner = elif.into_inner();
-                let condition = visit_compound_list(inner.next().unwrap());
-                let then_part = visit_compound_list(inner.next().unwrap());
-                elif_parts.push(ElIf { condition, then_part });
-            },
-            Rule::else_part => {
-                let mut inner = elif.into_inner();
-                let body = visit_compound_list(inner.next().unwrap());
-                else_part = Some(body);
-            },
-            _ => unreachable!(),
-        }
-    }
+        let mut inner = pair.into_inner();
+        let assignments_pairs = inner.next().unwrap().into_inner();
+        let argv0 = inner.next().unwrap().into_inner().next().unwrap();
+        let args = inner.next().unwrap().into_inner();
 
-    Command::If {
-        condition,
-        then_part,
-        elif_parts,
-        else_part,
-        redirects: vec![] // TODO:
-    }
-}
-
-// patterns = { word ~ ("|" ~ patterns)* }
-// case_item = {
-//     !("esac") ~ patterns ~ ")" ~ compound_list ~ ";;"
-// }
-//
-// case_command = {
-//     "case" ~ word ~ "in" ~ (wsnl | case_item)* ~ "esac"
-// }
-fn visit_case_command(pair: Pair<Rule>) -> Command {
-    let mut inner = pair.into_inner();
-    let word = visit_word(inner.next().unwrap());
-    let mut cases = Vec::new();
-    for case in inner {
-        match case.as_rule() {
-            Rule::case_item => {
-                let mut inner = case.into_inner();
-                let patterns = inner.next().unwrap().into_inner().map(visit_word).collect();
-                let body = visit_compound_list(inner.next().unwrap());
-                cases.push(CaseItem { patterns, body });
-            },
-            _ => unreachable!(),
-        }
-    }
-
-    Command::Case { word, cases }
-}
-
-// while_command = {
-//     "while" ~ compound_list ~ "do" ~ compound_list ~ "done"
-// }
-fn visit_while_command(pair: Pair<Rule>) -> Command {
-    let mut inner = pair.into_inner();
-    let condition = visit_compound_list(inner.next().unwrap());
-    let body = visit_compound_list(inner.next().unwrap());
-
-    Command::While {
-        condition,
-        body,
-    }
-}
-
-// word_list = { word* }
-// for_command = {
-//     "for" ~ var_name ~ "in" ~ word_list ~ "do" ~ compound_list ~ "done"
-// }
-fn visit_for_command(pair: Pair<Rule>) -> Command {
-    let mut inner = pair.into_inner();
-    let var_name = inner.next().unwrap().as_span().as_str().to_owned();
-    let words = inner.next().unwrap().into_inner().map(visit_word).collect();
-    let body = visit_compound_list(inner.next().unwrap());
-
-    Command::For {
-        var_name,
-        words,
-        body,
-    }
-}
-
-// function_definition = {
-//     ("function")? ~ var_name ~ "()" ~ wsnl ~ compound_list
-// }
-fn visit_function_definition(pair: Pair<Rule>) -> Command {
-    let mut inner = pair.into_inner();
-    let name = inner.next().unwrap().as_span().as_str().to_owned();
-    let body = Box::new(visit_command(inner.next().unwrap()));
-
-    Command::FunctionDef {
-        name,
-        body,
-    }
-}
-
-// local_definition = { "local" ~ (assignment | var_name)+ }
-fn visit_local_definition(pair: Pair<Rule>) -> Command {
-    let mut declarations = Vec::new();
-    for inner in pair.into_inner() {
-        declarations.push(match inner.as_rule() {
-            Rule::assignment => LocalDeclaration::Assignment(visit_assignment(inner)),
-            Rule::var_name => LocalDeclaration::Name(inner.as_span().as_str().to_owned()),
-            _ => unreachable!(),
-        });
-    }
-
-    Command::LocalDef { declarations }
-}
-
-// assignment_command = { assignment+ }
-fn visit_assignment_command(pair: Pair<Rule>) -> Command {
-    let assignments = pair.into_inner().map(visit_assignment).collect();
-    Command::Assignment { assignments }
-}
-
-// group = { "{" ~ compound_list ~ "}" }
-fn visit_group_command(pair: Pair<Rule>) -> Command {
-    let mut inner = pair.into_inner();
-    let terms = visit_compound_list(inner.next().unwrap());
-
-    Command::Group { terms }
-}
-
-// return = { return ~ num? }
-fn visit_return_command(pair: Pair<Rule>) -> Command {
-    let mut inner = pair.into_inner();
-    let status = inner.next().map(|status| status.as_span().as_str().parse().unwrap());
-
-    Command::Return { status }
-}
-
-// command = {
-//     if_command
-//     | case_command
-//     | while_command
-//     | for_command
-//     | break_command
-//     | continue_command
-//     | return_command
-//     | local_definition
-//     | function_definition
-//     | group
-//     | cond_ex
-//     | simple_command
-//     | assignment_command
-// }
-fn visit_command(pair: Pair<Rule>) -> Command {
-    let inner = pair.into_inner().next().unwrap();
-    match inner.as_rule() {
-        Rule::simple_command => { visit_simple_command(inner) },
-        Rule::if_command => { visit_if_command(inner) },
-        Rule::while_command => { visit_while_command(inner) },
-        Rule::for_command => { visit_for_command(inner) },
-        Rule::case_command => { visit_case_command(inner) },
-        Rule::group => { visit_group_command(inner) },
-        Rule::break_command => { Command::Break },
-        Rule::continue_command => { Command::Continue },
-        Rule::return_command => { visit_return_command(inner) },
-        Rule::assignment_command => { visit_assignment_command(inner) },
-        Rule::local_definition => { visit_local_definition(inner) },
-        Rule::function_definition => { visit_function_definition(inner) },
-        Rule::cond_ex => { visit_cond_ex(inner) },
-        _ => unreachable!()
-    }
-}
-
-// pipeline = { command ~ ((!("||") ~ "|") ~ wsnl? ~ command)* }
-fn visit_pipeline(pair: Pair<Rule>) -> Vec<Command> {
-    let mut commands = Vec::new();
-    for command in pair.into_inner() {
-        commands.push(visit_command(command));
-    }
-
-    commands
-}
-
-// and_or_list = { pipeline ~ (and_or_list_sep ~ wsnl? ~ and_or_list)* }
-// and_or_list_sep = { "||" | "&&" }
-fn visit_and_or_list(pair: Pair<Rule>, run_if: RunIf) -> Vec<Pipeline> {
-    let mut terms = Vec::new();
-    let mut inner = pair.into_inner();
-    if let Some(pipeline) = inner.next() {
-        let commands = visit_pipeline(pipeline);
-        terms.push(Pipeline {
-            commands,
-            run_if
-        });
-
-        let next_run_if = inner.next().map(|sep| {
-            match sep.as_span().as_str() {
-                "||" => RunIf::Failure,
-                "&&" => RunIf::Success,
-                _ => RunIf::Always,
+        argv.push(self.visit_word(argv0));
+        for word_or_redirect in args {
+            match word_or_redirect.as_rule() {
+                Rule::word => argv.push(self.visit_word(word_or_redirect)),
+                Rule::redirect => redirects.push(self.visit_redirect(word_or_redirect)),
+                Rule::heredoc => {
+                    redirects.push(Redirection {
+                        fd: 0, // stdin
+                        direction: RedirectionDirection::Input,
+                        target: RedirectionType::UnresolvedHereDoc(self.fetch_and_add_heredoc_index())
+                    });
+                }
+                _ => unreachable!()
             }
-        }).unwrap_or(RunIf::Always);
+        }
 
-        if let Some(rest) = inner.next() {
-            terms.extend(visit_and_or_list(rest, next_run_if));
+        let mut assignments = Vec::new();
+        for assignment in assignments_pairs {
+            assignments.push(self.visit_assignment(assignment));
+        }
+
+        Command::SimpleCommand {
+            argv,
+            redirects,
+            assignments,
         }
     }
 
-    terms
-}
+    // if_command = {
+    //     "if" ~ compound_list ~
+    //     "then" ~ compound_list ~
+    //     elif_part* ~
+    //     else_part? ~
+    //     "fi"
+    // }
+    // elif_part = { "elif" ~ compound_list ~ "then" ~ compound_list }
+    // else_part = { "else" ~ compound_list }
+    fn visit_if_command(&mut self, pair: Pair<Rule>) -> Command {
+        assert_eq!(pair.as_rule(), Rule::if_command);
 
-// compound_list = { compound_list_inner ~ (compound_list_sep ~ wsnl? ~ compound_list)* }
-// compound_list_sep = { (!(";;") ~ ";") | !("&&") ~ "&" | "\n" }
-// empty_line = { "" }
-// compound_list_inner = _{ and_or_list | empty_line }
-fn visit_compound_list(pair: Pair<Rule>) -> Vec<Term> {
-    let mut terms = Vec::new();
-    let mut inner = pair.into_inner();
-    if let Some(and_or_list) = inner.next() {
-        let background = inner.next().map(|s| s.as_str() == "&").unwrap_or(false);
-        let rest = inner.next();
+        let mut inner = pair.into_inner();
+        let condition = self.visit_compound_list(inner.next().unwrap());
+        let then_part = self.visit_compound_list(inner.next().unwrap());
+        let mut elif_parts = Vec::new();
+        let mut else_part = None;
+        for elif in inner {
+            match elif.as_rule() {
+                Rule::elif_part => {
+                    let mut inner = elif.into_inner();
+                    let condition = self.visit_compound_list(inner.next().unwrap());
+                    let then_part = self.visit_compound_list(inner.next().unwrap());
+                    elif_parts.push(ElIf { condition, then_part });
+                },
+                Rule::else_part => {
+                    let mut inner = elif.into_inner();
+                    let body = self.visit_compound_list(inner.next().unwrap());
+                    else_part = Some(body);
+                },
+                _ => unreachable!(),
+            }
+        }
 
-        if and_or_list.as_rule() == Rule::and_or_list {
-            let code = and_or_list.as_str().to_owned().trim().to_owned();
-            let pipelines = visit_and_or_list(and_or_list, RunIf::Always);
-            terms.push(Term {
-                code,
-                pipelines,
-                background,
+        Command::If {
+            condition,
+            then_part,
+            elif_parts,
+            else_part,
+            redirects: vec![] // TODO:
+        }
+    }
+
+    // patterns = { word ~ ("|" ~ patterns)* }
+    // case_item = {
+    //     !("esac") ~ patterns ~ ")" ~ compound_list ~ ";;"
+    // }
+    //
+    // case_command = {
+    //     "case" ~ word ~ "in" ~ (wsnl | case_item)* ~ "esac"
+    // }
+    fn visit_case_command(&mut self, pair: Pair<Rule>) -> Command {
+        let mut inner = pair.into_inner();
+        let word = self.visit_word(inner.next().unwrap());
+        let mut cases = Vec::new();
+        while let Some(case) = wsnl!(self, inner) {
+            match case.as_rule() {
+                Rule::case_item => {
+                    let mut inner = case.into_inner();
+                    let patterns = inner.next().unwrap().into_inner().map(|w| self.visit_word(w)).collect();
+                    let body = self.visit_compound_list(inner.next().unwrap());
+                    cases.push(CaseItem { patterns, body });
+                },
+                Rule::newline => self.visit_newline(case),
+                _ => unreachable!(),
+            }
+        }
+
+        Command::Case { word, cases }
+    }
+
+    // while_command = {
+    //     "while" ~ compound_list ~ "do" ~ compound_list ~ "done"
+    // }
+    fn visit_while_command(&mut self, pair: Pair<Rule>) -> Command {
+        let mut inner = pair.into_inner();
+        let condition = self.visit_compound_list(inner.next().unwrap());
+        let body = self.visit_compound_list(inner.next().unwrap());
+
+        Command::While {
+            condition,
+            body,
+        }
+    }
+
+    // word_list = { word* }
+    // for_command = {
+    //     "for" ~ var_name ~ "in" ~ word_list ~ "do" ~ compound_list ~ "done"
+    // }
+    fn visit_for_command(&mut self, pair: Pair<Rule>) -> Command {
+        let mut inner = pair.into_inner();
+        let var_name = inner.next().unwrap().as_span().as_str().to_owned();
+        let words = inner.next().unwrap().into_inner().map(|w| self.visit_word(w)).collect();
+        let compound_list = wsnl!(self, inner).unwrap();
+        let body = self.visit_compound_list(compound_list);
+
+        Command::For {
+            var_name,
+            words,
+            body,
+        }
+    }
+
+    // function_definition = {
+    //     ("function")? ~ var_name ~ "()" ~ wsnl ~ compound_list
+    // }
+    fn visit_function_definition(&mut self, pair: Pair<Rule>) -> Command {
+        let mut inner = pair.into_inner();
+        let name = inner.next().unwrap().as_span().as_str().to_owned();
+        let compound_list = wsnl!(self, inner).unwrap();
+        let body = Box::new(self.visit_command(compound_list));
+
+        Command::FunctionDef {
+            name,
+            body,
+        }
+    }
+
+    // local_definition = { "local" ~ (assignment | var_name)+ }
+    fn visit_local_definition(&mut self, pair: Pair<Rule>) -> Command {
+        let mut declarations = Vec::new();
+        for inner in pair.into_inner() {
+            declarations.push(match inner.as_rule() {
+                Rule::assignment => LocalDeclaration::Assignment(self.visit_assignment(inner)),
+                Rule::var_name => LocalDeclaration::Name(inner.as_span().as_str().to_owned()),
+                _ => unreachable!(),
             });
         }
 
-        if let Some(rest) = rest {
-            terms.extend(visit_compound_list(rest));
+        Command::LocalDef { declarations }
+    }
+
+    // assignment_command = { assignment+ }
+    fn visit_assignment_command(&mut self, pair: Pair<Rule>) -> Command {
+        let assignments = pair.into_inner().map(|inner| self.visit_assignment(inner)).collect();
+        Command::Assignment { assignments }
+    }
+
+    // group = { "{" ~ compound_list ~ "}" }
+    fn visit_group_command(&mut self, pair: Pair<Rule>) -> Command {
+        let mut inner = pair.into_inner();
+        let terms = self.visit_compound_list(inner.next().unwrap());
+
+        Command::Group { terms }
+    }
+
+    // return = { return ~ num? }
+    fn visit_return_command(&mut self, pair: Pair<Rule>) -> Command {
+        let mut inner = pair.into_inner();
+        let status = inner.next().map(|status| status.as_span().as_str().parse().unwrap());
+
+        Command::Return { status }
+    }
+
+    // command = {
+    //     if_command
+    //     | case_command
+    //     | while_command
+    //     | for_command
+    //     | break_command
+    //     | continue_command
+    //     | return_command
+    //     | local_definition
+    //     | function_definition
+    //     | group
+    //     | cond_ex
+    //     | simple_command
+    //     | assignment_command
+    // }
+    fn visit_command(&mut self, pair: Pair<Rule>) -> Command {
+        let inner = pair.into_inner().next().unwrap();
+        match inner.as_rule() {
+            Rule::simple_command => { self.visit_simple_command(inner) },
+            Rule::if_command => { self.visit_if_command(inner) },
+            Rule::while_command => { self.visit_while_command(inner) },
+            Rule::for_command => { self.visit_for_command(inner) },
+            Rule::case_command => { self.visit_case_command(inner) },
+            Rule::group => { self.visit_group_command(inner) },
+            Rule::break_command => { Command::Break },
+            Rule::continue_command => { Command::Continue },
+            Rule::return_command => { self.visit_return_command(inner) },
+            Rule::assignment_command => { self.visit_assignment_command(inner) },
+            Rule::local_definition => { self.visit_local_definition(inner) },
+            Rule::function_definition => { self.visit_function_definition(inner) },
+            Rule::cond_ex => { self.visit_cond_ex(inner) },
+            _ => unreachable!()
         }
     }
 
-    terms
-}
+    // pipeline = { command ~ ((!("||") ~ "|") ~ wsnl? ~ command)* }
+    fn visit_pipeline(&mut self, pair: Pair<Rule>) -> Vec<Command> {
+        let mut commands = Vec::new();
+        let mut inner = pair.into_inner();
+        while let Some(command) = wsnl!(self, inner) {
+            commands.push(self.visit_command(command));
+        }
 
-/// Builds an AST from given `pairs`.
-fn pairs2ast(mut pairs: Pairs<Rule>) -> Ast {
-    let compound_list = pairs.next().unwrap();
-    Ast { terms: visit_compound_list(compound_list) }
-}
+        commands
+    }
 
-/// Parses a shell script.
-pub fn parse(script: &str) -> Result<Ast, ParseError> {
-    match ShellParser::parse(Rule::script, script) {
-        Ok(pairs) => {
-            let ast = pairs2ast(pairs);
-            if ast.terms.is_empty() {
-                Err(ParseError::Empty)
-            } else {
-                Ok(ast)
+    // and_or_list = { pipeline ~ (and_or_list_sep ~ wsnl? ~ and_or_list)* }
+    // and_or_list_sep = { "||" | "&&" }
+    fn visit_and_or_list(&mut self, pair: Pair<Rule>, run_if: RunIf) -> Vec<Pipeline> {
+        let mut terms = Vec::new();
+        let mut inner = pair.into_inner();
+        if let Some(pipeline) = inner.next() {
+            let commands = self.visit_pipeline(pipeline);
+            terms.push(Pipeline {
+                commands,
+                run_if
+            });
+
+            let next_run_if = inner.next().map(|sep| {
+                match sep.as_span().as_str() {
+                    "||" => RunIf::Failure,
+                    "&&" => RunIf::Success,
+                    _ => RunIf::Always,
+                }
+            }).unwrap_or(RunIf::Always);
+
+            if let Some(rest) = wsnl!(self, inner) {
+                terms.extend(self.visit_and_or_list(rest, next_run_if));
             }
         }
-        Err(err) => {
-            Err(ParseError::Fatal(err.to_string()))
+
+        terms
+    }
+
+    // compound_list = { compound_list_inner ~ (compound_list_sep ~ wsnl? ~ compound_list)* }
+    // compound_list_sep = { (!(";;") ~ ";") | !("&&") ~ "&" | "\n" }
+    // empty_line = { "" }
+    // compound_list_inner = _{ and_or_list | empty_line }
+    fn visit_compound_list(&mut self, pair: Pair<Rule>) -> Vec<Term> {
+        let mut terms = Vec::new();
+        let mut inner = pair.into_inner();
+        if let Some(and_or_list) = inner.next() {
+            let mut background = false;
+            let mut rest = None;
+            while let Some(sep_or_rest) = wsnl!(self, inner) {
+                match sep_or_rest.as_rule() {
+                    Rule::compound_list => {
+                        rest = Some(sep_or_rest);
+                        break;
+                    },
+                    _ => {
+                        let sep = sep_or_rest.into_inner().next().unwrap();
+                        match sep.as_rule() {
+                            Rule::background => {
+                                background = true;
+                            },
+                            Rule::newline => {
+                                self.visit_newline(sep);
+                            },
+                            Rule::seq_sep => (),
+                            _ => (),
+                        }
+                    }
+                }
+            }
+
+            if and_or_list.as_rule() == Rule::and_or_list {
+                let code = and_or_list.as_str().to_owned().trim().to_owned();
+                let pipelines = self.visit_and_or_list(and_or_list, RunIf::Always);
+                terms.push(Term {
+                    code,
+                    pipelines,
+                    background,
+                });
+            }
+
+            if let Some(rest) = rest {
+                terms.extend(self.visit_compound_list(rest));
+            }
         }
+
+        terms
+    }
+
+    pub fn visit_newline(&mut self, pair: Pair<Rule>) {
+        if let Some(newline_inner) = pair.into_inner().next() {
+           match newline_inner.as_rule() {
+               Rule::heredoc_body => {
+                   let lines: Vec<Vec<Word>> = newline_inner
+                       .into_inner()
+                       .map(|line| line.into_inner().map(|w| self.visit_word(w)).collect())
+                       .collect();
+                   self.heredocs.push(HereDoc(lines));
+               },
+               _ => (),
+           }
+        }
+    }
+
+    /// Replaces all `UnresolvedHereDoc` with `HereDoc`.
+    pub fn resolve_heredocs(&self, ast: Ast) -> Ast {
+        let mut new_terms = Vec::new();
+        for term in ast.terms {
+            let mut new_pipelines = Vec::new();
+            for pipeline in term.pipelines {
+                let mut new_commands = Vec::new();
+                for command in pipeline.commands {
+                    match command {
+                        Command::SimpleCommand { argv, redirects, assignments } => {
+                            let mut new_redirects = Vec::new();
+                            for redirect in redirects {
+                                match redirect.target {
+                                    RedirectionType::UnresolvedHereDoc(index) => {
+                                        new_redirects.push(Redirection {
+                                            fd: 0, // stdin
+                                            direction: RedirectionDirection::Input,
+                                            target: RedirectionType::HereDoc(self.heredocs[index].clone())
+                                        })
+                                    },
+                                    _ => new_redirects.push(redirect)
+                                }
+                            }
+
+                            new_commands.push(Command::SimpleCommand {
+                                argv,
+                                redirects: new_redirects,
+                                assignments,
+                            })
+                        }
+                        _ => new_commands.push(command)
+                    }
+                }
+
+                new_pipelines.push(Pipeline {
+                    run_if: pipeline.run_if,
+                    commands: new_commands,
+                });
+            }
+
+            new_terms.push(Term {
+                code: term.code,
+                background: term.background,
+                pipelines: new_pipelines,
+            });
+        }
+
+        Ast { terms: new_terms }
+    }
+
+    /// Parses a shell script.
+    pub fn parse(&mut self, script: &str) -> Result<Ast, ParseError> {
+        match PestShellParser::parse(Rule::script, script) {
+            Ok(mut pairs) => {
+                let terms = self.visit_compound_list(pairs.next().unwrap());
+
+                if terms.is_empty() {
+                    Err(ParseError::Empty)
+                } else {
+                    Ok(self.resolve_heredocs(Ast { terms }))
+                }
+            }
+            Err(err) => {
+                Err(ParseError::Fatal(err.to_string()))
+            }
+        }
+    }
+
+    /// Dumps the parsed pairs for debbuging.
+    #[allow(unused)]
+    fn dump(&mut self, pairs: pest::iterators::Pairs<Rule>, level: usize) {
+        for pair in pairs {
+            for _ in 0..level {
+                print!("  ");
+            }
+            println!("{}{}{}{:?}{}: {:?}",
+                style::Reset, style::Bold, Fg(color::Magenta),
+                pair.as_rule(), style::Reset, pair.as_span().as_str());
+
+            self.dump(pair.into_inner(), level + 1);
+        }
+    }
+
+    /// Parses and dumps a shell  script for debbuging.
+    #[allow(unused)]
+    pub fn parse_and_dump(&mut self, script: &str) {
+        let merged_script = script.to_string().replace("\\\n", "");
+        let pairs = PestShellParser::parse(Rule::script, &merged_script).unwrap_or_else(|e| panic!("{}", e));
+        self.dump(pairs, 0);
     }
 }
 
-/// Dumps the parsed pairs for debbuging.
-#[allow(unused)]
-fn dump(pairs: pest::iterators::Pairs<Rule>, level: usize) {
-    for pair in pairs {
-        for _ in 0..level {
-            print!("  ");
-        }
-        println!("{}{}{}{:?}{}: {:?}",
-            style::Reset, style::Bold, Fg(color::Magenta),
-            pair.as_rule(), style::Reset, pair.as_span().as_str());
-
-        dump(pair.into_inner(), level + 1);
-    }
+pub fn parse(script: &str) -> Result<Ast, ParseError> {
+    let mut parser = ShellParser::new();
+    parser.parse(script)
 }
 
-/// Parses and dumps a shell  script for debbuging.
-#[allow(unused)]
-pub fn parse_and_dump(script: &str) {
-    let merged_script = script.to_string().replace("\\\n", "");
-    let pairs = ShellParser::parse(Rule::script, &merged_script).unwrap_or_else(|e| panic!("{}", e));
-    dump(pairs, 0);
-}
 
 #[allow(unused)]
 macro_rules! literal_word_vec {
@@ -2620,6 +2771,56 @@ pub fn test_cond_ex() {
                                         ))
                                     )
                                 ))
+                            ]
+                        }
+                    ],
+                },
+            ]
+        })
+    );
+}
+
+#[test]
+pub fn test_heredoc() {
+    assert_eq!(
+        parse(concat!(
+            "cat << EOF > file.txt\n",
+            "hello world\n",
+            "from\n",
+            "heredoc!\n",
+            "EOF\n"
+        )),
+        Ok(Ast {
+            terms: vec![
+                Term {
+                    code: "cat << EOF > file.txt".into(),
+                    background: false,
+                    pipelines: vec![
+                        Pipeline {
+                            run_if: RunIf::Always,
+                            commands: vec![
+                                Command::SimpleCommand {
+                                    argv: vec![
+                                        lit!("cat")
+                                    ],
+                                    redirects: vec![
+                                        Redirection {
+                                            fd: 0,
+                                            direction: RedirectionDirection::Input,
+                                            target: RedirectionType::HereDoc(HereDoc(vec![
+                                                vec![lit!("hello"), lit!("world")],
+                                                vec![lit!("from")],
+                                                vec![lit!("heredoc!")],
+                                            ])),
+                                        },
+                                        Redirection {
+                                            fd: 1,
+                                            direction: RedirectionDirection::Output,
+                                            target: RedirectionType::File(lit!("file.txt")),
+                                        }
+                                    ],
+                                    assignments: vec![],
+                                }
                             ]
                         }
                     ],

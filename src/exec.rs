@@ -3,7 +3,7 @@ use crate::completion::{CompSpec, cmd_completion, path_completion};
 use crate::context_parser::Asa;
 use crate::parser::{
     self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer,
-    LocalDeclaration, Assignment, ProcSubstType, CondExpr
+    LocalDeclaration, Assignment, ProcSubstType, CondExpr, HereDoc
 };
 use crate::path::{lookup_external_command,wait_for_path_loader};
 use crate::variable::{Variable, Value};
@@ -1147,6 +1147,31 @@ impl Isolate {
         self.states.get(&pid)
     }
 
+    fn evaluate_heredoc(&mut self, heredoc: &HereDoc) -> Result<RawFd> {
+        let mut lines = Vec::new();
+        for line in heredoc.lines() {
+            let mut words = Vec::new();
+            for word in line {
+                words.push(self.expand_word_into_string(word)?);
+            }
+
+            lines.push(words.join(" "));
+        }
+
+        let mut body = lines.join("\n");
+        body += "\n";
+
+        let (pipe_out, pipe_in) = pipe().expect("failed to create a pipe");
+        unsafe {
+            let mut file = File::from_raw_fd(pipe_in);
+            file.write_all(body.as_bytes()).ok();
+            // Ensure that pipe_in is closed.
+            drop(file);
+        };
+
+        Ok(pipe_out)
+    }
+
     /// Spawn a child process and execute a command.
     fn run_external_command(
         &mut self,
@@ -1183,6 +1208,13 @@ impl Isolate {
                         warn!("failed to open file: `{}'", filepath);
                         return Ok(ExitStatus::ExitedWith(1));
                     }
+                }
+                parser::RedirectionType::HereDoc(ref heredoc) => {
+                    fds.push((self.evaluate_heredoc(heredoc)?, r.fd as RawFd))
+                }
+                parser::RedirectionType::UnresolvedHereDoc(_) => {
+                    // must be resolved in the parser
+                    unreachable!()
                 }
             }
         }
@@ -1341,6 +1373,19 @@ impl Isolate {
                         warn!("failed to open file: `{}'", filepath);
                         return Err(Error::from(InternalCommandError::BadRedirection));
                     }
+                }
+                parser::RedirectionType::HereDoc(ref heredoc) => {
+                    let pipe_out = self.evaluate_heredoc(heredoc)?;
+                    match r.fd {
+                        0 => stdin = pipe_out,
+                        _ => unreachable!(),
+                    }
+
+                    opened_fds.push(pipe_out);
+                }
+                parser::RedirectionType::UnresolvedHereDoc(_) => {
+                    // must be resolved in the parser
+                    unreachable!()
                 }
             }
         }
