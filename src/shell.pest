@@ -1,7 +1,7 @@
 //
 //  Misc.
 //
-WHITESPACE = _{ " " | "\t" | "\r" | "\\\n" } // TODO: remove \\\n
+WHITESPACE = _{ " " | "\t" | "\r" }
 COMMENT = _{ "#" ~ (!("\n") ~ ANY)* }
 word_chars = _{
     !(
