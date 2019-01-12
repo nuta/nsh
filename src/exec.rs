@@ -913,7 +913,7 @@ impl Isolate {
             .map(|w| w.into_string())
             .collect();
 
-        Ok(ws.join(" "))
+        Ok(ws.join(""))
     }
 
     /// Expands words into a `Vec<String>`. A pattern in a word are expanded as a
