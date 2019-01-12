@@ -140,7 +140,7 @@ heredoc = { "<<" ~ PUSH(heredoc_marker) }
 newline = {
     // Entering a here document. Use `PEEK_ALL` instead of `PEEK` to
     // prevent a panic on an empty stack. `(PEEK_ALL)` succeeds if
-    // the stack is empty since PEEK_ALLS equals "". `!(PEEK_ALL) suceeeds
+    // the stack is empty since PEEK_ALLS equals "". `!(PEEK_ALL)` suceeeds
     // otherwise (i.e., there is a here document thus the stack is not empty).
     //
     // TODO: support multiple here documents for example:
