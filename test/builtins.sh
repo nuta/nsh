@@ -18,10 +18,12 @@ func1() {
 func1 a b "c d"
 
 echo "unset --------------"
-foo=123
+bar=123
+eval foo=$bar
 echo $foo
 unset foo
 echo $foo
 
+echo exit
 exit 0
 echo unreachable

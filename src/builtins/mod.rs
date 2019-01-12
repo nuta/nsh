@@ -8,6 +8,7 @@ mod cd;
 mod echo;
 mod exit;
 mod export;
+mod eval;
 mod source;
 mod set;
 mod fg;
@@ -75,6 +76,7 @@ lazy_static! {
         commands.insert("popd", crate::builtins::popd::command);
         commands.insert("complete", crate::builtins::complete::command);
         commands.insert("compgen", crate::builtins::compgen::command);
+        commands.insert("eval", crate::builtins::eval::command);
         commands
     };
 }
