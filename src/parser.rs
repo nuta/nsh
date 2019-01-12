@@ -966,15 +966,12 @@ impl ShellParser {
 
     pub fn visit_newline(&mut self, pair: Pair<Rule>) {
         if let Some(newline_inner) = pair.into_inner().next() {
-           match newline_inner.as_rule() {
-               Rule::heredoc_body => {
-                   let lines: Vec<Vec<Word>> = newline_inner
-                       .into_inner()
-                       .map(|line| line.into_inner().map(|w| self.visit_word(w)).collect())
-                       .collect();
-                   self.heredocs.push(HereDoc(lines));
-               },
-               _ => (),
+           if Rule::heredoc_body == newline_inner.as_rule() {
+                let lines: Vec<Vec<Word>> = newline_inner
+                    .into_inner()
+                    .map(|line| line.into_inner().map(|w| self.visit_word(w)).collect())
+                    .collect();
+                self.heredocs.push(HereDoc(lines));
            }
         }
     }

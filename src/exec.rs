@@ -561,7 +561,7 @@ impl Isolate {
             ("COMP_CWORD", Value::String(current_word_index))
         ];
 
-        match self.call_function_in_shell_context(func_name, &vec![], locals) {
+        match self.call_function_in_shell_context(func_name, &[], locals) {
             Ok(ExitStatus::ExitedWith(0)) => {
                 self.get("COMPREPLY")
                     .and_then(|reply| {
@@ -1045,7 +1045,7 @@ impl Isolate {
 
     pub fn run_in_background(&mut self, job: &Arc<Job>, sigcont: bool) {
         self.last_back_job = Some(job.clone());
-        self.background_jobs.insert(job.id.clone());
+        self.background_jobs.insert(job.id);
 
         if sigcont {
             kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
@@ -1077,7 +1077,7 @@ impl Isolate {
     pub fn check_background_jobs(&mut self) {
         while let Some(pid) = self.wait_for_any_process(true) {
             // This `get` won't return None.
-            let job = self.pid_job_mapping.get(&pid).unwrap().clone();
+            let job = &self.pid_job_mapping[&pid].clone();
             if job.completed(self) {
                 self.destroy_job(&job);
             } else if job.stopped(self) {
