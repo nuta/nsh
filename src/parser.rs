@@ -1150,7 +1150,7 @@ pub fn test_simple_commands() {
     );
 
     assert_eq!(
-        parse("false || false && echo unreachable; echo u\\nreachable"),
+        parse("false || false && echo unreachable; echo \\\nreachable"),
         Ok(Ast {
             terms: vec![
                 Term {
@@ -1184,12 +1184,12 @@ pub fn test_simple_commands() {
                     ],
                 },
                 Term {
-                    code: "echo u\\nreachable".into(),
+                    code: "echo \\\nreachable".into(),
                     background: false,
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::SimpleCommand {
-                            argv: literal_word_vec!["echo", "unreachable"],
+                            argv: literal_word_vec!["echo", "reachable"],
                             redirects: vec![],
                             assignments: vec![],
                         }],
