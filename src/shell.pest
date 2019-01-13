@@ -1,7 +1,12 @@
 //
 //  Misc.
 //
-WHITESPACE = _{ " " | "\t" | "\r" | "\\\n" } // TODO: remove \\\n
+WHITESPACE = _{
+    " " | "\t" | "\r"
+    // A trailing backslash at the end of a line.
+    | "\\\n"
+}
+
 COMMENT = _{ "#" ~ (!("\n") ~ ANY)* }
 word_chars = _{
     !(
