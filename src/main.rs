@@ -59,11 +59,6 @@ use crate::config::Config;
 fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     let isolate_lock = Arc::new(Mutex::new(raw_isolate));
 
-    // Create a process group.
-    let pid = getpid();
-    setpgid(pid, pid).expect("failed to setpgid");
-    tcsetpgrp(0 /* stdin */, pid).expect("failed to tcsetpgrp");
-
     // Ignore job-control-related signals in order not to stop the shell.
     // (refer https://www.gnu.org/software/libc/manual)
     // Don't ignore SIGCHLD! If you ignore it waitpid(2) returns ECHILD.
@@ -121,27 +116,6 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     }
 }
 
-#[derive(StructOpt, Debug)]
-#[structopt(name="nsh", about="A command-line shell that focuses on performance and productivity.")]
-struct Opt {
-    /// Open the web-based configuration tool.
-    #[structopt(long = "config")]
-    open_config: bool,
-
-    /// Check your terminal environment.
-    #[structopt(long = "doctor")]
-    doctor: bool,
-
-    /// Run the given string.
-    #[structopt(short = "c")]
-    command: Option<String>,
-
-    /// Run the file.
-    #[structopt(name = "FILE", parse(from_os_str))]
-    file: Option<PathBuf>,
-}
-
-
 fn shell_main(opt: Opt) {
     // Load ~/.nshconfig.
     let home_dir = dirs::home_dir().unwrap();
@@ -184,6 +158,30 @@ fn shell_main(opt: Opt) {
         ExitStatus::NoExec=> process::exit(0),
         _ => panic!("unexpected {:?}", status),
     }
+}
+
+#[derive(StructOpt, Debug)]
+#[structopt(name="nsh", about="A command-line shell that focuses on performance and productivity.")]
+struct Opt {
+    /// Open the web-based configuration tool.
+    #[structopt(long = "config")]
+    open_config: bool,
+
+    /// Check your terminal environment.
+    #[structopt(long = "doctor")]
+    doctor: bool,
+
+    /// Run the given string.
+    #[structopt(short = "c")]
+    command: Option<String>,
+
+    /// Behave like a login shell.
+    #[structopt(short = "l", long = "login")]
+    login: bool,
+
+    /// Run the file.
+    #[structopt(name = "FILE", parse(from_os_str))]
+    file: Option<PathBuf>,
 }
 
 fn main() {
