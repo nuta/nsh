@@ -106,6 +106,12 @@ pub enum Command {
         words: Vec<Word>,
         body: Vec<Term>,
     },
+    ArithFor {
+        init: Expr,
+        cond: Expr,
+        update: Expr,
+        body: Vec<Term>,
+    },
     Break,
     Continue,
     Return {
@@ -195,9 +201,27 @@ pub enum Expr {
     Sub(BinaryExpr),
     Mul(BinaryExpr),
     Div(BinaryExpr),
+    Assign {
+        name: String,
+        rhs: Box<Expr>
+    },
     Literal(i32),
+
     // `foo` in $((foo + 1))
     Parameter { name: String },
+
+    // Conditions. Evaluated to 1 if it satistifies or 0 if not.
+    Eq(Box<Expr>, Box<Expr>),
+    Ne(Box<Expr>, Box<Expr>),
+    Lt(Box<Expr>, Box<Expr>),
+    Le(Box<Expr>, Box<Expr>),
+    Gt(Box<Expr>, Box<Expr>),
+    Ge(Box<Expr>, Box<Expr>),
+
+    // `i++` and `i--`
+    Inc(String),
+    Dec(String),
+
     Expr(Box<Expr>),
 }
 
@@ -341,10 +365,14 @@ impl ShellParser {
         Span::Parameter { name, op, quoted }
     }
 
-    // factor = { sign ~ primary }
+    // factor = { sign ~ primary ~ postfix_incdec }
+    // sign = { ("+" | "-")? }
+    // postfix_incdec = { ("++" | "--")? }
     // primary = _{ num | ("$"? ~ var_name) |  ("(" ~ expr ~ ")") }
     // num = { ASCII_DIGIT+ }
     fn visit_factor(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::factor);
+
         let mut inner = pair.into_inner();
         let sign = if inner.next().unwrap().as_span().as_str() == "-" {
             -1
@@ -360,7 +388,17 @@ impl ShellParser {
             },
             Rule::var_name => {
                 let name = primary.as_span().as_str().to_owned();
-                Expr::Parameter { name }
+                match inner.next() {
+                    Some(incdec) => {
+                        match incdec.as_span().as_str() {
+                            "++" => Expr::Inc(name),
+                            "--" => Expr::Dec(name),
+                            "" => Expr::Parameter { name },
+                            _ => unreachable!(),
+                        }
+                    }
+                    _ => Expr::Parameter { name }
+                }
             },
             Rule::expr => Expr::Expr(Box::new(self.visit_expr(primary))),
             _ => unreachable!(),
@@ -370,6 +408,8 @@ impl ShellParser {
     // term = { factor ~ (factor_op ~ expr)? }
     // factor_op = { "*" | "/" }
     fn visit_term(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::term);
+
         let mut inner = pair.into_inner();
         let lhs = self.visit_factor(inner.next().unwrap());
         if let Some(op) = inner.next() {
@@ -384,9 +424,11 @@ impl ShellParser {
         }
     }
 
-    // expr = { term ~ (term_op ~ expr)? }
-    // term_op = { "+" | "-" }
-    fn visit_expr(&mut self, pair: Pair<Rule>) -> Expr {
+    // arith = { term ~ (arith_op ~ arith)? }
+    // arith_op = { "+" | "-" }
+    fn visit_arith_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        assert_eq!(pair.as_rule(), Rule::arith);
+
         let mut inner = pair.into_inner();
         let lhs = self.visit_term(inner.next().unwrap());
         if let Some(op) = inner.next() {
@@ -398,6 +440,66 @@ impl ShellParser {
             }
         } else {
             lhs
+        }
+    }
+
+    // assign =
+    //        { var_name ~ assign_op ~ assign
+    //        | arith
+    //        }
+    // assign_op = { "=" }
+    fn visit_assign_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        let mut inner = pair.clone().into_inner();
+        let first = inner.next().unwrap();
+        match first.as_rule() {
+            Rule::var_name => {
+                let name = first.as_span().as_str().to_owned();
+                let op = inner.next().unwrap();
+                let rhs = self.visit_expr(inner.next().unwrap());
+                match op.as_span().as_str() {
+                    "=" => Expr::Assign { name, rhs: Box::new(rhs) },
+                    _ => unreachable!()
+                }
+            }
+            _ => {
+                match pair.as_rule() {
+                    Rule::assign => self.visit_arith_expr(first),
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
+    // expr = !{ assign ~ (comp_op ~ expr)? }
+    // comp_op = { "==" | "!=" | ">" | ">=" | "<" | "<=" }
+    fn visit_expr(&mut self, pair: Pair<Rule>) -> Expr {
+        let mut inner = pair.clone().into_inner();
+        let first = inner.next().unwrap();
+        let maybe_op = inner.next();
+
+        match pair.as_rule() {
+            Rule::assign => self.visit_assign_expr(pair),
+            Rule::arith => self.visit_arith_expr(pair),
+            Rule::term => self.visit_term(pair),
+            Rule::factor => self.visit_factor(pair),
+            Rule::expr => {
+                let lhs = self.visit_assign_expr(first);
+                if let Some(op) = maybe_op {
+                    let rhs = self.visit_expr(inner.next().unwrap());
+                    match op.as_span().as_str() {
+                        "==" => Expr::Eq(Box::new(lhs), Box::new(rhs)),
+                        "!=" => Expr::Ne(Box::new(lhs), Box::new(rhs)),
+                        ">"  => Expr::Gt(Box::new(lhs), Box::new(rhs)),
+                        ">=" => Expr::Ge(Box::new(lhs), Box::new(rhs)),
+                        "<"  => Expr::Lt(Box::new(lhs), Box::new(rhs)),
+                        "<=" => Expr::Le(Box::new(lhs), Box::new(rhs)),
+                        _ => unreachable!()
+                    }
+                } else {
+                    lhs
+                }
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -780,6 +882,28 @@ impl ShellParser {
         }
     }
 
+    // arith_for_exprs = { "((" ~ expr ~";" ~ expr ~ ";" ~ expr ~ "))" }
+    // arith_for_command = {
+    //     "for" ~ arith_for_exprs ~ (";" | wsnl)+ ~ "do" ~ compound_list ~ "done"
+    // }
+    fn visit_arith_for_command(&mut self, pair: Pair<Rule>) -> Command {
+        let mut inner = pair.into_inner();
+        let mut exprs = inner.next().unwrap().into_inner();
+        let compound_list = wsnl!(self, inner).unwrap();
+        let body = self.visit_compound_list(compound_list);
+
+        let init = self.visit_expr(exprs.next().unwrap());
+        let cond = self.visit_expr(exprs.next().unwrap());
+        let update = self.visit_expr(exprs.next().unwrap());
+
+        Command::ArithFor {
+            init,
+            cond,
+            update,
+            body,
+        }
+    }
+
     // function_definition = {
     //     ("function")? ~ var_name ~ "()" ~ wsnl ~ compound_list
     // }
@@ -860,6 +984,7 @@ impl ShellParser {
             Rule::simple_command => { self.visit_simple_command(inner) },
             Rule::if_command => { self.visit_if_command(inner) },
             Rule::while_command => { self.visit_while_command(inner) },
+            Rule::arith_for_command => { self.visit_arith_for_command(inner) },
             Rule::for_command => { self.visit_for_command(inner) },
             Rule::case_command => { self.visit_case_command(inner) },
             Rule::group => { self.visit_group_command(inner) },
@@ -2125,6 +2250,49 @@ pub fn test_compound_commands() {
                     }],
                 },
             ],
+        })
+    );
+
+    assert_eq!(
+        parse("for ((i = 0; i < 4; i++));\ndo echo $i\ndone"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "for ((i = 0; i < 4; i++));\ndo echo $i\ndone".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::ArithFor {
+                        init: Expr::Assign {
+                            name: "i".to_owned(),
+                            rhs: Box::new(Expr::Literal(0))
+                        },
+                        cond: Expr::Lt(
+                            Box::new(Expr::Parameter { name: "i".into() }),
+                            Box::new(Expr::Literal(4))
+                        ),
+                        update: Expr::Inc("i".to_owned()),
+                        body: vec![Term {
+                            code: "echo $i".into(),
+                            background: false,
+                            pipelines: vec![Pipeline {
+                                run_if: RunIf::Always,
+                                commands: vec![Command::SimpleCommand {
+                                    argv: vec![
+                                        Word(vec![Span::Literal("echo".into())]),
+                                        Word(vec![Span::Parameter {
+                                            name: "i".into(),
+                                            op: ExpansionOp::GetOrEmpty,
+                                            quoted: false,
+                                        }]),
+                                    ],
+                                    redirects: vec![],
+                                    assignments: vec![],
+                                }]
+                            }],
+                        }],
+                    }],
+                }],
+            }],
         })
     );
 }

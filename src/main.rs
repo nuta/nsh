@@ -1,5 +1,4 @@
 #![cfg_attr(test, feature(test))]
-#![cfg_attr(test, feature(extern_crate_item_prelude))]
 
 #[macro_use]
 extern crate log;
@@ -51,7 +50,6 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::{Arc, Mutex};
 use structopt::StructOpt;
-use nix::unistd::{getpid, setpgid, tcsetpgrp};
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
 use crate::exec::ExitStatus;
 use crate::config::Config;

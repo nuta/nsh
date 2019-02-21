@@ -30,12 +30,20 @@ num = ${ ASCII_DIGIT+ }
 //
 //  Expr
 //
-expr = !{ term ~ (term_op ~ expr)? }
-term_op = { "+" | "-" }
+expr = !{ assign ~ (comp_op ~ expr)? }
+comp_op = { "==" | "!=" | ">=" | ">" | "<=" | "<" }
+assign =
+       { (var_name ~ assign_op ~ assign)
+       | arith
+       }
+assign_op = { "=" }
+arith = { term ~ (arith_op ~ arith)? }
+arith_op = { "+" | "-" }
 term = { factor ~ (factor_op ~ term)? }
 factor_op = { "*" | "/" }
+factor = { sign ~ primary ~ postfix_incdec }
 sign = { ("+" | "-")? }
-factor = { sign ~ primary }
+postfix_incdec = { ("++" | "--")? }
 primary = _{ num | ("$"? ~ var_name) | param_ex_span |  ("(" ~ expr ~ ")") }
 
 //
@@ -194,6 +202,11 @@ for_command = {
     "for" ~ var_name ~ "in" ~ word_list ~ (";" | wsnl)+ ~ "do" ~ compound_list ~ "done"
 }
 
+arith_for_exprs = { "((" ~ expr ~";" ~ expr ~ ";" ~ expr ~ "))" }
+arith_for_command = {
+    "for" ~ arith_for_exprs ~ (";" | wsnl)+ ~ "do" ~ compound_list ~ "done"
+}
+
 //
 //  Case Command
 //
@@ -257,6 +270,7 @@ command = {
     if_command
     | case_command
     | while_command
+    | arith_for_command
     | for_command
     | break_command
     | continue_command

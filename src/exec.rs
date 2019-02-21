@@ -401,6 +401,16 @@ pub struct Isolate {
 
 unsafe impl Send for Isolate {}
 
+macro_rules! bool_to_int {
+    ($e:expr) => {
+        if $e {
+            1
+        } else {
+            0
+        }
+    };
+}
+
 impl Isolate {
     pub fn new(script_name: &str, interactive: bool) -> Isolate {
         let shell_pgid = getpid();
@@ -652,19 +662,21 @@ impl Isolate {
         self.completions.insert(command.to_owned(), compspec);
     }
 
-    fn evaluate_expr(&self, expr: &Expr) -> i32 {
+    fn get_var_as_i32(&self, name: &str) -> Option<i32> {
+        self.get(name).and_then(|var|
+            match var.value() {
+                Some(Value::String(s)) => s.parse().ok(),
+                _ => None,
+            }
+        )
+    }
+
+    fn evaluate_expr(&mut self, expr: &Expr) -> i32 {
         match expr {
             Expr::Expr(sub_expr) => self.evaluate_expr(sub_expr),
             Expr::Literal(value) => *value,
             Expr::Parameter { name } => {
-                if let Some(var) = self.get(name) {
-                    match var.value() {
-                        Some(Value::String(s)) => s.parse().unwrap_or(0),
-                        _ => 0,
-                    }
-                } else {
-                    0
-                }
+                self.get_var_as_i32(&name).unwrap_or(0)
             },
             Expr::Add(BinaryExpr { lhs, rhs }) => {
                 self.evaluate_expr(lhs) + self.evaluate_expr(rhs)
@@ -677,6 +689,39 @@ impl Isolate {
             },
             Expr::Div(BinaryExpr { lhs, rhs }) => {
                 self.evaluate_expr(lhs) / self.evaluate_expr(rhs)
+            },
+            Expr::Assign { name, rhs } => {
+                let value = self.evaluate_expr(rhs);
+                self.assign(&name, Value::String(value.to_string()));
+                value
+            },
+            Expr::Eq(lhs, rhs) => {
+                bool_to_int!(self.evaluate_expr(lhs) == self.evaluate_expr(rhs))
+            },
+            Expr::Ne(lhs, rhs) => {
+                bool_to_int!(self.evaluate_expr(lhs) != self.evaluate_expr(rhs))
+            },
+            Expr::Lt(lhs, rhs) => {
+                bool_to_int!(self.evaluate_expr(lhs) < self.evaluate_expr(rhs))
+            },
+            Expr::Le(lhs, rhs) => {
+                bool_to_int!(self.evaluate_expr(lhs) <= self.evaluate_expr(rhs))
+            },
+            Expr::Gt(lhs, rhs) => {
+                bool_to_int!(self.evaluate_expr(lhs) > self.evaluate_expr(rhs))
+            },
+            Expr::Ge(lhs, rhs) => {
+                bool_to_int!(self.evaluate_expr(lhs) >= self.evaluate_expr(rhs))
+            },
+            Expr::Inc(name) => {
+                let value = self.get_var_as_i32(&name).unwrap_or(0) + 1;
+                self.assign(&name, Value::String(value.to_string()));
+                value
+            },
+            Expr::Dec(name) => {
+                let value = self.get_var_as_i32(&name).unwrap_or(0) - 1;
+                self.assign(&name, Value::String(value.to_string()));
+                value
             },
         }
     }
@@ -1700,6 +1745,33 @@ impl Isolate {
         Ok(ExitStatus::ExitedWith(0))
     }
 
+    fn run_arith_for_command(
+        &mut self,
+        ctx: &Context,
+        init: &Expr,
+        cond: &Expr,
+        update: &Expr,
+        body: &[parser::Term]
+    ) -> Result<ExitStatus>
+    {
+        self.evaluate_expr(init);
+
+    'for_loop:
+        while self.evaluate_expr(cond) == 1 {
+            let result = self.run_terms(body, ctx.stdin, ctx.stdout, ctx.stderr);
+            match result {
+                ExitStatus::Break => break 'for_loop,
+                ExitStatus::Continue => (),
+                ExitStatus::Return => return Ok(result),
+                _ => (),
+            }
+
+            self.evaluate_expr(update);
+        }
+
+        Ok(ExitStatus::ExitedWith(0))
+    }
+
     fn run_command(&mut self, command: &parser::Command, ctx: &Context) -> Result<ExitStatus> {
         if self.noexec {
             return Ok(ExitStatus::NoExec);
@@ -1721,6 +1793,9 @@ impl Isolate {
             }
             parser::Command::For { var_name, words, body } => {
                 self.run_for_command(ctx, var_name, &words, &body)?
+            },
+            parser::Command::ArithFor { init, cond, update, body } => {
+                self.run_arith_for_command(ctx, init, cond, update, &body)?
             },
             parser::Command::LocalDef { declarations } => {
                 self.run_local_command(&declarations)?
