@@ -264,16 +264,6 @@ fn create_highlighter(theme_name: &str) -> HighlightLines {
     HighlightLines::new(syntax, theme)
 }
 
-#[inline]
-fn n_chars(ch: char, n: usize) -> String {
-    let mut s = String::new();
-    for _ in 0..n {
-        s.push(ch);
-    }
-
-    s
-}
-
 /// Moves the cursor to down if `offset > 0` or up if `offset < 0` and
 /// to the beginning of the line.
 #[inline]
@@ -283,8 +273,8 @@ fn move_cursor_y(offset: i32, clear_line: bool) -> String {
     }
 
     match (offset > 0, clear_line) {
-        (true,  false) => format!("{}\r", n_chars('\n', offset.abs() as usize)),
-        (true,  true)  => format!("{}\r{}", n_chars('\n', offset.abs() as usize), termion::clear::CurrentLine),
+        (true,  false) => format!("{}\r", "\n".repeat(offset.abs() as usize)),
+        (true,  true)  => format!("{}\r{}", "\n".repeat(offset.abs() as usize), termion::clear::CurrentLine),
         (false, false) => format!("{}\r", termion::cursor::Up(offset.abs() as u16)),
         (false, true)  => format!("\r{}{}", termion::clear::CurrentLine, termion::cursor::Up(offset.abs() as u16)),
     }
