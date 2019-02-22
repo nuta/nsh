@@ -76,7 +76,7 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
         let mut isolate = isolate_lock2.lock().unwrap();
         isolate.run_str(&rc);
 
-        // Evaluate ~/.nshrc it it exists for those who prefer editing a plain shell
+        // Evaluate ~/.nshrc if it exists for those who prefer editing a plain shell
         // script file rather than human-unfriendly JSON file (nshconfig).
         let home_dir = dirs::home_dir().unwrap();
         let nshconfig_path = Path::new(&home_dir).join(".nshrc");
