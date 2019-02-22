@@ -69,13 +69,23 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
         sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
     }
 
-
-    //Evaluate rc script asynchronously since it may take too long.
+    //Evaluate rc scripts asynchronously since it may take too long.
     let rc = config.rc.clone();
     let isolate_lock2 = isolate_lock.clone();
     let nshrc_loader = std::thread::spawn(move || {
         let mut isolate = isolate_lock2.lock().unwrap();
         isolate.run_str(&rc);
+
+        // Evaluate ~/.nshrc it it exists for those who prefer editing a plain shell
+        // script file rather than human-unfriendly JSON file (nshconfig).
+        let home_dir = dirs::home_dir().unwrap();
+        let nshconfig_path = Path::new(&home_dir).join(".nshrc");
+        if let Ok(mut f) = std::fs::File::open(nshconfig_path) {
+            use std::io::Read;
+            let mut nshrc = String::new();
+            f.read_to_string(&mut nshrc).expect("failed to read ~/.nshrc");
+            isolate.run_str(&nshrc);
+        }
     });
 
     // TODO: Ensure that nshrc loader grabs the lock.
