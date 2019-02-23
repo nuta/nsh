@@ -99,39 +99,39 @@ impl CompletionSelector {
         user_input: &mut String,
         user_cursor: &mut usize
     ) {
-        if let Some(ref current_literal) = ctx.current_literal {
-            if let Some(selected) = self.get(self.selected_index()) {
-                let prefix = user_input
-                    .get(..(current_literal.start))
-                    .unwrap_or("")
-                    .to_string();
-                let suffix = user_input
-                    .get((current_literal.end + 1)..)
-                    .unwrap_or("")
-                    .to_string();
+        let selected = match self.get(self.selected_index()) {
+            Some(selected) => selected,
+            None => return,
+        };
 
-                let path = if selected.starts_with("~/") {
-                    let mut path = dirs::home_dir().unwrap().to_path_buf();
-                    let mut sub_path = PathBuf::from(selected.as_str());
-                    sub_path = sub_path.strip_prefix("~/").unwrap().to_path_buf();
-                    path.push(sub_path);
-                    path
-                } else {
-                    PathBuf::from(selected.as_str())
-                };
+        let (prefix_end, suffix_start) = match &ctx.current_literal {
+            Some(current_literal) => (current_literal.start, current_literal.end + 1),
+            None => (ctx.cursor, ctx.cursor + 1),
+        };
 
-                // add a slash or space after the word.
-                let append = if path.is_dir() {
-                    "/"
-                } else {
-                    " "
-                };
+        let prefix = user_input.get(..prefix_end).unwrap_or("").to_string();
+        let suffix = user_input.get(suffix_start..).unwrap_or("").to_string();
 
-                trace!("complete: '{}' '{}' '{}' '{}'", prefix, selected, append, suffix);
-                *user_input = format!("{}{}{}{}", prefix, selected, append, suffix);
-                *user_cursor = current_literal.start + selected.len() + append.len();
-            }
-        }
+        let path = if selected.starts_with("~/") {
+            let mut path = dirs::home_dir().unwrap().to_path_buf();
+            let mut sub_path = PathBuf::from(selected.as_str());
+            sub_path = sub_path.strip_prefix("~/").unwrap().to_path_buf();
+            path.push(sub_path);
+            path
+        } else {
+            PathBuf::from(selected.as_str())
+        };
+
+        // add a slash or space after the word.
+        let append = if path.is_dir() {
+            "/"
+        } else {
+            " "
+        };
+
+        trace!("complete: '{}' '{}' '{}' '{}'", prefix, selected, append, suffix);
+        *user_input = format!("{}{}{}{}", prefix, selected, append, suffix);
+        *user_cursor = prefix.len() + selected.len() + append.len();
     }
 }
 

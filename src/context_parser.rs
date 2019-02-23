@@ -89,6 +89,8 @@ fn is_varname_char(ch: char) -> bool {
 pub struct InputContext {
     // The input string.
     pub input: String,
+    // The cursor position.
+    pub cursor: usize,
     // Words of a command where the cursor is in (`$COMP_WORDS`).
     pub words: Vec<String>,
     // The fragments of the input. Primarily used for syntax highlighting.
@@ -422,6 +424,7 @@ impl ContextParser {
             current_literal,
             current_span,
             input: self.input,
+            cursor: self.cursor,
         }
     }
 }
@@ -439,13 +442,15 @@ mod tests {
     #[test]
     fn short() {
         let input = "".to_owned();
+        let cursor = 0;
         assert_eq!(
-            parse("", 0),
+            parse(&input, cursor),
             InputContext {
                 spans: vec![],
                 nested: vec![],
                 current_literal: None,
                 input,
+                cursor,
                 words: vec![
                     "".to_owned()
                 ],
@@ -455,8 +460,9 @@ mod tests {
         );
 
         let input = "ls   /tmp /usr /var".to_owned();
+        let cursor = 7; /* after `t` */
         assert_eq!(
-            parse(&input, 7 /* after `t` */),
+            parse(&input, cursor),
             InputContext {
                 spans: vec![
                     Span::Argv0("ls".to_owned()),
@@ -468,6 +474,7 @@ mod tests {
                     Span::Literal("/var".to_owned())
                 ],
                 input,
+                cursor,
                 nested: vec![],
                 current_literal: Some(5..8),
                 words: vec![
@@ -482,8 +489,9 @@ mod tests {
         );
 
         let input = "echo \"Hello \\\"\"$world\\\"".to_owned();
+        let cursor = 2;
         assert_eq!(
-            parse(&input, 2),
+            parse(&input, cursor),
             InputContext {
                 spans: vec![
                     Span::Argv0("echo".to_owned()),
@@ -495,6 +503,7 @@ mod tests {
                     Span::Literal("\\\"".to_owned())
                 ],
                 input,
+                cursor,
                 nested: vec![],
                 current_literal: Some(0..3),
                 words: vec![
@@ -507,8 +516,9 @@ mod tests {
         );
 
         let input = "echo Hello ${var:=$(echo Wor)ld}".to_owned();
+        let cursor = 12; /* first $ */
         assert_eq!(
-            parse(&input, 12 /* first $ */),
+            parse(&input, cursor),
             InputContext {
                 spans: vec![
                     Span::Argv0("echo".to_owned()),
@@ -527,6 +537,7 @@ mod tests {
                     Span::ParamExpandEnd,
                 ],
                 input,
+                cursor,
                 nested: vec![],
                 current_literal: None,
                 words: vec![
@@ -543,8 +554,9 @@ mod tests {
     #[test]
     fn statements() {
         let input = "if yes; then echo say yes; fi".to_owned();
+        let cursor = 17; /* after `o' */
         assert_eq!(
-            parse(&input, 17 /* after `o' */),
+            parse(&input, cursor),
             InputContext {
                 spans: vec![
                     Span::Keyword(KeywordType::If),
@@ -564,6 +576,7 @@ mod tests {
                     Span::Keyword(KeywordType::Fi),
                 ],
                 input,
+                cursor,
                 nested: vec![],
                 current_literal: Some(13..16),
                 words: vec![
@@ -580,8 +593,9 @@ mod tests {
     #[test]
     fn incomplete() {
         let input = "echo Hello ${var:=$(echo ".to_owned();
+        let cursor = 25; /* at the end */
         assert_eq!(
-            parse(&input, 25 /* at the end */),
+            parse(&input, cursor),
             InputContext {
                 spans: vec![
                     Span::Argv0("echo".to_owned()),
@@ -596,6 +610,7 @@ mod tests {
                     Span::Space(" ".to_owned()),
                 ],
                 input,
+                cursor,
                 nested: vec![BlockType::ParamExpand, BlockType::CmdSubst],
                 current_literal: None,
                 words: vec![
@@ -607,8 +622,9 @@ mod tests {
         );
 
         let input = "if yes; then echo say yes".to_owned();
+        let cursor = 6 /* after `s' */;
         assert_eq!(
-            parse(&input, 6 /* after `s' */),
+            parse(&input, cursor),
             InputContext {
                 spans: vec![
                     Span::Keyword(KeywordType::If),
@@ -625,6 +641,7 @@ mod tests {
                     Span::Literal("yes".to_owned())
                 ],
                 input,
+                cursor,
                 nested: vec![BlockType::If],
                 current_literal: Some(3..5),
                 words: vec![

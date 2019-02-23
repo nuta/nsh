@@ -106,7 +106,7 @@ mod benchmarks {
 
     use test::Bencher;
     use super::*;
-    use crate::parse;
+    use crate::context_parser::parse;
 
     #[bench]
     fn syntax_highlight_bench(b: &mut Bencher) {

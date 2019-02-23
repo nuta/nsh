@@ -313,7 +313,7 @@ impl PromptRenderer {
     /// Renders the prompt, the user input, and completions (if supplied).
     /// TODO: needs refactoring
     /// TODO: handle terminal screen size changes
-    pub fn render(&mut self, user_input: &str, ctx: &InputContext, user_cursor: usize, x_max: usize, completions: Option<&CompletionSelector>) -> String {
+    pub fn render(&mut self, ctx: &InputContext, user_cursor: usize, x_max: usize, completions: Option<&CompletionSelector>) -> String {
         // Apply syntax highlighting.
         let colored_user_input = highlight(ctx);
 
@@ -362,10 +362,12 @@ impl PromptRenderer {
         //              |
         //              +- The cursor is now at the end of this line.
         //
+        let user_input_len = ctx.input.len();
+
         let prompt_lines = self.prompt_str.chars().filter(|c| *c == '\n').count() as u16 + 1;
         let cursor_pos = self.prompt_last_line_len as u16 + user_cursor as u16;
         let cursor_y = cursor_pos / x_max as u16 + (prompt_lines - 1);
-        let user_input_lines = ((self.prompt_last_line_len as u16 + user_input.len() as u16) / x_max as u16) + 1;
+        let user_input_lines = ((self.prompt_last_line_len as u16 + user_input_len as u16) / x_max as u16) + 1;
         let rendered_lines = prompt_lines + (user_input_lines - 1) + completion_lines;
 
         // Move the cursor (y-axis).
@@ -377,7 +379,7 @@ impl PromptRenderer {
         write!(buf, "\r").ok();
 
         // Wrapping.
-        if cursor_x == 0 && self.last_cursor_x > 0 && user_input.len() == user_cursor {
+        if cursor_x == 0 && self.last_cursor_x > 0 && user_input_len == user_cursor {
             write!(buf, "\n").ok();
         }
 
@@ -520,41 +522,46 @@ fn test_prompt_parser() {
 mod benchmarks {
     use test::Bencher;
     use super::*;
+    use crate::context_parser;
 
     #[bench]
     fn simple_prompt_rendering(b: &mut Bencher) {
+        let mut renderer = PromptRenderer::new("$ ");
+        let ctx = context_parser::parse("ls -alhG ~", 0);
         b.iter(|| {
-            let mut renderer = PromptRenderer::new("$ ", "Solarized (dark)");
-            renderer.render("ls -alhG", 0, 80, None);
+            renderer.render(&ctx, 0, 80, None);
         });
     }
 
     #[bench]
     fn complex_prompt_rendering(b: &mut Bencher) {
+        let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
+        let mut renderer = PromptRenderer::new(prompt);
+        let ctx = context_parser::parse("ls -alhG ~", 0);
+
+        use std::sync::Arc;
+        let completions = CompletionSelector::new(vec![
+            Arc::new("Desktop".to_owned()),
+            Arc::new("Documents".to_owned()),
+            Arc::new("Downloads".to_owned()),
+            Arc::new("Pictures".to_owned()),
+            Arc::new("Videos".to_owned()),
+            Arc::new("Dropbox".to_owned()),
+        ]);
+
         b.iter(|| {
-            use std::sync::Arc;
-
-            let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
-            let mut renderer = PromptRenderer::new(prompt, "Solarized (dark)");
-            let completions = CompletionSelector::new(vec![
-                Arc::new("Desktop".to_owned()),
-                Arc::new("Documents".to_owned()),
-                Arc::new("Downloads".to_owned()),
-                Arc::new("Pictures".to_owned()),
-                Arc::new("Videos".to_owned()),
-                Arc::new("Dropbox".to_owned()),
-            ]);
-
-            renderer.render("ls -alhG ~", 10, 80, Some(&completions));
+            renderer.render(&ctx, 10, 80, Some(&completions));
         });
     }
 
     #[bench]
     fn complex_prompt_rendering_without_completions(b: &mut Bencher) {
+        let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
+        let mut renderer = PromptRenderer::new(prompt);
+        let ctx = context_parser::parse("ls -alhG ~", 0);
+
         b.iter(|| {
-            let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
-            let mut renderer = PromptRenderer::new(prompt, "Solarized (dark)");
-            renderer.render("ls -alhG ~", 10, 80, None);
+            renderer.render(&ctx, 10, 80, None);
         });
     }
 }
