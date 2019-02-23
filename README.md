@@ -12,7 +12,7 @@ A command-line shell that focuses on performance and productivity featuing:
 - Builtin **zero configration** features and web-based configuration tool `nsh --config`.
 - **Written in Rust** :crab:
 
-![demo animation](https://gist.githubusercontent.com/seiyanuta/6deb34b183f30f45e1d239dba1e07dd8/raw/a9f194f41c59dbecac297c7e94e4ec26efaa2ddc/demo.gif)
+![screenshot](https://gist.githubusercontent.com/seiyanuta/5747db6c43978d9aa1941ce321cc1741/raw/405b7a1156292fd0456010b657f299b1daa367ff/nsh.png)
 
 Installation
 ------------
