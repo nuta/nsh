@@ -1,3 +1,5 @@
+use crate::path::lookup_external_command;
+use crate::builtins::INTERNAL_COMMANDS;
 use crate::context_parser::{
     InputContext, Span, KeywordType, QuoteType, CommandSepType
 };
@@ -8,7 +10,8 @@ pub fn highlight(ctx: &InputContext) -> String {
     use termion::color::{Fg, Red, Blue, Yellow, Green, Cyan};
     use termion::style::{Bold, Reset};
 
-    let argv0_color = Fg(Red);
+    let argv0_color = Fg(Green);
+    let invalid_argv0_color = Fg(Red);
     let option_color = Fg(Yellow);
     let brace_color = Fg(Green);
     let quote_color = Fg(Cyan);
@@ -23,8 +26,16 @@ pub fn highlight(ctx: &InputContext) -> String {
         }
 
         match span {
-            Span::Argv0(span) => {
-                write!(buf, "{}{}{}{}", Bold, argv0_color, span, Reset).ok();
+            Span::Argv0(cmd) => {
+                let command_exists = lookup_external_command(&cmd).is_some()
+                    || INTERNAL_COMMANDS.contains_key(cmd.as_str());
+
+                let argv0_color = if command_exists {
+                   write!(buf, "{}{}{}{}", Bold, argv0_color, cmd, Reset).ok();
+                } else {
+                   write!(buf, "{}{}{}{}", Bold, invalid_argv0_color, cmd, Reset).ok();
+                };
+
             }
             Span::Literal(span) => {
                 if span.starts_with("-") {
