@@ -1,9 +1,6 @@
 use crate::completion::CompletionSelector;
-use syntect::easy::HighlightLines;
-use syntect::highlighting::Style;
-use syntect::highlighting::ThemeSet;
-use syntect::parsing::SyntaxSet;
-use syntect::util::{as_24_bit_terminal_escaped, LinesWithEndings};
+use crate::syntax_highlighting::highlight;
+use crate::context_parser::InputContext;
 use pest::Parser;
 use pest::iterators::{Pairs, Pair};
 use std::fmt::Write;
@@ -239,31 +236,6 @@ fn draw_prompt(prompt: &Prompt) -> (String, usize) {
     (buf, len)
 }
 
-pub struct SyntectStatic {
-    syntax_set: SyntaxSet,
-    theme_set: ThemeSet,
-}
-
-lazy_static! {
-    static ref SYNTECT_STATIC: SyntectStatic = {
-        let syntax_set = SyntaxSet::load_defaults_newlines();
-        let theme_set = ThemeSet::load_defaults();
-        SyntectStatic {
-            syntax_set,
-            theme_set,
-        }
-    };
-}
-
-fn create_highlighter(theme_name: &str) -> HighlightLines {
-    let theme = &SYNTECT_STATIC.theme_set.themes[theme_name];
-    let syntax = SYNTECT_STATIC
-        .syntax_set
-        .find_syntax_by_extension("sh")
-        .unwrap();
-    HighlightLines::new(syntax, theme)
-}
-
 /// Moves the cursor to down if `offset > 0` or up if `offset < 0` and
 /// to the beginning of the line.
 #[inline]
@@ -307,11 +279,10 @@ pub struct PromptRenderer {
     last_cursor_y: u16,
     last_cursor_x: u16,
     last_completion_lines: u16,
-    current_theme: String,
 }
 
 impl PromptRenderer {
-    pub fn new(prompt_fmt: &str, current_theme: &str) -> PromptRenderer {
+    pub fn new(prompt_fmt: &str) -> PromptRenderer {
         // Parse and render the prompt.
         let (prompt_str, prompt_last_line_len) = match parse_prompt(prompt_fmt) {
             Ok(fmt) => draw_prompt(&fmt),
@@ -322,7 +293,6 @@ impl PromptRenderer {
         };
 
         PromptRenderer {
-            current_theme: current_theme.to_owned(),
             prompt_str,
             prompt_last_line_len,
             last_rendered_lines: 0,
@@ -343,15 +313,9 @@ impl PromptRenderer {
     /// Renders the prompt, the user input, and completions (if supplied).
     /// TODO: needs refactoring
     /// TODO: handle terminal screen size changes
-    pub fn render(&mut self, user_input: &str, user_cursor: usize, x_max: usize, completions: Option<&CompletionSelector>) -> String {
+    pub fn render(&mut self, user_input: &str, ctx: &InputContext, user_cursor: usize, x_max: usize, completions: Option<&CompletionSelector>) -> String {
         // Apply syntax highlighting.
-        let mut highlighter = create_highlighter(&self.current_theme);
-        let mut colored_user_input = String::new();
-        for line in LinesWithEndings::from(user_input) {
-            let ranges: Vec<(Style, &str)> = highlighter.highlight(line, &SYNTECT_STATIC.syntax_set);
-            let escaped = as_24_bit_terminal_escaped(&ranges[..], false);
-            colored_user_input += &escaped;
-        }
+        let colored_user_input = highlight(ctx);
 
         // Render completions.
         let (completion_str, completion_lines) = if let Some(completions) = completions {

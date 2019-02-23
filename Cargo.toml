@@ -36,7 +36,6 @@ log = { version = "^0.4.6", features = ["max_level_trace", "release_max_level_wa
 nix = "^0.12"
 libc = "0.2"
 dirs = "1"
-syntect = "3"
 structopt = "0.2"
 glob = "0.2"
 globset = "0.4"

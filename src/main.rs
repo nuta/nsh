@@ -36,6 +36,7 @@ mod parser;
 mod context_parser;
 mod path;
 mod prompt;
+mod syntax_highlighting;
 mod utils;
 mod history;
 mod fuzzy;

@@ -248,24 +248,24 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
     */
 
     let word_split = " /\t";
-    let current_theme = "Solarized (dark)";
     let mut user_input = String::new();
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
     let mut mode = InputMode::Normal;
     let mut history = HistorySelector::new();
-    let mut renderer = PromptRenderer::new(&config.prompt, &current_theme);
+    let mut renderer = PromptRenderer::new(&config.prompt);
     let mut stdin_events = stdin.events();
     let mut exec = false;
 
     'input_line: loop {
         // Print the prompt.
+        let input_ctx = context_parser::parse(&user_input, user_cursor);
         let x_max = termion::terminal_size().unwrap().0 as usize;
         let prompt = match &mode {
             InputMode::Completion(completion) => {
-                renderer.render(&user_input, user_cursor, x_max, Some(completion))
+                renderer.render(&user_input, &input_ctx, user_cursor, x_max, Some(completion))
             }
             InputMode::Normal => {
-                renderer.render(&user_input, user_cursor, x_max, None)
+                renderer.render(&user_input, &input_ctx, user_cursor, x_max, None)
             }
         };
 
@@ -288,8 +288,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                     Event::Key(Key::Char('\n')) => match &mut mode {
                         InputMode::Normal => break 'input_line,
                         InputMode::Completion(completion) => {
-                            let asa = context_parser::parse(&user_input, user_cursor);
-                            completion.select_and_update_input_and_cursor(&asa, &mut user_input, &mut user_cursor);
+                            completion.select_and_update_input_and_cursor(&input_ctx, &mut user_input, &mut user_cursor);
                             mode = InputMode::Normal;
                             continue 'input_line;
                         }
@@ -300,12 +299,11 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                         }
                         InputMode::Normal => {
                             let mut isolate = isolate_lock.lock().unwrap();
-                            let asa = context_parser::parse(&user_input, user_cursor);
-                            let completion = CompletionSelector::new(isolate.complete(&asa));
+                            let completion = CompletionSelector::new(isolate.complete(&input_ctx));
                             if completion.len() == 1 {
                                 // There is only one completion candidate. Select it and go back into
                                 // normal input mode.
-                                completion.select_and_update_input_and_cursor(&asa, &mut user_input, &mut user_cursor);
+                                completion.select_and_update_input_and_cursor(&input_ctx, &mut user_input, &mut user_cursor);
                             } else {
                                 mode = InputMode::Completion(completion);
                             }
@@ -319,8 +317,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
 
                         if let InputMode::Completion(_) = mode {
                             let mut isolate = isolate_lock.lock().unwrap();
-                            let asa = context_parser::parse(&user_input, user_cursor);
-                            let new = CompletionSelector::new(isolate.complete(&asa));
+                            let new = CompletionSelector::new(isolate.complete(&input_ctx));
                             mode = InputMode::Completion(new);
                         }
                     }
@@ -471,9 +468,8 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                             user_cursor += 1;
 
                             if let InputMode::Completion(_) = mode {
-                                let asa = context_parser::parse(&user_input, user_cursor);
                                 let mut isolate = isolate_lock.lock().unwrap();
-                                let new = CompletionSelector::new(isolate.complete(&asa));
+                                let new = CompletionSelector::new(isolate.complete(&input_ctx));
                                 mode = InputMode::Completion(new);
                             }
                         }
