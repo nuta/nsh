@@ -1,6 +1,6 @@
 use crate::builtins::{InternalCommandContext, INTERNAL_COMMANDS, InternalCommandError};
 use crate::completion::{CompSpec, cmd_completion, path_completion};
-use crate::context_parser::Asa;
+use crate::context_parser::{self, InputContext};
 use crate::parser::{
     self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer,
     LocalDeclaration, Assignment, ProcSubstType, CondExpr, HereDoc
@@ -563,12 +563,10 @@ impl Isolate {
         self.cd_stack.pop()
     }
 
-    fn call_completion_function(&mut self, func_name: &str, ctx: &Asa) -> Vec<Arc<String>> {
-        let words = ctx.words.iter().map(|w| w.as_ref().to_owned()).collect();
-        let current_word_index = ctx.current_word_index.to_string();
+    fn call_completion_function(&mut self, func_name: &str, ctx: &InputContext) -> Vec<Arc<String>> {
         let locals = vec![
-            ("COMP_WORDS", Value::Array(words)),
-            ("COMP_CWORD", Value::String(current_word_index))
+            ("COMP_WORDS", Value::Array(ctx.words.clone())),
+            ("COMP_CWORD", Value::String(ctx.current_word.to_string()))
         ];
 
         match self.call_function_in_shell_context(func_name, &[], locals) {
@@ -604,7 +602,7 @@ impl Isolate {
     }
 
     /// Returns completion candidates.
-    pub fn complete(&mut self, ctx: &Asa) -> Vec<Arc<String>> {
+    pub fn complete(&mut self, ctx: &InputContext) -> Vec<Arc<String>> {
         trace!("complete: ctx={:?}", ctx);
 
         let cmd_name = if let Some(name) = ctx.words.get(0) {
@@ -622,7 +620,8 @@ impl Isolate {
             "".to_owned()
         };
 
-        if ctx.current_word_index == 0 {
+        let current_span = ctx.current_span.map(|index| &ctx.spans[index]);
+        if let Some(context_parser::Span::Argv0(_)) = current_span {
             // The cursor is at the first word, namely, the command.
             cmd_completion(ctx)
         } else if let Some(compspec) = self.get_compspec(cmd_name.as_str()) {

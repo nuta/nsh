@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use std::os::unix::fs::PermissionsExt;
 use crate::fuzzy::FuzzyVec;
-use crate::context_parser::Asa;
+use crate::context_parser::InputContext;
 
 /// A completion-related prompt states.
 pub struct CompletionSelector {
@@ -93,36 +93,44 @@ impl CompletionSelector {
         self.display_index
     }
 
-    pub fn select_and_update_input_and_cursor(&self, asa: &Asa, user_input: &mut String, user_cursor: &mut usize) {
-        if let Some(selected) = self.get(self.selected_index()) {
-            let prefix = user_input
-                .get(..(asa.current_word_offset))
-                .unwrap_or("")
-                .to_string();
-            let suffix_offset = asa.current_word_offset
-                + asa.current_word_len;
-            let suffix =
-                &user_input.get((suffix_offset)..).unwrap_or("").to_string();
+    pub fn select_and_update_input_and_cursor(
+        &self,
+        ctx: &InputContext,
+        user_input: &mut String,
+        user_cursor: &mut usize
+    ) {
+        if let Some(ref current_literal) = ctx.current_literal {
+            if let Some(selected) = self.get(self.selected_index()) {
+                let prefix = user_input
+                    .get(..(current_literal.start))
+                    .unwrap_or("")
+                    .to_string();
+                let suffix = user_input
+                    .get((current_literal.end + 1)..)
+                    .unwrap_or("")
+                    .to_string();
 
-            let path = if selected.starts_with("~/") {
-                let mut path = dirs::home_dir().unwrap().to_path_buf();
-                let mut sub_path = PathBuf::from(selected.as_str());
-                sub_path = sub_path.strip_prefix("~/").unwrap().to_path_buf();
-                path.push(sub_path);
-                path
-            } else {
-                PathBuf::from(selected.as_str())
-            };
+                let path = if selected.starts_with("~/") {
+                    let mut path = dirs::home_dir().unwrap().to_path_buf();
+                    let mut sub_path = PathBuf::from(selected.as_str());
+                    sub_path = sub_path.strip_prefix("~/").unwrap().to_path_buf();
+                    path.push(sub_path);
+                    path
+                } else {
+                    PathBuf::from(selected.as_str())
+                };
 
-            // add a slash or space after the word.
-            let append = if path.is_dir() {
-                "/"
-            } else {
-                " "
-            };
+                // add a slash or space after the word.
+                let append = if path.is_dir() {
+                    "/"
+                } else {
+                    " "
+                };
 
-            *user_input = format!("{}{}{}{}", prefix, selected, append, suffix);
-            *user_cursor = asa.current_word_offset + selected.len() + append.len();
+                trace!("complete: '{}' '{}' '{}' '{}'", prefix, selected, append, suffix);
+                *user_input = format!("{}{}{}{}", prefix, selected, append, suffix);
+                *user_cursor = current_literal.start + selected.len() + append.len();
+            }
         }
     }
 }
@@ -211,12 +219,23 @@ fn dir_scan_filter(path: &Path) -> bool {
 }
 
 /// Returns file paths. It scans *recursively* from the given (or current) directory.
-pub fn path_completion(ctx: &Asa, include_files: bool, include_dirs: bool, executable_only: bool, remove_dot_slash_prefix: bool) -> Vec<Arc<String>> {
+pub fn path_completion(
+    ctx: &InputContext,
+    include_files: bool,
+    include_dirs: bool,
+    executable_only: bool,
+    remove_dot_slash_prefix: bool
+) -> Vec<Arc<String>> {
+
+    let current_word = match &ctx.current_literal {
+        Some(range) => Some(ctx.input.as_str()[range.clone()].to_owned()),
+        None => None,
+    };
     let mut remaining_dirs = VecDeque::new();
-    let given_dir = ctx.current_word().map(|s| (&*s).clone());
+    let given_dir = current_word.clone();
     let home_dir = dirs::home_dir().unwrap();
 
-    trace!("path_completion: word='{:?}'", ctx.current_word());
+    trace!("path_completion: word='{:?}'", current_word);
     match &given_dir {
         // ~/Downloads/monica-lottery
         Some(given_dir) if given_dir.starts_with("~/") => {
@@ -246,7 +265,7 @@ pub fn path_completion(ctx: &Asa, include_files: bool, include_dirs: bool, execu
         _ => {
             remaining_dirs.push_front(PathBuf::from("."));
         }
-    };
+    }
 
     let mut entries = Vec::new();
     let mut max_scan = 1024; // TODO: compute this by machine performance
@@ -304,17 +323,18 @@ pub fn path_completion(ctx: &Asa, include_files: bool, include_dirs: bool, execu
     // Filter the results by the current word at the user cursor.
     let mut compgen = CompGen::new();
     compgen.entries(entries);
-    if let Some(current_word) = ctx.current_word() {
+    if let Some(current_word) = current_word {
         compgen.filter_by(current_word.trim_start_matches("~/"));
     }
 
     compgen.generate()
 }
 
-pub fn cmd_completion(ctx: &Asa) -> Vec<Arc<String>> {
-    match ctx.current_word() {
-        Some(query) => {
-            let mut entries = crate::path::complete(&query);
+pub fn cmd_completion(ctx: &InputContext) -> Vec<Arc<String>> {
+    match &ctx.current_literal {
+        Some(range) => {
+            let query = &ctx.input[range.clone()];
+            let mut entries = crate::path::complete(query);
             entries.extend(path_completion(ctx, true, false, true, false));
             entries
         },
