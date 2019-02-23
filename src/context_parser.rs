@@ -661,7 +661,14 @@ mod benchmarks {
     use super::*;
 
     #[bench]
-    fn context_parser_bench(b: &mut Bencher) {
+    fn simple_oneliner_parsring_bench(b: &mut Bencher) {
+        b.iter(|| {
+            parse("git reset --", 0);
+        })
+    }
+
+    #[bench]
+    fn complex_oneliner_parsring_bench(b: &mut Bencher) {
         b.iter(|| {
             parse("ls -avh $(echo hello) \"string ${ls:=bar $(cowsay) } boo\" yay", 0);
         })
