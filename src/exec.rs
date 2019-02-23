@@ -8,6 +8,9 @@ use crate::parser::{
 use crate::path::{lookup_external_command,wait_for_path_loader};
 use crate::variable::{Variable, Value};
 use crate::utils::FdFile;
+use crate::pattern::{
+    match_pattern, replace_pattern, LiteralOrGlob, PatternWord, NoMatchesError
+};
 use nix;
 use nix::sys::wait::{waitpid, WaitStatus, WaitPidFlag};
 use nix::sys::signal::{kill, SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
@@ -24,13 +27,7 @@ use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
 use std::cell::RefCell;
-use glob::glob;
-use globset;
 use failure::Error;
-
-#[derive(Debug, Fail)]
-#[fail(display = "no matches")]
-pub struct NoMatchesError;
 
 type Result<I> = std::result::Result<I, Error>;
 
@@ -57,101 +54,6 @@ fn wait_child(pid: Pid) -> Result<i32> {
             warn!("waitpid: {}", err);
             Err(err)
         }
-    }
-}
-
-#[derive(Debug)]
-enum LiteralOrGlob {
-    Literal(String),
-    AnyString,
-    AnyChar,
-}
-
-/// A word which includes patterns. We don't expand words
-/// into the `Vec<String>` directly since the patterns has
-/// two different meanings: path glob and match in `case`.
-#[derive(Debug)]
-struct PatternWord {
-    fragments: Vec<LiteralOrGlob>
-}
-
-impl PatternWord {
-    pub fn new(fragments: Vec<LiteralOrGlob>) -> PatternWord {
-        PatternWord {
-            fragments
-        }
-    }
-
-    /// Returns a string. Pattern characters such as `*` are treated as a literal.
-    pub fn into_string(self) -> String {
-        let mut string = String::new();
-        for frag in self.fragments {
-            match frag {
-                LiteralOrGlob::Literal(lit) => string += &lit,
-                LiteralOrGlob::AnyChar => string.push('?'),
-                LiteralOrGlob::AnyString => string.push('*'),
-            }
-        }
-
-        string
-    }
-
-    //// Expand patterns as a file path globbing.
-    pub fn expand_glob(self) -> Result<Vec<String>> {
-        let includes_glob = self.fragments.iter().any(|frag| {
-            match frag {
-                LiteralOrGlob::AnyString => true,
-                LiteralOrGlob::AnyChar => true,
-                _ => false,
-            }
-        });
-
-        let mut expanded_words = Vec::new();
-        if includes_glob {
-            let mut pattern = String::new();
-            for frag in self.fragments {
-                match frag {
-                    LiteralOrGlob::Literal(lit) => {
-                        pattern += lit
-                            .replace("*", "[*]")
-                            .replace("?", "[?]")
-                            .as_str();
-                    },
-                    LiteralOrGlob::AnyChar => {
-                        pattern.push('?');
-                    },
-                    LiteralOrGlob::AnyString => {
-                        pattern.push('*');
-                    },
-                }
-            }
-
-            let mut paths = Vec::new();
-            for entry in glob(&pattern).expect("failed to glob") {
-                match entry {
-                    Ok(path) => {
-                        paths.push(path.to_str().unwrap().to_string());
-                    },
-                    Err(e) => error!("glob error: {:?}", e),
-                }
-            }
-            if paths.is_empty() {
-                return Err(Error::from(NoMatchesError));
-            }
-
-            expanded_words.extend(paths);
-        } else {
-            let mut s = String::new();
-            for frag in self.fragments {
-                if let LiteralOrGlob::Literal(lit) = frag {
-                    s += &lit;
-                }
-            }
-
-            expanded_words.push(s);
-        }
-
-        Ok(expanded_words)
     }
 }
 
@@ -775,6 +677,11 @@ impl Isolate {
                         (ExpansionOp::GetNullableOrDefault(_), None) => {
                             return Ok(vec![None]);
                         },
+                        (ExpansionOp::Subst { pattern, replacement, replace_all }, Some(_)) => {
+                            let content = var.as_str().to_string();
+                            let replaced = self.replace_pattern(pattern, &content, replacement, *replace_all)?;
+                            return Ok(vec![Some(replaced)])
+                        }
                         (_, _) => {
                             return Ok(vec![Some(var.as_str().to_string())]);
                         }
@@ -812,6 +719,9 @@ impl Isolate {
                 self.set(name, Value::String(content.clone()), false);
                 Ok(vec![Some(content)])
             }
+            ExpansionOp::Subst { .. } => {
+                Ok(vec![Some("".to_owned())])
+            }
         }
     }
 
@@ -821,6 +731,10 @@ impl Isolate {
         let mut current_word = Vec::new();
         for span in word.spans() {
             let (frags, expand) = match span {
+                Span::LiteralChars(..) => {
+                    // Internally used by the parser.
+                    unreachable!()
+                }
                 Span::Literal(s) => {
                     (vec![LiteralOrGlob::Literal(s.clone())], false)
                 },
@@ -1652,15 +1566,30 @@ impl Isolate {
         Ok(ExitStatus::ExitedWith(0))
     }
 
-    fn match_pattern(&self, pattern: &str, text: &str) -> Result<bool> {
-        match globset::GlobBuilder::new(pattern).build() {
-            Ok(matcher) => {
-                Ok(matcher.compile_matcher().is_match(text))
-            },
-            Err(err) => {
-                Err(Error::from(err))
+    /// Expands and merges all pattern words into a single pattern
+    /// word.
+    fn expand_into_single_pattern_word(&mut self, pattern: &Word) -> Result<PatternWord> {
+        let mut frags = Vec::new();
+        let ifs = ""; /* all whitespaces are treated as a literal */
+        for word in self.expand_word_into_vec(pattern, ifs)? {
+            for frag in word.fragments() {
+                frags.push(frag.clone());
             }
         }
+
+        Ok(PatternWord::new(frags))
+    }
+
+    fn replace_pattern(
+        &mut self,
+        pattern: &Word,
+        text: &str,
+        replacement: &Word,
+        replace_all: bool
+    ) -> Result<String> {
+        let pat = self.expand_into_single_pattern_word(pattern)?;
+        let dst = self.expand_word_into_string(replacement)?;
+        Ok(replace_pattern(&pat, text, &dst, replace_all))
     }
 
     fn run_case_command(
@@ -1672,28 +1601,9 @@ impl Isolate {
 
         let word = self.expand_word_into_string(word)?;
         for case in cases {
-            for raw_pattern in &case.patterns {
-                let mut pattern = String::new();
-                for ws in self.expand_word_into_vec(raw_pattern, "")? {
-                    for w in ws.fragments {
-                        match w {
-                            LiteralOrGlob::Literal(lit) => {
-                                pattern += lit
-                                    .replace("*", "[*]")
-                                    .replace("?", "[?]")
-                                    .as_str();
-                            },
-                            LiteralOrGlob::AnyChar => {
-                                pattern.push('?');
-                            },
-                            LiteralOrGlob::AnyString => {
-                                pattern.push('*');
-                            }
-                        }
-                    }
-                }
-
-                if self.match_pattern(&pattern, &word)? {
+            for pattern in &case.patterns {
+                let pattern = self.expand_into_single_pattern_word(&pattern)?;
+                if match_pattern(&pattern, &word) {
                     return Ok(self.run_terms(&case.body, ctx.stdin, ctx.stdout, ctx.stderr));
                 }
             }

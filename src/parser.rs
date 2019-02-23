@@ -187,6 +187,12 @@ pub enum ExpansionOp {
     GetNullableOrDefault(Word),          // ${parameter-word}
     GetOrDefaultAndAssign(Word),         // ${parameter:=word}
     GetNullableOrDefaultAndAssign(Word), // ${parameter=word}
+    // ${parameter/pattern/replacement}
+    Subst {
+        pattern: Word,
+        replacement: Word,
+        replace_all: bool,
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -234,8 +240,15 @@ pub enum ProcSubstType {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub enum LiteralChar {
+    Normal(char),
+    Escaped(char),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Span {
     Literal(String),
+    LiteralChars(Vec<LiteralChar>),
     // ~, ~mike, ...
     Tilde(Option<String>),
     // $foo, ${foo}, ${foo:-default}, ...
@@ -339,12 +352,70 @@ impl ShellParser {
         } else if let Some(param_opt) = inner.next() {
             let mut inner = param_opt.into_inner();
             let symbol = inner.next().unwrap().as_span().as_str();
-            let default_word = inner.next().map(|p| self.visit_word(p)).unwrap_or_else(|| Word(vec![]));
+            let rest = inner.next();
+            let default_word = rest
+                .clone()
+                .map(|p| self.visit_word(p))
+                .unwrap_or_else(|| Word(vec![]));
             match symbol {
                 "-"  => ExpansionOp::GetNullableOrDefault(default_word),
                 ":-" => ExpansionOp::GetOrDefault(default_word),
                 "="  => ExpansionOp::GetNullableOrDefaultAndAssign(default_word),
                 ":=" => ExpansionOp::GetOrDefaultAndAssign(default_word),
+                "/" | "//" => {
+                    let spans = rest
+                        .map(|p| self.visit_escaped_word(p, true).0)
+                        .unwrap_or_else(|| vec![]);
+
+                    let mut pattern_spans = Vec::new();
+                    let mut replacement_spans = Vec::new();
+                    let mut spans_iter = spans.iter();
+                    let mut lit = String::new();
+                    let mut in_pattern = true;
+                    while let Some(span) = spans_iter.next() {
+                        match span {
+                            Span::LiteralChars(chars) => {
+                                for ch in chars {
+                                    match ch {
+                                        LiteralChar::Normal('/') if in_pattern => {
+                                            // The separator which divides pattern and replacement,
+                                            if !lit.is_empty() {
+                                                pattern_spans.push(Span::Literal(lit));
+                                            }
+
+                                            lit = String::new();
+                                            in_pattern = false;
+                                        }
+                                        LiteralChar::Normal(ch) => lit.push(*ch),
+                                        LiteralChar::Escaped(ch) => lit.push(*ch),
+                                    }
+                                }
+
+                                if !lit.is_empty() {
+                                    if in_pattern {
+                                        pattern_spans.push(Span::Literal(lit));
+                                    } else {
+                                        replacement_spans.push(Span::Literal(lit));
+                                    }
+
+                                    lit = String::new();
+                                }
+                            }
+                            _ => {
+                                pattern_spans.push(span.clone());
+                            }
+                        }
+                    }
+
+                    for span in spans_iter {
+                        replacement_spans.push(span.clone());
+                    }
+
+                    let pattern = Word(pattern_spans);
+                    let replacement = Word(replacement_spans);
+                    let replace_all = symbol == "//";
+                    ExpansionOp::Subst { pattern, replacement, replace_all }
+                },
                 _ => unreachable!(),
             }
         } else {
@@ -616,13 +687,30 @@ impl ShellParser {
     //     | param_ex_span
     //     | param_span
     // }
-    fn visit_word(&mut self, pair: Pair<Rule>) -> Word {
+    fn visit_escaped_word(&mut self, pair: Pair<Rule>, literal_chars: bool) -> Word {
         assert_eq!(pair.as_rule(), Rule::word);
 
         let mut spans = Vec::new();
         for span in pair.into_inner() {
             match span.as_rule() {
-                Rule::literal_span => {
+                Rule::literal_span if literal_chars => {
+                    let mut chars = Vec::new();
+                    for ch in span.into_inner() {
+                        match ch.as_rule() {
+                            Rule::escaped_char => {
+                                let lit_ch = ch.as_str().chars().nth(1).unwrap();
+                                chars.push(LiteralChar::Escaped(lit_ch))
+                            }
+                            Rule::unescaped_char => {
+                                let lit_ch = ch.as_str().chars().nth(0).unwrap();
+                                chars.push(LiteralChar::Normal(lit_ch))
+                            }
+                            _ => unreachable!()
+                        }
+                    }
+                    spans.push(Span::LiteralChars(chars));
+                },
+                Rule::literal_span if !literal_chars => {
                     spans.push(Span::Literal(self.visit_escape_sequences(span, None)));
                 },
                 Rule::double_quoted_span => {
@@ -673,6 +761,10 @@ impl ShellParser {
         }
 
         Word(spans)
+    }
+
+    fn visit_word(&mut self, pair: Pair<Rule>) -> Word {
+        self.visit_escaped_word(pair, false)
     }
 
     // fd = { ASCII_DIGIT+ }
@@ -2507,6 +2599,41 @@ pub fn test_expansions() {
                                     quoted: true,
                                 },
                             ]),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        })
+    );
+
+    assert_eq!(
+        parse("echo ${var/a*\\/e/12345}"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "echo ${var/a*\\/e/12345}".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                            lit!("echo"),
+                            Word(vec![Span::Parameter {
+                                name: "var".into(),
+                                quoted: false,
+                                op: ExpansionOp::Subst {
+                                    pattern: Word(vec![
+                                        Span::Literal("a".into()),
+                                        Span::AnyString { quoted: false },
+                                        Span::Literal("/e".into()),
+                                    ]),
+                                    replacement: Word(vec![
+                                        Span::Literal("12345".into()),
+                                    ]),
+                                    replace_all: false
+                                }
+                            }]),
                         ],
                         redirects: vec![],
                         assignments: vec![],

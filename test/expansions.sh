@@ -23,3 +23,9 @@ words2="Cargo.toml/Cargo.lock#README.md"
 ls $words2
 echo "$words2"
 IFS=" \t"
+
+echo "substs ------------------"
+var=abcd
+echo ${var/b?/BC}
+echo ${var/?/X}
+echo ${var//?/X}

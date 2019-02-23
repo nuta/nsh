@@ -8,7 +8,7 @@ WHITESPACE = _{
 }
 
 COMMENT = _{ "#" ~ (!("\n") ~ ANY)* }
-word_chars = _{
+word_char = _{
     !(
         "|" | "&" | ";" | " " | "\t" | "\r" | "\n" | "`"
         | "{" | "}" | "<" | ">" | "(" | ")" | "$" | "\"" | "'" | "*" | "?"
@@ -21,7 +21,7 @@ var_name_chars = _{
 
 wsnl = _{ (WHITESPACE | COMMENT | newline)+ }
 var_name = ${ var_name_chars+ }
-username = ${ (!("/") ~ word_chars)+ }
+username = ${ (!("/") ~ word_char)+ }
 special_var_name = _{ "?" | "$" | "!" | "*" | "@" | "#" | "-" | ASCII_DIGIT }
 
 index = { ("[" ~ expr ~ "]")? }
@@ -63,7 +63,9 @@ span = _{
     | param_span
     | literal_span
 }
-literal_span = ${ (("\\" ~ ANY) | word_chars)+ }
+escaped_char = { "\\" ~ ANY }
+unescaped_char = { word_char }
+literal_span = ${ (escaped_char | unescaped_char)+ }
 tilde_span = { "~" ~ username? }
 any_string_span = { "*" }
 any_char_span = { "?" }
@@ -74,7 +76,7 @@ backtick_span = !{ "`" ~ compound_list ~ "`" }
 expr_span = !{ "$((" ~ expr ~ "))" }
 expandable_var_name = { var_name | special_var_name }
 length_op ={ "#"? }
-param_op = { ":=" | ":-" | "-"  | "=" }
+param_op = { ":=" | ":-" | "-"  | "=" | "//" | "/" }
 param_opt = { param_op ~ word? }
 param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ index ~ param_opt? ~ "}" }
 param_span = { "$" ~ expandable_var_name }
@@ -142,7 +144,7 @@ reserved_word = ${
         | "then"
         | "while"
         | "[["
-    ) ~ !(word_chars)
+    ) ~ !(word_char)
 }
 argv0 = { !reserved_word ~ word }
 args = { word_or_redirect* }
@@ -170,7 +172,7 @@ newline = {
 }
 
 normal_newline = { "\n" }
-heredoc_marker = ${ word_chars+ }
+heredoc_marker = ${ word_char+ }
 heredoc_body = { heredoc_line* }
 heredoc_line = { !(PEEK) ~ (word *) ~ "\n" }
 
