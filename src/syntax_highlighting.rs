@@ -93,7 +93,7 @@ pub fn highlight(ctx: &InputContext) -> String {
                 write!(buf, "{}{}{}{}", Bold, reset_color, op, Reset).ok();
             }
             Span::Param(name) => {
-                write!(buf, "{}${}{}", Bold, brace_color, Reset).ok();
+                write!(buf, "{}${}{}", Bold, name, Reset).ok();
             }
             Span::CommandSep(sep) => {
                 let sep_str = match sep {
