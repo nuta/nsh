@@ -12,10 +12,6 @@ extern crate glob;
 extern crate iron;
 extern crate router;
 extern crate params;
-extern crate serde;
-extern crate serde_json;
-#[macro_use]
-extern crate serde_derive;
 #[macro_use]
 extern crate failure;
 extern crate pest;
@@ -44,8 +40,8 @@ mod variable;
 mod config;
 mod doctor;
 
-use std::path::{Path, PathBuf};
 use std::process;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use structopt::StructOpt;
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
@@ -73,17 +69,6 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     let nshrc_loader = std::thread::spawn(move || {
         let mut isolate = isolate_lock2.lock().unwrap();
         isolate.run_str(&rc);
-
-        // Evaluate ~/.nshrc if it exists for those who prefer editing a plain shell
-        // script file rather than human-unfriendly JSON file (nshconfig).
-        let home_dir = dirs::home_dir().unwrap();
-        let nshconfig_path = Path::new(&home_dir).join(".nshrc");
-        if let Ok(mut f) = std::fs::File::open(nshconfig_path) {
-            use std::io::Read;
-            let mut nshrc = String::new();
-            f.read_to_string(&mut nshrc).expect("failed to read ~/.nshrc");
-            isolate.run_str(&nshrc);
-        }
     });
 
     // TODO: Ensure that nshrc loader grabs the lock.
@@ -123,14 +108,12 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
 }
 
 fn shell_main(opt: Opt) {
-    // Load ~/.nshconfig.
-    let home_dir = dirs::home_dir().unwrap();
-    let nshconfig_path = Path::new(&home_dir).join(".nshconfig");
-    let config: config::Config = match std::fs::File::open(nshconfig_path) {
-        Ok(file) => serde_json::from_reader(file).expect("failed to parse ~/.nshrc"),
-        Err(_) => {
-            // Use default values.
-            serde_json::from_str("{}").expect("failed to parse '{}'")
+    // Load ~/.nshrc
+    let config = match config::load_nshrc() {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("nsh: warning: {}", err);
+            config::default_config()
         }
     };
 

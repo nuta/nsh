@@ -11,17 +11,6 @@ use std::sync::Mutex;
 use crate::config::Config;
 use crate::fuzzy::FuzzyVec;
 
-/// A history entry.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct History {
-    /// The UNIX timestamp when the command executed.
-    pub time: usize,
-    /// The absolute path to the directory where the command executed.
-    pub dir: String,
-    /// The command.
-    pub cmd: String,
-}
-
 lazy_static! {
     /// Command history.
     static ref HISTORY: Mutex<FuzzyVec> = Mutex::new(FuzzyVec::new());
@@ -49,23 +38,12 @@ pub fn append_history(cmd: &str) {
     let history_path = resolve_and_create_history_file();
     if let Ok(mut file) = OpenOptions::new().append(true).open(history_path) {
         if !history_filter(cmd) {
-            // Construct JSON formatted:
-            //
-            //    {
-            //      "time": number,     /* UNIX timestamp */
-            //      "dir": string,      /* The current directory */
-            //      "history": string,  /* The command line */
-            //    }
-            //
-            //
+            let dir = std::env::current_dir().unwrap().to_str().unwrap().to_owned();
             let time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("failed to get the UNIX timestamp")
                 .as_secs() as usize;
-            let dir = std::env::current_dir().unwrap().to_str().unwrap().to_owned();
-            let history = History { time, dir, cmd: cmd.to_owned() };
-            let json = serde_json::to_string(&history).unwrap();
-            file.write(format!("{}\n", json).as_bytes()).ok();
+            file.write(format!("{}\t{}\t{}\n", time, dir, cmd).as_bytes()).ok();
         }
     }
 
@@ -92,14 +70,14 @@ fn load_history() {
     if let Ok(file) = File::open(history_path) {
         for (i, line) in BufReader::new(file).lines().enumerate() {
             if let Ok(line) = line {
-                let parsed: Result<History, _> = serde_json::from_str(&line);
-                match (parsed, warned) {
-                    (Ok(history), _) => {
+                let cmd = line.split("\t").nth(2);
+                match (cmd, warned) {
+                    (Some(cmd), _) => {
                         let mut hist = HISTORY.lock().unwrap();
-                        hist.append(Arc::new(history.cmd));
+                        hist.append(Arc::new(cmd.to_string()));
                     },
-                    (Err(err), false) => {
-                        eprintln!("nsh: failed to parse ~/.nsh_history: at line {}: `{}'", i + 1, err);
+                    (None, false) => {
+                        eprintln!("nsh: warning: failed to parse ~/.nsh_history: at line {}", i + 1);
                         warned = true;
                     },
                     (_, _) => (),

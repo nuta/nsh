@@ -120,11 +120,6 @@ To achieve blazingly fast first prompt rendering, in constrast to bash, nsh util
 to initialize the shell environment such as history loading, `$PATH` scanning, and even
 rc script execution.
 
-### `~/.nshconfig`
-Since we execute the rc script asynchronously we cannot use `$PROMPT` to render the first
-prompt. Instead of using environment varibles defined in the rc script we use a declarative
-configuration file named `.nshconfig`, a JSON file which contains the prompt format and `$PATH`.
-
 ### Debug log
 `~/.nsh.log`
 
