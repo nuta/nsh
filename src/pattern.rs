@@ -228,6 +228,13 @@ pub fn match_pattern(pattern: &PatternWord, text: &str) -> bool {
     pattern_word_match(pattern, text).is_some()
 }
 
+pub fn match_pattern_all(pattern: &PatternWord, text: &str) -> bool {
+    match pattern_word_match(pattern, text) {
+        Some(MatchResult { start, end }) => start == 0 && end == text.len() - 1,
+        None => false,
+    }
+}
+
 pub fn replace_pattern(
     pattern: &PatternWord,
     text: &str,

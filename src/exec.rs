@@ -9,7 +9,8 @@ use crate::path::{lookup_external_command,wait_for_path_loader};
 use crate::variable::{Variable, Value};
 use crate::utils::FdFile;
 use crate::pattern::{
-    match_pattern, replace_pattern, LiteralOrGlob, PatternWord, NoMatchesError
+    match_pattern, match_pattern_all, replace_pattern,
+    LiteralOrGlob, PatternWord, NoMatchesError
 };
 use nix;
 use nix::sys::wait::{waitpid, WaitStatus, WaitPidFlag};
@@ -2005,6 +2006,19 @@ impl Isolate {
             };
         }
 
+        macro_rules! unwrap_word {
+            ($expr:expr) => {
+                match $expr {
+                    CondExpr::Word(word) => {
+                        word
+                    },
+                    _ => {
+                        return Err(format_err!("cond: expected word"));
+                    }
+                }
+            };
+        }
+
         macro_rules! eval_as_bool {
             ($expr:expr) => {
                 self.evaluate_cond($expr)?
@@ -2021,8 +2035,14 @@ impl Isolate {
         let result = match cond {
             CondExpr::And(lhs, rhs) => eval_as_bool!(lhs) && eval_as_bool!(rhs),
             CondExpr::Or(lhs, rhs) => eval_as_bool!(lhs) || eval_as_bool!(rhs),
-            CondExpr::StrEq(lhs, rhs) => eval_as_string!(lhs) == eval_as_string!(rhs),
-            CondExpr::StrNe(lhs, rhs) => eval_as_string!(lhs) != eval_as_string!(rhs),
+            CondExpr::StrEq(lhs, rhs) => {
+                let pat = self.expand_into_single_pattern_word(unwrap_word!(rhs.as_ref()))?;
+                match_pattern_all(&pat, &eval_as_string!(lhs))
+            }
+            CondExpr::StrNe(lhs, rhs) => {
+                let pat = self.expand_into_single_pattern_word(unwrap_word!(rhs.as_ref()))?;
+                !match_pattern_all(&pat, &eval_as_string!(lhs))
+            }
             CondExpr::Eq(lhs, rhs) => parse_as_int!(lhs) == parse_as_int!(rhs),
             CondExpr::Ne(lhs, rhs) => parse_as_int!(lhs) != parse_as_int!(rhs),
             CondExpr::Lt(lhs, rhs) => parse_as_int!(lhs) < parse_as_int!(rhs),
