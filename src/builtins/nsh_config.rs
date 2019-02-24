@@ -47,7 +47,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
 
         writeln!(ctx.stdout, "Downloading nsh git repository...").ok();
 
-        run_cmd!(ctx, "git", &["clone", "https://github.com/seiyanuta/nsh"], &cache_dir);
+        run_cmd!(ctx, "git", &["clone", "https://github.com/seiyanuta/nsh", "nsh-config-server"], &cache_dir);
     }
 
     writeln!(ctx.stdout, "nsh-config: updating nsh-config...").ok();
