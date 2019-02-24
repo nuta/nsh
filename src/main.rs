@@ -149,10 +149,6 @@ fn shell_main(opt: Opt) {
 #[derive(StructOpt, Debug)]
 #[structopt(name="nsh", about="A command-line shell that focuses on performance and productivity.")]
 struct Opt {
-    /// Open the web-based configuration tool.
-    #[structopt(long = "config")]
-    open_config: bool,
-
     /// Check your terminal environment.
     #[structopt(long = "doctor")]
     doctor: bool,
