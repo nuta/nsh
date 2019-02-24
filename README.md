@@ -8,8 +8,9 @@ nsh
 A command-line shell that focuses on performance and productivity featuing:
 - A not-yet-completed-but-aims-to-be **Bash compatible** interactive shell.
 - **Tab compeltions** and **syntax highlighting** like **[fish](http://fishshell.com/)**.
+- A builtin **interactive completion filter** like **[fzf](https://github.com/junegunn/fzf)**.
 - **Blazing fast startup times** by asynchronous initialization.
-- Builtin **zero configration** features and web-based configuration tool `nsh --config`.
+- Builtin **zero configration** features and web-based config editor: `nsh-config`.
 - **Written in Rust** :crab:
 
 ![screenshot](https://gist.githubusercontent.com/seiyanuta/5747db6c43978d9aa1941ce321cc1741/raw/405b7a1156292fd0456010b657f299b1daa367ff/nsh.png)
@@ -22,9 +23,7 @@ $ cargo install nsh
 
 Configuration
 -------------
-```
-$ nsh --config
-```
+Run `nsh-config` in nsh (it is an internal command),
 
 Key Shortcuts
 -------------
@@ -56,11 +55,11 @@ Comparisons
 -----------
 | | **nsh**  | **[bash](https://www.gnu.org/software/bash)**  | **[zsh](http://www.zsh.org/)** | **[fish](http://fishshell.com/)** | **[PowerShell](https://github.com/PowerShell/PowerShell)** |
 | :-: | :-: | :-: | :-: | :-: | :-: |
-| **POSIX shell features**   | almost complete              | **Yes**             | **Yes**                      | original syntax             | No             |
-| **Bash compatibility**     | incomplete                   | **100% compatible** | **provides `emulate(1)`**    | requires Bass               | No             |
-| **Prompt UX**              | *work-in-progress*           | minimum standard    | comfortable                  | **awesome**                 | comfortable    |
-| **Configuration easiness** | **web-based `nsh --config`** | insufficient        | oh-my-zsh or very long zshrc | **web-based `fish_config`** | insufficient   |
-| **Name**                   | not bad                      | **noble**           | **cool**                     | **cute**                    | **super cool** |
+| **POSIX shell features**   | **Yes**              | **Yes**             | **Yes**                      | original syntax             | No             |
+| **Bash compatibility**     | incomplete           | **100% compatible** | **provides `emulate(1)`**    | requires Bass               | No             |
+| **Prompt UX**              | *passable*           | minimum standard    | comfortable                  | **awesome**                 | comfortable    |
+| **Configuration easiness** | **web-based config** | insufficient        | oh-my-zsh or very long zshrc | **web-based config**        | insufficient   |
+| **Name**                   | not bad              | **noble**           | **cool**                     | **cute**                    | **super cool** |
 
 Future Plans
 ------------
@@ -76,11 +75,8 @@ Building
 ### Prerequisites
 - macOS or Linux
 - Rust 1.31.0 or higher
-- [Node.js](https://nodejs.org/en/)
-- [yarn](https://yarnpkg.com/lang/en/docs/install)
 
 ```
-$ cd src/config/ui && yarn && yarn build && cd ../../..
 $ cargo build --release
 $ ./target/release/nsh
 ```

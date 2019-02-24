@@ -9,9 +9,6 @@ extern crate dirs;
 extern crate nix;
 extern crate termion;
 extern crate glob;
-extern crate iron;
-extern crate router;
-extern crate params;
 #[macro_use]
 extern crate failure;
 extern crate pest;
@@ -112,7 +109,7 @@ fn shell_main(opt: Opt) {
     let config = match config::load_nshrc() {
         Ok(config) => config,
         Err(err) => {
-            eprintln!("nsh: warning: {}", err);
+            warn!("nsh: warning: failed to read nshrc: {}", err);
             config::default_config()
         }
     };
@@ -179,11 +176,6 @@ fn main() {
 
     if opt.doctor {
         doctor::main();
-        return;
-    }
-
-    if opt.open_config {
-        config::main();
         return;
     }
 

@@ -1,5 +1,5 @@
-nsh web config tool
-====================
+nshrc web editor
+================
 
 ## Building
 ```
@@ -14,10 +14,6 @@ $ yarn
 ```
 
 2. Start local backend/frontend servers.
-```
-$ cargo run -- --config
-```
-
 ```
 $ yarn dev
 ```

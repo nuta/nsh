@@ -35,7 +35,7 @@ install:
   - pip3 install -r tools/requirements.txt
 
 script:
-  - "cd src/config/ui && yarn && yarn build && cd ../../.."
+  - "cd config && yarn && yarn build && cd .."
   - cargo build --release
   - cargo run --release -- --doctor
   - if [ "$TRAVIS_RUST_VERSION" == "nightly" ]; then cargo bench; fi

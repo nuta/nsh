@@ -1,3 +1,8 @@
-/target
 *.log
 **/*.rs.bk
+/target
+/config/node_modules
+/config/build
+/config/dist
+/config/.cache
+/config/.yarn-integrity

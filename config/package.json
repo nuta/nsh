@@ -1,8 +1,9 @@
 {
   "private": true,
   "scripts": {
-    "build": "rm -rf build; parcel build src/index.html -d build",
-    "dev": "node ./dev-server.js"
+    "build": "rm -rf build; parcel build ui/index.html -d build",
+    "main": "node ./main.js",
+    "dev": "node ./dev.js"
   },
   "devDependencies": {
     "@vue/component-compiler-utils": "^2.3.0",

@@ -4,7 +4,6 @@ use std::path::Path;
 use std::io::{BufReader, BufRead};
 
 type Result<T> = std::result::Result<T, failure::Error>;
-mod server;
 
 #[derive(Debug)]
 pub struct Config {
@@ -24,7 +23,6 @@ pub fn default_config() -> Config {
         rc: "".to_owned(),
     }
 }
-
 
 pub fn load_nshrc() -> Result<Config> {
     let home_dir = dirs::home_dir().unwrap();
@@ -64,8 +62,4 @@ pub fn load_nshrc() -> Result<Config> {
         path: path.unwrap_or_else(|| DEFAULT_PATH.to_owned()),
         rc,
     })
-}
-
-pub fn main() {
-    server::main();
 }

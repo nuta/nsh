@@ -10,10 +10,6 @@ readme = "README.md"
 license = "CC0-1.0 OR MIT"
 repository = "https://github.com/seiyanuta/nsh"
 include = [
-    "src/config/ui/build/*.js",
-    "src/config/ui/build/*.html",
-    "src/config/ui/build/*.css",
-    "src/config/ui/build/*.map",
     "**/*.rs",
     "**/*.pest",
     "Cargo.toml",
@@ -43,12 +39,6 @@ pest = "2.1"
 pest_derive = "2.1"
 backtrace = "0.3"
 termion = "^1.5.1"
-
-# nsh --config dependecies
-iron = "0.6"
-router = "0"
-params = "0"
-rand = "0.6"
 
 [dev-dependencies]
 pretty_assertions = "0"
