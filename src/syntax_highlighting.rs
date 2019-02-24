@@ -4,7 +4,6 @@ use crate::context_parser::{
     InputContext, Span, KeywordType, QuoteType, CommandSepType
 };
 
-#[allow(unused)]
 pub fn highlight(ctx: &InputContext) -> String {
     use std::fmt::Write;
     use termion::color::{Fg, Red, Blue, Yellow, Green, Cyan};
@@ -30,7 +29,7 @@ pub fn highlight(ctx: &InputContext) -> String {
                 let command_exists = lookup_external_command(&cmd).is_some()
                     || INTERNAL_COMMANDS.contains_key(cmd.as_str());
 
-                let argv0_color = if command_exists {
+                if command_exists {
                    write!(buf, "{}{}{}{}", Bold, argv0_color, cmd, Reset).ok();
                 } else {
                    write!(buf, "{}{}{}{}", Bold, invalid_argv0_color, cmd, Reset).ok();
