@@ -32,27 +32,31 @@ pub fn load_nshrc() -> Result<Config> {
     let mut prompt = None;
     let mut path = None;
     let mut rc = String::new();
+    let mut in_header = true;
     for line in BufReader::new(file).lines() {
         let line = line?;
         rc += &line;
         rc.push('\n');
 
-        if !line.starts_with("### ") {
-            break;
-        }
+        if in_header {
+            if !line.starts_with("### ") {
+                in_header = false;
+                continue;
+            }
 
-        let var = line[4..].to_owned();
-        let mut cols = var.splitn(2, "=");
-        if let Some(name) = cols.next() {
-            let content = cols.next().unwrap_or("").to_owned();
-            match name {
-                "PROMPT" => {
-                    prompt = Some(content);
-                },
-                "PATH" => {
-                    path = Some(content);
-                },
-                _ => (),
+            let var = line[4..].to_owned();
+            let mut cols = var.splitn(2, "=");
+            if let Some(name) = cols.next() {
+                let content = cols.next().unwrap_or("").to_owned();
+                match name {
+                    "PROMPT" => {
+                        prompt = Some(content);
+                    },
+                    "PATH" => {
+                        path = Some(content);
+                    },
+                    _ => (),
+                }
             }
         }
     }
