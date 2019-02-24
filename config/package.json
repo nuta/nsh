@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "noty": "^3.2.0-beta",
+    "opn": "^5.4.0",
     "superagent": "^4.0.0",
     "vue": "^2.5.17",
     "vue-hot-reload-api": "^2.3.1"

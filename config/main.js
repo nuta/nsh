@@ -4,6 +4,7 @@ const os = require("os");
 const path = require("path");
 const crypto = require("crypto");
 const parse_url = require("url").parse;
+const opn = require('opn');
 
 function generate_access_token() {
     const buf = Buffer.alloc(32);
@@ -107,7 +108,9 @@ function main() {
 
 if (require.main==module) {
     main();
-    console.log(`nshrc-server: listening  http://localhost:7171/?access_token=${ACCESS_TOKEN}`);
+    const url = `http://localhost:7171/?access_token=${ACCESS_TOKEN}`;
+    console.log(`nshrc-server: listening ${url}`);
+    opn(url);
 }
 
 module.exports = { main };
