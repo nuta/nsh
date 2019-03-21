@@ -40,8 +40,12 @@ mod doctor;
 use std::process;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::os::unix::io::IntoRawFd;
 use structopt::StructOpt;
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
+use nix::unistd;
+use std::os::unix::io::FromRawFd;
+use std::io::prelude::*;
 use termion::is_tty;
 use crate::exec::ExitStatus;
 use crate::config::Config;
@@ -65,9 +69,17 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     //Evaluate rc scripts asynchronously since it may take too long.
     let rc = config.rc.clone();
     let isolate_lock2 = isolate_lock.clone();
+    let (pipe_out, pipe_in) = unistd::pipe().expect("failed to create a pipe");
     let nshrc_loader = std::thread::spawn(move || {
         let mut isolate = isolate_lock2.lock().unwrap();
-        isolate.run_str(&rc);
+
+        // Disallow tweaking the terminal by nshrc scripts; it causes EIO on macOS.
+        isolate.disable_tcsetpgrp();
+
+        // Execute nshrc.
+        let stdin = std::fs::File::open("/dev/null").unwrap();
+        isolate.run_str_with_stdio(&rc, stdin.into_raw_fd(), pipe_in, pipe_in);
+        unistd::close(pipe_in).unwrap();
     });
 
     // TODO: Ensure that nshrc loader grabs the lock.
@@ -87,8 +99,25 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     // nshrc loader to finish and enter the main loop.
     nshrc_loader.join().unwrap();
 
+    // Print stdout/stderr from nshrc.
+    let mut nshrc_out = String::new();
+    let mut nshrc_out_file = unsafe { std::fs::File::from_raw_fd(pipe_out) };
+    nshrc_out_file.read_to_string(&mut nshrc_out).unwrap();
+    if !nshrc_out.is_empty() {
+        eprintln!(
+            concat!(
+                "{}nshrc stdout/stderr -----------------------{}\n",
+                "{}\n",
+                "{}-------------------------------------------{}"
+            ),
+            termion::style::Bold, termion::style::Reset,
+            &nshrc_out,
+            termion::style::Bold, termion::style::Reset);
+    }
+
     loop {
         let mut isolate = isolate_lock.lock().unwrap();
+        isolate.enable_tcsetpgrp();
         isolate.run_str(&line);
         isolate.check_background_jobs();
         drop(isolate);

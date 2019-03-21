@@ -272,6 +272,7 @@ pub struct Isolate {
     script_name: String,
     term_fd: RawFd,
     shell_termios: Option<Termios>,
+    tcsetpgrp_enabled: bool,
 
     /// `$?`
     last_status: i32,
@@ -329,6 +330,7 @@ impl Isolate {
             interactive,
             term_fd: 0 /* stdin */,
             shell_termios,
+            tcsetpgrp_enabled: true,
             last_status: 0,
             exported: HashSet::new(),
             aliases: HashMap::new(),
@@ -351,6 +353,16 @@ impl Isolate {
     #[inline]
     pub fn interactive(&self) -> bool {
         self.interactive
+    }
+
+    #[inline]
+    pub fn enable_tcsetpgrp(&mut self) {
+        self.tcsetpgrp_enabled = true;
+    }
+
+    #[inline]
+    pub fn disable_tcsetpgrp(&mut self) {
+        self.tcsetpgrp_enabled = false;
     }
 
     #[inline]
@@ -987,29 +999,44 @@ impl Isolate {
         }
     }
 
+    pub fn set_terminal_process_group(&self, pgid: Pid) {
+        if self.tcsetpgrp_enabled {
+            tcsetpgrp(self.term_fd, pgid).expect("failed to tcsetpgrp");
+        }
+    }
+
+    pub fn restore_terminal_attrs(&self, termios: &Termios) {
+        if self.tcsetpgrp_enabled {
+            tcsetattr(self.term_fd, TCSADRAIN, termios).expect("failed to tcsetattr");
+        }
+    }
+
     pub fn run_in_foreground(&mut self, job: &Arc<Job>, sigcont: bool) -> ProcessState {
         self.last_fore_job = Some(job.clone());
         self.background_jobs.remove(&job.id);
 
         // Put the job into the foreground.
-        tcsetpgrp(0 /* stdin */, job.pgid).expect("failed to tcsetpgrp");
+        self.set_terminal_process_group(job.pgid);
 
         if sigcont {
             if let Some(ref termios) = *job.termios.borrow() {
-                tcsetattr(self.term_fd, TCSADRAIN, termios).expect("failed to tcsetattr");
+                self.restore_terminal_attrs(termios);
             }
             kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
             trace!("sent sigcont");
         }
 
-        // Wait for the job to exit.
+        // Wait for the job to exit or stop.
         let status = self.wait_for_job(&job);
 
+        // Save the current terminal status.
+        if self.tcsetpgrp_enabled {
+            job.termios.replace(Some(tcgetattr(self.term_fd).expect("failed to tcgetattr")));
+        }
+
         // Go back into the shell.
-        job.termios.replace(Some(tcgetattr(0 /* stdin */).expect("failed to tcgetattr")));
-        let termios = self.shell_termios.as_ref().unwrap();
-        tcsetpgrp(0 /* stdin */, self.shell_pgid).expect("failed to tcsetpgrp");
-        tcsetattr(0 /* stdin */, TCSADRAIN, termios).expect("failed to tcgetattr");
+        self.set_terminal_process_group(self.shell_pgid);
+        self.restore_terminal_attrs(self.shell_termios.as_ref().unwrap());
 
         status
     }
@@ -1254,11 +1281,10 @@ impl Isolate {
                     };
 
                     if !ctx.background {
-                        tcsetpgrp(0 /* stdin */, pgid).expect("failed to tcsetpgrp");
+                        self.set_terminal_process_group(pgid);
 
                         // Place the terminal out of raw mode.
-                        let termios = self.shell_termios.as_ref().unwrap();
-                        tcsetattr(0 /* stdin */, TCSADRAIN, termios).expect("tcsetattr");
+                        self.restore_terminal_attrs(self.shell_termios.as_ref().unwrap());
                     }
 
                     // Accept job-control-related signals (refer https://www.gnu.org/software/libc/manual/html_node/Launching-Jobs.html)
@@ -2068,13 +2094,14 @@ impl Isolate {
     }
 
     /// Runs commands.
-    pub fn eval(&mut self, ast: &Ast) -> ExitStatus {
+    pub fn eval(
+        &mut self,
+        ast: &Ast,
+        stdin: RawFd,
+        stdout: RawFd,
+        stderr: RawFd
+    ) -> ExitStatus {
         trace!("ast: {:#?}", ast);
-
-        // Inherit shell's stdin/stdout/stderr.
-        let stdin = 0;
-        let stdout = 1;
-        let stderr = 2;
         self.run_terms(&ast.terms, stdin, stdout, stderr)
     }
 
@@ -2088,11 +2115,26 @@ impl Isolate {
         self.run_str(script.as_str())
     }
 
-    /// Parses and runs a script.
+    /// Parses and runs a script. Stdin/stdout/stderr are 0, 1, 2, respectively.
     pub fn run_str(&mut self, script: &str) -> ExitStatus {
+        // Inherit shell's stdin/stdout/stderr.
+        let stdin = 0;
+        let stdout = 1;
+        let stderr = 2;
+        self.run_str_with_stdio(script, stdin, stdout, stderr)
+    }
+
+    /// Parses and runs a script in the given context.
+    pub fn run_str_with_stdio(
+        &mut self,
+        script: &str,
+        stdin: RawFd,
+        stdout: RawFd,
+        stderr: RawFd,
+    ) -> ExitStatus {
         match parser::parse(script) {
             Ok(ast) => {
-                self.eval(&ast)
+                self.eval(&ast, stdin, stdout, stderr)
             },
             Err(parser::ParseError::Empty) => {
                 // Just ignore.
