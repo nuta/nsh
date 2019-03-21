@@ -33,13 +33,15 @@ pub fn complete(query: &str) -> Vec<Arc<String>> {
 }
 
 /// Scans `$PATH` to fill `PATH_TABLE`.
-fn reload_paths() {
+pub fn reload_paths(path: &str) {
     let mut table = PATH_TABLE.write().unwrap();
     let mut fuzzy_vec = PATH_FUZZY_VEC.write().unwrap();
-    let path = std::env::var("PATH").unwrap();
+
+    table.clear();
+    fuzzy_vec.clear();
 
     // Look for all executables in $PATH.
-    for bin_dir in path.split(':') {
+    for bin_dir in path.split(':').rev() {
         if let Ok(files) = read_dir(bin_dir) {
             for entry in files {
                 let file = entry.unwrap();
@@ -53,8 +55,8 @@ fn reload_paths() {
 }
 
 pub fn init(config: &Config) {
-    std::env::set_var("PATH", config.path.clone());
-    std::thread::spawn(|| {
-        reload_paths();
+    let path = config.path.clone();
+    std::thread::spawn(move || {
+        reload_paths(&path);
     });
 }

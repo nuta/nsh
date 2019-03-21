@@ -5,7 +5,7 @@ use crate::parser::{
     self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer,
     LocalDeclaration, Assignment, ProcSubstType, CondExpr, HereDoc
 };
-use crate::path::{lookup_external_command,wait_for_path_loader};
+use crate::path::{lookup_external_command, wait_for_path_loader, reload_paths};
 use crate::variable::{Variable, Value};
 use crate::utils::FdFile;
 use crate::pattern::{
@@ -405,6 +405,13 @@ impl Isolate {
         } else {
             &mut self.global
         };
+
+        if !is_local && key == "PATH" {
+            // $PATH is being updated. Reload directories.
+            if let Value::String(ref path) = value {
+                reload_paths(path);
+            }
+        }
 
         frame.set(key, value);
     }

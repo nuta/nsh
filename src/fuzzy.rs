@@ -30,6 +30,11 @@ impl FuzzyVec {
         self.entries.len()
     }
 
+    // Clears the contents.
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
     /// Returns the nth entry from the end of the entries.
     pub fn nth_last(&self, nth: usize) -> Option<Arc<String>> {
         self.entries.get(self.entries.len() - nth - 1).cloned()
