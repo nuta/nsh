@@ -33,7 +33,7 @@ pub fn complete(query: &str) -> Vec<Arc<String>> {
 }
 
 /// Scans `$PATH` to fill `PATH_TABLE`.
-pub fn reload_paths(path: &str) {
+fn path_loader(path: &str) {
     let mut table = PATH_TABLE.write().unwrap();
     let mut fuzzy_vec = PATH_FUZZY_VEC.write().unwrap();
 
@@ -54,9 +54,13 @@ pub fn reload_paths(path: &str) {
     }
 }
 
-pub fn init(config: &Config) {
-    let path = config.path.clone();
+pub fn reload_paths(path: &str) {
+    let path = path.to_owned();
     std::thread::spawn(move || {
-        reload_paths(&path);
+        path_loader(&path);
     });
+}
+
+pub fn init(config: &Config) {
+    reload_paths(&config.path);
 }
