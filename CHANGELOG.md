@@ -1,5 +1,11 @@
 # Change Log
 
+## v0.1.2
+- `export(1)`: Support setting a new value by.
+- Rescan `$PATH` when it is updated.
+- Fix a bug that $PATH is not updated.
+- Fix a bug that causes EIO on macOS by loading a nshrc.
+
 ## v0.1.1
 - Reduce the size of the executable file (4MiB -> 2MiB).
 - Breaking change: `nsh --config` is now `nsh-config`internal command.
