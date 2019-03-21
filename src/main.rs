@@ -44,6 +44,7 @@ use structopt::StructOpt;
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
 use crate::exec::ExitStatus;
 use crate::config::Config;
+use crate::variable::Value;
 
 fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     let isolate_lock = Arc::new(Mutex::new(raw_isolate));
@@ -122,15 +123,18 @@ fn shell_main(opt: Opt) {
     let status = match (opt.command, opt.file) {
         (Some(command), _) => {
             let mut isolate = exec::Isolate::new("nsh", interactive);
+            isolate.set_and_export("PATH", Value::String(config.path.clone()));
             isolate.run_str(&command)
         },
         (_, Some(file)) => {
             let script_name = file.to_str().unwrap();
             let mut isolate = exec::Isolate::new(script_name, interactive);
+            isolate.set_and_export("PATH", Value::String(config.path.clone()));
             isolate.run_file(file)
         },
         (_, _) => {
-            let isolate = exec::Isolate::new("nsh", interactive);
+            let mut isolate = exec::Isolate::new("nsh", interactive);
+            isolate.set_and_export("PATH", Value::String(config.path.clone()));
             interactive_mode(&config, isolate)
         },
     };

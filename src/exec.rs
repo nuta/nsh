@@ -442,6 +442,11 @@ impl Isolate {
         }
     }
 
+    pub fn set_and_export(&mut self, name: &str, value: Value) {
+        self.set(name, value, false);
+        self.export(name);
+    }
+
     pub fn export(&mut self, name: &str) {
         self.exported.insert(name.to_string());
     }
