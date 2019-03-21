@@ -42,6 +42,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use structopt::StructOpt;
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
+use termion::is_tty;
 use crate::exec::ExitStatus;
 use crate::config::Config;
 use crate::variable::Value;
@@ -119,7 +120,8 @@ fn shell_main(opt: Opt) {
     path::init(&config);
     history::init(&config);
 
-    let interactive = opt.command.is_none() && opt.file.is_none();
+    let stdout = std::fs::File::create("/dev/stdout").unwrap();
+    let interactive = is_tty(&stdout) && opt.command.is_none() && opt.file.is_none();
     let status = match (opt.command, opt.file) {
         (Some(command), _) => {
             let mut isolate = exec::Isolate::new("nsh", interactive);
@@ -133,6 +135,11 @@ fn shell_main(opt: Opt) {
             isolate.run_file(file)
         },
         (_, _) => {
+            if !interactive {
+                eprintln!("nsh: warning: stdout is not a tty");
+                process::exit(0);
+            }
+
             let mut isolate = exec::Isolate::new("nsh", interactive);
             isolate.set_and_export("PATH", Value::String(config.path.clone()));
             interactive_mode(&config, isolate)
