@@ -92,7 +92,7 @@ function generate_nshrc(settings: {[key: string]: any }): string {
         if (key == "rc") {
             rc = value;
         } else {
-            nshrc += `### ${key}=${value}\n`;
+            nshrc += `### ${key.toUpperCase()}=${value}\n`;
         }
     }
 
