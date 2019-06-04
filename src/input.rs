@@ -252,7 +252,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
     let mut mode = InputMode::Normal;
     let mut history = HistorySelector::new();
-    let mut renderer = PromptRenderer::new(&config.prompt);
+    let mut renderer = PromptRenderer::new(isolate_lock.clone(), &config.prompt);
     let mut stdin_events = stdin.events();
     let mut exec = false;
 

@@ -1,9 +1,11 @@
 use crate::completion::CompletionSelector;
+use crate::exec::Isolate;
 use crate::syntax_highlighting::highlight;
 use crate::context_parser::InputContext;
 use pest::Parser;
 use pest::iterators::{Pairs, Pair};
 use std::fmt::Write;
+use std::sync::{Arc, Mutex};
 use termion;
 use nix::unistd;
 use libc;
@@ -273,6 +275,7 @@ fn replace_newline_with_clear(text: &str) -> String {
 }
 
 pub struct PromptRenderer {
+    isolate_lock: Arc<Mutex<Isolate>>,
     prompt_str: String,
     prompt_last_line_len: usize,
     last_rendered_lines: u16,
@@ -282,7 +285,7 @@ pub struct PromptRenderer {
 }
 
 impl PromptRenderer {
-    pub fn new(prompt_fmt: &str) -> PromptRenderer {
+    pub fn new(isolate_lock: Arc<Mutex<Isolate>>, prompt_fmt: &str) -> PromptRenderer {
         // Parse and render the prompt.
         let (prompt_str, prompt_last_line_len) = match parse_prompt(prompt_fmt) {
             Ok(fmt) => draw_prompt(&fmt),
@@ -293,6 +296,7 @@ impl PromptRenderer {
         };
 
         PromptRenderer {
+            isolate_lock,
             prompt_str,
             prompt_last_line_len,
             last_rendered_lines: 0,
@@ -315,7 +319,7 @@ impl PromptRenderer {
     /// TODO: handle terminal screen size changes
     pub fn render(&mut self, ctx: &InputContext, user_cursor: usize, x_max: usize, completions: Option<&CompletionSelector>) -> String {
         // Apply syntax highlighting.
-        let colored_user_input = highlight(ctx);
+        let colored_user_input = highlight(ctx, self.isolate_lock.clone());
 
         // Render completions.
         let (completion_str, completion_lines) = if let Some(completions) = completions {
