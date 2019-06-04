@@ -73,7 +73,7 @@ function parse_nshrc(nshrc: string): any {
         if (in_header) {
             const m = line.match(/### ([a-zA-Z0-9_]+)=(.*)/);
             if (m) {
-                vars[m[1]] = m[2];
+                vars[m[1].toLowerCase()] = m[2];
             } else if (!line.startsWith("###")) {
                 in_header = false;
             }
