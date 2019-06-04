@@ -530,7 +530,8 @@ mod benchmarks {
 
     #[bench]
     fn simple_prompt_rendering(b: &mut Bencher) {
-        let mut renderer = PromptRenderer::new("$ ");
+        let isolate_lock = Arc::new(Mutex::new(Isolate::new("", true)));
+        let mut renderer = PromptRenderer::new(isolate_lock, "$ ");
         let ctx = context_parser::parse("ls -alhG ~", 0);
         b.iter(|| {
             renderer.render(&ctx, 0, 80, None);
@@ -539,8 +540,9 @@ mod benchmarks {
 
     #[bench]
     fn complex_prompt_rendering(b: &mut Bencher) {
+        let isolate_lock = Arc::new(Mutex::new(Isolate::new("", true)));
         let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
-        let mut renderer = PromptRenderer::new(prompt);
+        let mut renderer = PromptRenderer::new(isolate_lock, prompt);
         let ctx = context_parser::parse("ls -alhG ~", 0);
 
         use std::sync::Arc;
@@ -560,8 +562,9 @@ mod benchmarks {
 
     #[bench]
     fn complex_prompt_rendering_without_completions(b: &mut Bencher) {
+        let isolate_lock = Arc::new(Mutex::new(Isolate::new("", true)));
         let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
-        let mut renderer = PromptRenderer::new(prompt);
+        let mut renderer = PromptRenderer::new(isolate_lock, prompt);
         let ctx = context_parser::parse("ls -alhG ~", 0);
 
         b.iter(|| {

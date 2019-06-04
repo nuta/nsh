@@ -124,9 +124,10 @@ mod benchmarks {
 
     #[bench]
     fn syntax_highlight_bench(b: &mut Bencher) {
+        let isolate_lock = Arc::new(Mutex::new(Isolate::new("", true)));
         let parsed = parse("ls -avh $(echo hello) \"string ${ls:=bar $(cowsay) } boo\" yay", 0);
         b.iter(|| {
-            highlight(&parsed);
+            highlight(&parsed, isolate_lock.clone());
         })
     }
 }
