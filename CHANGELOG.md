@@ -1,5 +1,9 @@
 # Change Log
 
+## v0.1.3
+- Fixed some bugs.
+- Updated dependencies.
+
 ## v0.1.2
 - `export(1)`: Support setting a new value by.
 - Rescan `$PATH` when it is updated.
