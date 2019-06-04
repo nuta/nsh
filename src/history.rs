@@ -35,6 +35,13 @@ pub fn append_history(cmd: &str) {
 
     let mut hist = HISTORY.lock().unwrap();
 
+    // Ignore if `cmd` is same as the last command.
+    if let Some(last) = (*hist).nth_last(0) {
+        if last.as_str() == cmd {
+            return;
+        }
+    }
+
     let history_path = resolve_and_create_history_file();
     if let Ok(mut file) = OpenOptions::new().append(true).open(history_path) {
         if !history_filter(cmd) {
