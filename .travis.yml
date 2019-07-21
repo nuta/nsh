@@ -19,6 +19,7 @@ addons:
       - python3-pip
       - python3-setuptools
   homebrew:
+    update: true
     packages:
       - node
       - yarn
