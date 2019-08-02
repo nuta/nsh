@@ -416,6 +416,13 @@ impl ContextParser {
             words.push("".to_owned());
         }
 
+        if let Some(Span::Space(_)) = spans.last() {
+            if self.cursor == self.input.len() {
+                words.push("".to_owned());
+                current_word_index = words.len() - 1;
+            }
+        }
+
         InputContext {
             words,
             current_word: current_word_index,
@@ -485,6 +492,31 @@ mod tests {
                 ],
                 current_word: 1,
                 current_span: Some(2),
+            }
+        );
+
+        let input = "git co ".to_owned();
+        let cursor = 7; /* after `o` */
+        assert_eq!(
+            parse(&input, cursor),
+            InputContext {
+                spans: vec![
+                    Span::Argv0("git".to_owned()),
+                    Span::Space(" ".to_owned()),
+                    Span::Literal("co".to_owned()),
+                    Span::Space(" ".to_owned()),
+                ],
+                input,
+                cursor,
+                nested: vec![],
+                current_literal: None,
+                words: vec![
+                    "git".to_owned(),
+                    "co".to_owned(),
+                    "".to_owned(),
+                ],
+                current_word: 2,
+                current_span: None,
             }
         );
 
@@ -614,9 +646,10 @@ mod tests {
                 nested: vec![BlockType::ParamExpand, BlockType::CmdSubst],
                 current_literal: None,
                 words: vec![
-                    "echo".to_owned()
+                    "echo".to_owned(),
+                    "".to_owned()
                 ],
-                current_word: 0,
+                current_word: 1,
                 current_span: None,
             }
         );
