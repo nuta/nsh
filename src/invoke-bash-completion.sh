@@ -6,6 +6,8 @@ fi
 # macOS (Homebrew)
 if [[ -r /usr/local/opt/bash-completion@2/share/bash-completion/bash_completion ]]; then
     . /usr/local/opt/bash-completion@2/share/bash-completion/bash_completion
+    # FIXME:
+    . /usr/local/etc/bash_completion.d/git-completion.bash
 fi
 
 OLD_IFS="$IFS"
