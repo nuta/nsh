@@ -2,7 +2,9 @@ use dirs;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::os::unix::fs::PermissionsExt;
+use std::io::prelude::*;
 use crate::fuzzy::FuzzyVec;
 use crate::context_parser::InputContext;
 
@@ -415,4 +417,52 @@ impl CompSpecBuilder {
             dirnames_if_empty: self.dirnames_if_empty,
         }
     }
+}
+
+pub fn invoke_bash_completion(ctx: &InputContext) -> std::io::Result<Vec<Arc<String>>> {
+    trace!("invoke_bash_completion: line='{}'", ctx.input);
+
+    let bash_path = if cfg!(target_os = "macos") {
+        // Use Homebrew Bash as we need newer one.
+        "/usr/local/opt/bash/bin/bash"
+    } else {
+        "/bin/bash"
+    };
+
+    let mut cmd = Command::new(bash_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env("COMP_LINE", ctx.input.to_owned())
+        .env("COMP_WORDS", ctx.words.join("#"))
+        .env("COMP_POINT", ctx.cursor.to_string())
+        .env("COMP_CWORD", ctx.current_word.to_string())
+        .spawn()?;
+
+    cmd.stdin
+        .as_mut()
+        .unwrap()
+        .write_all(include_bytes!("./invoke-bash-completion.sh"))?;       
+    let result = cmd.wait_with_output();
+    match result {
+        Ok(output) => {
+            let stdout = String::from_utf8(output.stdout).unwrap();
+            if !output.status.success() {
+                let stderr = String::from_utf8(output.stderr).unwrap();
+                warn!("bash completion error: \n{}\nstderr:\n{}",
+                    stdout, stderr);
+                return Ok(Vec::new());
+            }
+
+            let mut results = Vec::new();
+            for line in stdout.lines() {
+                results.push(Arc::new(line.to_owned()));
+            }
+            return Ok(results);
+        }
+        Err(err) => {
+            warn!("failed to invoke bash: {:?}", err);
+            return Err(err);
+        }
+    };
 }

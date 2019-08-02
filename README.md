@@ -7,8 +7,9 @@ nsh
 
 A command-line shell that focuses on performance and productivity featuing:
 - A not-yet-completed-but-aims-to-be **Bash compatible** interactive shell.
-- **Tab compeltions** and **syntax highlighting** like **[fish](http://fishshell.com/)**.
-- A builtin **interactive completion filter** like **[fzf](https://github.com/junegunn/fzf)**.
+- **Tab completions** and **syntax highlighting** like **[fish](http://fishshell.com/)**.
+- **[bash-completions](https://github.com/scop/bash-completion) support** (by simply invoking an external Bash).
+- A builtin **interactive fuzzy completion filter** like **[fzf](https://github.com/junegunn/fzf)**.
 - **Blazing fast startup times** by asynchronous initialization.
 - Builtin **zero configration** features and web-based config editor: `nsh-config`.
 - **Written in Rust** :crab:
@@ -21,9 +22,16 @@ Installation
 $ cargo install nsh
 ```
 
+To enable completions, install ([bash-completions](https://github.com/scop/bash-completion)). If you are using macOS,
+install newer Bash as well:
+
+```
+$ brew install bash bash-completion@2
+```
+
 Configuration
 -------------
-Run `nsh-config` in nsh (it is an internal command),
+Run `nsh-config` in nsh (it is an internal command).
 
 Key Shortcuts
 -------------
@@ -63,7 +71,6 @@ Comparisons
 
 Future Plans
 ------------
-- Full **[bash-completions](https://github.com/scop/bash-completion)** support.
 - Plugins: rbenv integration, and more.
 - Smart fuzzy search in completion.
 - Auto correction as **[fuck](https://github.com/nvbn/thefuck)** does.
