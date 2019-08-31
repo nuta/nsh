@@ -11,6 +11,7 @@ license = "CC0-1.0 OR MIT"
 repository = "https://github.com/seiyanuta/nsh"
 include = [
     "**/*.rs",
+    "src/invoke-bash-completion.sh",
     "**/*.pest",
     "Cargo.toml",
 ]
