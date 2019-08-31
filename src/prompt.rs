@@ -6,6 +6,7 @@ use pest::Parser;
 use pest::iterators::{Pairs, Pair};
 use std::fmt::Write;
 use std::sync::{Arc, Mutex};
+use std::path::Path;
 use termion;
 use nix::unistd;
 use libc;
@@ -30,7 +31,7 @@ pub enum Color {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Condition {
-    InGitRepo
+    InRepo
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -41,7 +42,7 @@ pub enum Span {
     Hostname,
     CurrentDir,
     Newline,
-    GitBranch,
+    RepoStatus,
     If {
         condition: Condition,
         then_part: Vec<Span>,
@@ -60,7 +61,7 @@ fn visit_prompt(pair: Pair<Rule>) -> Prompt {
             Rule::username_span => Span::Username,
             Rule::hostname_span => Span::Hostname,
             Rule::current_dir_span => Span::CurrentDir,
-            Rule::git_branch_span => Span::GitBranch,
+            Rule::repo_status_span => Span::RepoStatus,
             Rule::newline_span => Span::Newline,
             Rule::reset_span => Span::Color(Color::Reset),
             Rule::bold_span => Span::Color(Color::Bold),
@@ -75,7 +76,7 @@ fn visit_prompt(pair: Pair<Rule>) -> Prompt {
             Rule::if_span => {
                 let mut inner = pair.into_inner();
                 let condition = match inner.next().unwrap().as_span().as_str() {
-                    "in_git_repo" => Condition::InGitRepo,
+                    "in_repo" => Condition::InRepo,
                     _ => unreachable!(),
                 };
 
@@ -133,7 +134,13 @@ fn get_hostname() -> String {
     hostname.to_owned()
 }
 
-fn get_current_git_branch() -> String {
+fn get_repo_branch(git_dir: &str) -> String {
+    let rebase_i_file = Path::new(git_dir).join("rebase-merge/head-name");
+    if rebase_i_file.exists() {
+        // TODO: remove `refs/<type>/` prefixes.
+        return std::fs::read_to_string(rebase_i_file).unwrap().trim().to_owned();
+    }
+
     let result = std::process::Command::new("git")
         .arg("rev-parse")
         .arg("--abbrev-ref")
@@ -150,9 +157,72 @@ fn get_current_git_branch() -> String {
     }
 }
 
+fn get_git_dir() -> String {
+    let result = std::process::Command::new("git")
+        .arg("rev-parse")
+        .arg("--git-dir")
+        .output();
+
+    if let Ok(output) = result {
+        String::from_utf8_lossy(&output.stdout)
+            .into_owned()
+            .trim()
+            .to_owned()
+    } else {
+        warn!("failed to get the git dir");
+        "".to_owned()
+    }
+}
+
+fn is_repo_modified() -> bool {
+    std::process::Command::new("git")
+        .arg("status")
+        .arg("--porcelain")
+        .stderr(std::process::Stdio::null())
+        .output()
+        .map(|output| !output.stdout.is_empty())
+        .unwrap_or(false)
+}
+
+fn get_repo_action(git_dir: &str) -> Option<&'static str> {
+    let git_dir = Path::new(git_dir);
+    if git_dir.join("rebase-merge/interactive").exists() {
+        return Some("rebase-i");
+    }
+
+    if git_dir.join("MERGE_HEAD").exists() {
+        return Some("merge");
+    }
+
+    if git_dir.join("BISECT_LOG").exists() {
+        return Some("bisect");
+    }
+    
+    return None;
+}
+
+// TODO: Support other systems like SVN.
+fn get_repo_info() -> String {
+    let git_dir = get_git_dir();
+    let mut columns = Vec::with_capacity(2);
+
+    let mut branch = get_repo_branch(&git_dir);
+    if is_repo_modified() {
+        branch.push('*');
+    }
+    columns.push(branch);
+
+    if let Some(action) = get_repo_action(&git_dir) {
+        columns.push(action.to_owned());
+    }
+
+    columns.join("|")
+}
+
 fn evaluate_condition(cond: &Condition) -> bool {
     match cond {
-        Condition::InGitRepo => {
+        Condition::InRepo => {
+            // TODO: Support other systems like SVN.
             std::process::Command::new("git")
                 .arg("rev-parse")
                 .arg("--is-inside-work-tree")
@@ -216,8 +286,8 @@ fn draw_prompt(prompt: &Prompt) -> (String, usize) {
                     buf.push_str(&path);
                 }
             }
-            Span::GitBranch => {
-                let hostname = get_current_git_branch();
+            Span::RepoStatus => {
+                let hostname = get_repo_info();
                 len += hostname.len();
                 buf.push_str(&hostname)
             },
@@ -502,16 +572,16 @@ fn test_prompt_parser() {
     );
 
     assert_eq!(
-        parse_prompt("\\{current_dir} \\if{in_git_repo}{[\\{git_branch}]}{} $ "),
+        parse_prompt("\\{current_dir} \\if{in_repo}{[\\{repo_status}]}{} $ "),
         Ok(Prompt {
             spans: vec![
                 Span::CurrentDir,
                 Span::Literal(" ".into()),
                 Span::If {
-                    condition: Condition::InGitRepo,
+                    condition: Condition::InRepo,
                     then_part: vec![
                         Span::Literal("[".into()),
-                        Span::GitBranch,
+                        Span::RepoStatus,
                         Span::Literal("]".into()),
                     ],
                     else_part: vec![]

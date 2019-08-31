@@ -1,7 +1,7 @@
 username_span    = { "\\{username}" }
 hostname_span    = { "\\{hostname}" }
 current_dir_span = { "\\{current_dir}" }
-git_branch_span  = { "\\{git_branch}" }
+repo_status_span = { "\\{repo_status}" }
 reset_span       = { "\\{reset}" }
 bold_span        = { "\\{bold}" }
 underline_span   = { "\\{underline}" }
@@ -14,7 +14,7 @@ magenta_span     = { "\\{magenta}" }
 newline_span     = { "\\n" }
 
 condition = {
-    "in_git_repo"
+    "in_repo"
 }
 if_span = { "\\if{" ~ condition ~ "}" ~ "{" ~ prompt ~ "}" ~ "{"~ prompt ~ "}" }
 
@@ -22,7 +22,7 @@ special_span = _{
     username_span
     | hostname_span
     | current_dir_span
-    | git_branch_span
+    | repo_status_span
     | newline_span
     | reset_span
     | bold_span

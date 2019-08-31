@@ -52,8 +52,8 @@
                     <td>Magenta (Color)</td>
                 </tr>
                 <tr>
-                    <th scope="row"><code>\{git_branch}</code></th>
-                    <td>current Git branch</td>
+                    <th scope="row"><code>\{repo_status}</code></th>
+                    <td>current repository status (Git only)</td>
                     <th scope="row"><code></code></th>
                     <td></td>
                     <th scope="row"><code></code></th>
@@ -62,7 +62,7 @@
                 <tr>
                     <th scope="row"><code>\if{cond}{then}{else}</code></th>
                     <td colspan="5">A ternary expression, e.g.
-                        <code>\if{in_git_repo}{at \{git_branch}}{}</code><br>
+                        <code>\if{in_repo}{at \{repo_status}}{}</code><br>
                         <b></b></td>
                 </tr>
             </tbody>
@@ -81,10 +81,10 @@
             </thead>
             <tbody>
                 <tr>
-                    <th scope="row"><code>in_git_repo</code></th>
-                    <td>True if the current working directory is in a Git repository.</td>
+                    <th scope="row"><code>in_repo</code></th>
+                    <td>True if the current working directory is in a repository.</td>
                     <td>
-                        <select class="form-control" v-model="conditions.in_git_repo">
+                        <select class="form-control" v-model="conditions.in_repo">
                             <option value="true">true</option>
                             <option value="false">false</option>
                         </select>
@@ -133,10 +133,10 @@ function parse_prompt(prompt: string, conditions: {[name: string]: string }): an
         username: "username",
         hostname: "hostname.local",
         current_dir: "~/Documents",
-        git_branch: "master",
+        repo_status: "master",
     }
 
-    const simple_span = /^\\\{(username|hostname|current_dir|git_branch)\}/;
+    const simple_span = /^\\\{(username|hostname|current_dir|repo_status)\}/;
     const color_span = /^\\\{(red|blue|green|yellow|cyan|magenta)\}/;
     const bold_span = /^\\\{bold\}/;
     const underline_span = /^\\\{underline\}/;
@@ -196,7 +196,7 @@ export default {
     data() {
         return {
             conditions: {
-                in_git_repo: "true",
+                in_repo: "true",
             }
         }
     },
