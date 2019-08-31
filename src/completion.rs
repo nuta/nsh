@@ -101,7 +101,6 @@ impl CompletionSelector {
         user_input: &str,
         user_cursor: &mut usize
     ) -> String {
-        warn!("Entering select and update");
         let selected = match self.get(self.selected_index()) {
             Some(selected) => selected,
             None => return user_input.to_owned(),
