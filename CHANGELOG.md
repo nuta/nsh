@@ -1,5 +1,8 @@
 # Change Log
 
+## v0.1.5
+No functional changes. Just fixed a build error.
+
 ## v0.1.4
 - Experimental support for bash-completion.
   - It invokes an external bash *every time* you hit TAB. This is a workaround
