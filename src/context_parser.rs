@@ -392,7 +392,11 @@ impl ContextParser {
                                 words.push(current_word);
                                 current_word = String::new();
                             } else {
-                                current_word += &self.input[prev_index..self.index];
+                                let s: String = self.input.chars()
+                                    .skip(prev_index)
+                                    .take(self.index - prev_index)
+                                    .collect();
+                                current_word += s.as_str();
                             }
                         }
 

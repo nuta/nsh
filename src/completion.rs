@@ -98,12 +98,13 @@ impl CompletionSelector {
     pub fn select_and_update_input_and_cursor(
         &self,
         ctx: &InputContext,
-        user_input: &mut String,
+        user_input: &str,
         user_cursor: &mut usize
-    ) {
+    ) -> String {
+        warn!("Entering select and update");
         let selected = match self.get(self.selected_index()) {
             Some(selected) => selected,
-            None => return,
+            None => return user_input.to_owned(),
         };
 
         let (prefix_end, suffix_start) = match &ctx.current_literal {
@@ -111,8 +112,8 @@ impl CompletionSelector {
             None => (ctx.cursor, ctx.cursor + 1),
         };
 
-        let prefix = user_input.get(..prefix_end).unwrap_or("").to_string();
-        let suffix = user_input.get(suffix_start..).unwrap_or("").to_string();
+        let prefix: String = user_input.chars().take(prefix_end).collect();
+        let suffix: String = user_input.chars().skip(suffix_start).collect();
 
         let path = if selected.starts_with("~/") {
             let mut path = dirs::home_dir().unwrap().to_path_buf();
@@ -132,8 +133,9 @@ impl CompletionSelector {
         };
 
         trace!("complete: '{}' '{}' '{}' '{}'", prefix, selected, append, suffix);
-        *user_input = format!("{}{}{}{}", prefix, selected, append, suffix);
-        *user_cursor = prefix.len() + selected.len() + append.len();
+        *user_cursor = prefix.chars().count() +
+            selected.chars().count() + append.chars().count();
+        return format!("{}{}{}{}", prefix, selected, append, suffix);
     }
 }
 

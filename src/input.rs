@@ -29,8 +29,7 @@ fn restore_main_screen(stdout: &mut Stdout) {
 
 #[inline]
 fn truncate(s: &str, len: u16) -> String {
-    let mut string = s.to_owned();
-    string.truncate(len as usize);
+    let string = s.chars().take(len as usize).collect();
     string
 }
 
@@ -44,8 +43,84 @@ fn truncate_and_fill(s: &str, len: u16, fill: char) -> String {
     s
 }
 
+struct UserInput {
+    input: String,
+    indices: Vec<usize>,
+}
+
+impl UserInput {
+    pub fn new() -> UserInput {
+        UserInput {
+            input: String::new(),
+            indices: Vec::new(),
+        }
+    }
+
+    pub fn from_str(s: &str) -> UserInput {
+        let mut user_input = UserInput {
+            input: s.to_owned(),
+            indices: Vec::new(),
+        };
+
+        user_input.update_indices();
+        user_input
+    }
+
+    pub fn clone(&self) -> UserInput {
+        UserInput {
+            input: self.input.clone(),
+            indices: self.indices.clone(),
+        }
+    }
+
+    pub fn insert(&mut self, index: usize, ch: char) {
+        trace!("{}: {}", self.indices.len(), index);
+        let byte_index = if index == self.indices.len() {
+            self.input.len()
+        } else {
+            self.indices[index]
+        };
+
+        self.input.insert(byte_index, ch);
+        self.update_indices();
+    }
+
+    pub fn remove(&mut self, index: usize) {
+        self.input.remove(self.indices[index]);
+        self.update_indices();
+    }
+
+    pub fn truncate(&mut self, index: usize) {
+        self.input.truncate(self.indices[index]);
+        self.update_indices();
+    }
+
+    pub fn nth(&mut self, index: usize) -> Option<char> {
+        self.input.chars().nth(index)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.input.as_str()
+    }
+
+    pub fn len(&self) -> usize {
+        self.indices.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.input.is_empty()
+    }
+
+    fn update_indices(&mut self) {
+        self.indices.clear();
+        for index in self.input.char_indices() {
+            self.indices.push(index.0);
+        }
+    }
+}
+
 /// Returns true if the user wants to execute the command immediately.
-fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<Stdin>, user_input: &mut String) -> bool {
+fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<Stdin>, user_input: &mut UserInput) -> bool {
     let (x_max, y_max) = termion::terminal_size().unwrap();
     let mut selected = 0;
     let saved_user_input = user_input.clone();
@@ -80,7 +155,7 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
         input_line += &format!(
             "{}{}",
             termion::cursor::Goto(1 + prompt.len() as u16, 1),
-            truncate(user_input, user_input_max)
+            truncate(user_input.as_str(), user_input_max)
         );
 
         // Render howto_line.
@@ -95,7 +170,7 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
 
         // Search history for user input.
         let mut history_lines = String::new();
-        let entries = search_history(user_input);
+        let entries = search_history(user_input.as_str());
         let max = std::cmp::min(display_len as usize, entries.len());
         if selected > max.saturating_sub(1) {
             selected = max.saturating_sub(1);
@@ -147,7 +222,7 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
                     Event::Key(Key::Char('\n')) => {
                         restore_main_screen(stdout);
                         if let Some(s) = entries.get(selected) {
-                            *user_input = s.as_str().to_owned();
+                            *user_input = UserInput::from_str(s.as_str());
                             return true;
                         } else {
                             // No history entries. Abort history mode.
@@ -159,7 +234,7 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
                     Event::Key(Key::Char('\t')) => {
                         restore_main_screen(stdout);
                         if let Some(s) = entries.get(selected) {
-                            *user_input = s.as_str().to_owned();
+                            *user_input = UserInput::from_str(s.as_str());
                         } else {
                             // No history entries. Abort history mode.
                             *user_input = saved_user_input;
@@ -248,7 +323,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
     */
 
     let word_split = " /\t";
-    let mut user_input = String::new();
+    let mut user_input = UserInput::new();
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
     let mut mode = InputMode::Normal;
     let mut history = HistorySelector::new();
@@ -258,7 +333,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
 
     'input_line: loop {
         // Print the prompt.
-        let input_ctx = context_parser::parse(&user_input, user_cursor);
+        let input_ctx = context_parser::parse(user_input.as_str(), user_cursor);
         let x_max = termion::terminal_size().unwrap().0 as usize;
         let prompt = match &mode {
             InputMode::Completion(completion) => {
@@ -288,7 +363,9 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                     Event::Key(Key::Char('\n')) => match &mut mode {
                         InputMode::Normal => break 'input_line,
                         InputMode::Completion(completion) => {
-                            completion.select_and_update_input_and_cursor(&input_ctx, &mut user_input, &mut user_cursor);
+                            let expanded = completion.select_and_update_input_and_cursor(
+                                &input_ctx, user_input.as_str(), &mut user_cursor);
+                            user_input = UserInput::from_str(&expanded);
                             mode = InputMode::Normal;
                             continue 'input_line;
                         }
@@ -303,7 +380,9 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                             if completion.len() == 1 {
                                 // There is only one completion candidate. Select it and go back into
                                 // normal input mode.
-                                completion.select_and_update_input_and_cursor(&input_ctx, &mut user_input, &mut user_cursor);
+                                let expanded = completion.select_and_update_input_and_cursor(
+                                    &input_ctx, user_input.as_str(), &mut user_cursor);
+                                user_input = UserInput::from_str(&expanded);
                             } else {
                                 mode = InputMode::Completion(completion);
                             }
@@ -324,9 +403,9 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                     Event::Key(Key::Up) => {
                         match &mut mode {
                             InputMode::Normal => {
-                                history.prev(&user_input);
+                                history.prev(user_input.as_str());
                                 let line = history.current();
-                                user_input = line.to_string();
+                                user_input = UserInput::from_str(&line);
                                 user_cursor = user_input.len();
                             },
                             InputMode::Completion(completion) => {
@@ -340,7 +419,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                             InputMode::Normal => {
                                 history.next();
                                 let line = history.current();
-                                user_input = line.to_string();
+                                user_input = UserInput::from_str(&line);
                                 user_cursor = user_input.len();
                             },
                             InputMode::Completion(completion) => {
@@ -380,7 +459,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                         user_cursor = user_cursor.saturating_sub(1);
 
                         while user_cursor > 0 {
-                            if let Some(ch) = user_input.chars().nth(user_cursor.saturating_sub(1)) {
+                            if let Some(ch) = user_input.nth(user_cursor.saturating_sub(1)) {
                                 if word_split.contains(ch) {
                                     break;
                                 }
@@ -401,7 +480,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                         }
 
                         while user_cursor < user_input.len() {
-                            if let Some(ch) = user_input.chars().nth(user_cursor.saturating_sub(1)) {
+                            if let Some(ch) = user_input.nth(user_cursor.saturating_sub(1)) {
                                 if word_split.contains(ch) {
                                     break;
                                 }
@@ -421,7 +500,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                     // Removes the provious word.
                     Event::Key(Key::Ctrl('w')) => {
                         // Remove whitespaces and slashes.
-                        while let Some(ch) = user_input.chars().nth(user_cursor.saturating_sub(1)) {
+                        while let Some(ch) = user_input.nth(user_cursor.saturating_sub(1)) {
                             if !word_split.contains(ch) {
                                 break;
                             }
@@ -431,7 +510,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                         }
 
                         // Remove the word.
-                        while let Some(ch) = user_input.chars().nth(user_cursor.saturating_sub(1)) {
+                        while let Some(ch) = user_input.nth(user_cursor.saturating_sub(1)) {
                             if word_split.contains(ch) {
                                 break;
                             }
@@ -482,7 +561,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
     }
 
     write!(stdout, "{}", renderer.render_clear_completions()).ok();
-    append_history(&user_input);
-    trace!("input: '{}'", user_input);
-    Ok(user_input)
+    append_history(user_input.as_str());
+    trace!("input: '{}'", user_input.as_str());
+    Ok(user_input.as_str().to_owned())
 }
