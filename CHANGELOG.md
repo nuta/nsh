@@ -1,5 +1,13 @@
 # Change Log
 
+## v0.1.4
+- Experimental support for bash-completion.
+  - It invokes an external bash *every time* you hit TAB. This is a workaround
+    until nsh supports required Bash-specific features.
+- Breaking change: `in_git_repo` and `git_branch` prompt tags are renamed to
+  `in_repo` and `repo_status` respectively.
+- prompt: support multi-byte characters.
+
 ## v0.1.3
 - Fixed some bugs.
 - Updated dependencies.
