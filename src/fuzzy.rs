@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 ///
-/// A ordered `Vec` which support fuzzy search.
+/// A ordered `Vec` which supports fuzzy search.
 ///
 pub struct FuzzyVec {
     /// The *unordered* array of a haystack.
