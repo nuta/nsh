@@ -64,16 +64,11 @@ Comparisons
 | | **nsh**  | **[bash](https://www.gnu.org/software/bash)**  | **[zsh](http://www.zsh.org/)** | **[fish](http://fishshell.com/)** | **[PowerShell](https://github.com/PowerShell/PowerShell)** |
 | :-: | :-: | :-: | :-: | :-: | :-: |
 | **POSIX shell features**   | **Yes**              | **Yes**             | **Yes**                      | original syntax             | No             |
-| **Bash compatibility**     | incomplete           | **100% compatible** | **provides `emulate(1)`**    | requires Bass               | No             |
-| **Prompt UX**              | *passable*           | minimum standard    | comfortable                  | **awesome**                 | comfortable    |
+| **Bash compatibility**     | partially supported           | **100% compatible** | **provides `emulate(1)`**    | requires Bass               | No             |
+| **Prompt UX**              | **(aims to be) awesome**           | minimum standard    | comfortable                  | **awesome**                 | comfortable    |
 | **Configuration easiness** | **web-based config** | insufficient        | oh-my-zsh or very long zshrc | **web-based config**        | insufficient   |
 | **Name**                   | not bad              | **noble**           | **cool**                     | **cute**                    | **super cool** |
 
-Future Plans
-------------
-- Plugins: rbenv integration, and more.
-- Smart fuzzy search in completion.
-- Auto correction as **[fuck](https://github.com/nvbn/thefuck)** does.
 
 ----
 
