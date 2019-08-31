@@ -101,6 +101,7 @@ pub fn highlight(ctx: &InputContext, isolate_lock: Arc<Mutex<Isolate>>) -> Strin
             Span::CommandSep(sep) => {
                 let sep_str = match sep {
                     CommandSepType::Semi => ";",
+                    CommandSepType::Pipe => "|",
                     CommandSepType::DoubleAnd => "&&",
                     CommandSepType::SingleAnd => "&",
                     CommandSepType::Newline => "\n",

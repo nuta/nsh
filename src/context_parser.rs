@@ -29,6 +29,8 @@ pub enum CommandSepType {
     Newline,
     /// `;'
     Semi,
+    /// `|'
+    Pipe,
     /// `&'
     SingleAnd,
     /// `&&'
@@ -161,6 +163,12 @@ impl ContextParser {
         if s.starts_with(';') {
             self.index += 1;
             return (State::EnvOrArgv0, Span::CommandSep(CommandSepType::Semi));
+        }
+
+        // Command separator.
+        if s.starts_with('|') {
+            self.index += 1;
+            return (State::EnvOrArgv0, Span::CommandSep(CommandSepType::Pipe));
         }
 
         // Command separator.
