@@ -8,7 +8,7 @@ nsh
 A command-line shell that focuses on performance and productivity featuing:
 - A not-yet-completed-but-aims-to-be **Bash compatible** interactive shell.
 - **Tab completions** and **syntax highlighting** like **[fish](http://fishshell.com/)**.
-- **[bash-completion](https://github.com/scop/bash-completion) support** (by simply invoking an external Bash).
+- **[bash-completion](https://github.com/scop/bash-completion) support** (by simply invoking an external Bash for now).
 - A builtin **interactive fuzzy completion filter** like **[fzf](https://github.com/junegunn/fzf)**.
 - **Blazing fast startup times** by asynchronous initialization.
 - Builtin **zero configration** features and web-based config editor: `nsh-config`.
@@ -85,8 +85,6 @@ $ ./target/release/nsh
 
 Testing
 -------
-Use nightly Rust toolchain to build.
-
 ```
 $ cargo test
 $ ./tools/run-blackbox-tests.py
