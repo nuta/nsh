@@ -198,7 +198,7 @@ fn get_repo_action(git_dir: &str) -> Option<&'static str> {
         return Some("bisect");
     }
     
-    return None;
+    None
 }
 
 // TODO: Support other systems like SVN.
@@ -450,11 +450,11 @@ impl PromptRenderer {
 
         // Move the cursor to the beginning of the line.
         let cursor_x = cursor_pos % x_max as u16;
-        write!(buf, "\r").ok();
+        writeln!(buf).ok();
 
         // Wrapping.
         if cursor_x == 0 && self.last_cursor_x > 0 && user_input_len == user_cursor {
-            write!(buf, "\n").ok();
+            writeln!(buf).ok();
         }
 
         // Move the cursor (x-axis).
@@ -482,7 +482,7 @@ impl PromptRenderer {
 
         let mut completion_str = String::new();
         let mut completion_lines = 0;
-            write!(completion_str, "\n").ok();
+            writeln!(completion_str).ok();
 
         let results = completions.entries();
         let iter = results

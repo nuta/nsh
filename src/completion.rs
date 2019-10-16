@@ -448,22 +448,22 @@ pub fn invoke_bash_completion(ctx: &InputContext) -> std::io::Result<Vec<Arc<Str
     match result {
         Ok(output) => {
             let stdout = String::from_utf8(output.stdout).unwrap();
-            if !output.status.success() {
+            if output.status.success() {
+                let mut results = Vec::new();
+                for line in stdout.lines() {
+                    results.push(Arc::new(line.to_owned()));
+                }
+                Ok(results)
+            } else {
                 let stderr = String::from_utf8(output.stderr).unwrap();
                 warn!("bash completion error: \n{}\nstderr:\n{}",
                     stdout, stderr);
-                return Ok(Vec::new());
+                Ok(Vec::new())
             }
-
-            let mut results = Vec::new();
-            for line in stdout.lines() {
-                results.push(Arc::new(line.to_owned()));
-            }
-            return Ok(results);
         }
         Err(err) => {
             warn!("failed to invoke bash: {:?}", err);
-            return Err(err);
+            Err(err)
         }
-    };
+    }
 }

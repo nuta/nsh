@@ -77,7 +77,7 @@ fn load_history() {
     if let Ok(file) = File::open(history_path) {
         for (i, line) in BufReader::new(file).lines().enumerate() {
             if let Ok(line) = line {
-                let cmd = line.split("\t").nth(2);
+                let cmd = line.split('\t').nth(2);
                 match (cmd, warned) {
                     (Some(cmd), _) => {
                         let mut hist = HISTORY.lock().unwrap();

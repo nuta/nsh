@@ -13,8 +13,8 @@ pub struct Config {
     pub rc: String,
 }
 
-const DEFAULT_PROMPT: &'static str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
-const DEFAULT_PATH: &'static str = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/sbin";
+const DEFAULT_PROMPT: &str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
+const DEFAULT_PATH: &str = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/sbin";
 
 pub fn default_config() -> Config {
     Config {
@@ -45,7 +45,7 @@ pub fn load_nshrc() -> Result<Config> {
             }
 
             let var = line[4..].to_owned();
-            let mut cols = var.splitn(2, "=");
+            let mut cols = var.splitn(2, '=');
             if let Some(name) = cols.next() {
                 let content = cols.next().unwrap_or("").to_owned();
                 match name {

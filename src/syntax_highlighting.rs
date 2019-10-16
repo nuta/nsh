@@ -41,7 +41,7 @@ pub fn highlight(ctx: &InputContext, isolate_lock: Arc<Mutex<Isolate>>) -> Strin
 
             }
             Span::Literal(span) => {
-                if span.starts_with("-") {
+                if span.starts_with('-') {
                     write!(buf, "{}{}{}", option_color, span, reset_color).ok();
                 } else {
                     buf += &span;

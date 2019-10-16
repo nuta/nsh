@@ -29,8 +29,7 @@ fn restore_main_screen(stdout: &mut Stdout) {
 
 #[inline]
 fn truncate(s: &str, len: u16) -> String {
-    let string = s.chars().take(len as usize).collect();
-    string
+    s.chars().take(len as usize).collect()
 }
 
 #[inline]
