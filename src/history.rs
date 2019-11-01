@@ -3,7 +3,6 @@
 //! by `History` struct. We don't simply save the whole history as a JSON array since appending
 //! to a *large* history array would be very slow.
 //!
-use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufRead, Write};
@@ -16,7 +15,7 @@ lazy_static! {
     static ref HISTORY: Mutex<FuzzyVec> = Mutex::new(FuzzyVec::new());
 }
 
-pub fn search_history(query: &str) -> Vec<Arc<String>> {
+pub fn search_history(query: &str) -> Vec<String> {
     let lock = HISTORY.lock().unwrap();
     lock.search(query)
 }
@@ -54,7 +53,7 @@ pub fn append_history(cmd: &str) {
         }
     }
 
-    hist.append(Arc::new(cmd.to_string()));
+    hist.append(cmd.to_string());
 }
 
 /// Returns the absolute path to the history file. Creates it if it doesn't exist.
@@ -81,7 +80,7 @@ fn load_history() {
                 match (cmd, warned) {
                     (Some(cmd), _) => {
                         let mut hist = HISTORY.lock().unwrap();
-                        hist.append(Arc::new(cmd.to_string()));
+                        hist.append(cmd.to_string());
                     },
                     (None, false) => {
                         eprintln!("nsh: warning: failed to parse ~/.nsh_history: at line {}", i + 1);
@@ -109,10 +108,10 @@ impl HistorySelector {
     }
 
     /// Returns None if `self.offset` is 0 otherwise `self.offset - 1`th entry.
-    pub fn current(&self) -> Arc<String> {
+    pub fn current(&self) -> String {
         if self.offset == 0 {
             //  Reached to the end of histories. Restore the saved state.
-            Arc::new(self.user_input.clone())
+            self.user_input.clone()
         } else {
             let hist = HISTORY.lock().unwrap();
             hist.nth_last(self.offset - 1).unwrap()

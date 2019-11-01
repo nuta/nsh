@@ -1,6 +1,5 @@
 use dirs;
 use std::collections::VecDeque;
-use std::sync::Arc;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::os::unix::fs::PermissionsExt;
@@ -11,7 +10,7 @@ use crate::context_parser::InputContext;
 /// A completion-related prompt states.
 pub struct CompletionSelector {
     /// Candidate completion entries.
-    entries: Vec<Arc<String>>,
+    entries: Vec<String>,
     // The currently selected entry.
     selected_index: usize,
     // The number of completion lines in the prompt.
@@ -21,7 +20,7 @@ pub struct CompletionSelector {
 }
 
 impl CompletionSelector {
-    pub fn new(entries: Vec<Arc<String>>) -> CompletionSelector {
+    pub fn new(entries: Vec<String>) -> CompletionSelector {
         const COMPLETION_LINES: usize = 7;
 
         CompletionSelector {
@@ -66,7 +65,7 @@ impl CompletionSelector {
     }
 
     #[inline(always)]
-    pub fn entries(&self) -> Vec<Arc<String>> {
+    pub fn entries(&self) -> Vec<String> {
         self.entries.clone()
     }
 
@@ -81,8 +80,8 @@ impl CompletionSelector {
     }
 
     #[inline(always)]
-    pub fn get(&self, index: usize) -> Option<Arc<String>> {
-        self.entries.get(index).cloned()
+    pub fn get(&self, index: usize) -> Option<&str> {
+        self.entries.get(index).map(String::as_str)
     }
 
     #[inline(always)]
@@ -116,12 +115,12 @@ impl CompletionSelector {
 
         let path = if selected.starts_with("~/") {
             let mut path = dirs::home_dir().unwrap().to_path_buf();
-            let mut sub_path = PathBuf::from(selected.as_str());
+            let mut sub_path = PathBuf::from(selected);
             sub_path = sub_path.strip_prefix("~/").unwrap().to_path_buf();
             path.push(sub_path);
             path
         } else {
-            PathBuf::from(selected.as_str())
+            PathBuf::from(selected)
         };
 
         // add a slash or space after the word.
@@ -140,7 +139,7 @@ impl CompletionSelector {
 
 /// `compgen(1)`.
 pub struct CompGen {
-    entries: Vec<Arc<String>>,
+    entries: Vec<String>,
     query: Option<String>,
     /// `-A command`
     include_commands: bool,
@@ -188,14 +187,14 @@ impl CompGen {
     pub fn wordlist<'a>(&'a mut self, wordlist: &str, ifs: &str) -> &'a mut CompGen {
         self.entries = wordlist
             .split(|c| ifs.contains(c))
-            .map(|elem| Arc::new(elem.to_owned()))
+            .map(|elem| elem.to_owned())
             .collect();
 
         self
     }
 
     #[inline]
-    pub fn entries(&mut self, entries: Vec<Arc<String>>) -> &mut CompGen {
+    pub fn entries(&mut self, entries: Vec<String>) -> &mut CompGen {
         self.entries = entries;
         self
     }
@@ -207,7 +206,7 @@ impl CompGen {
     }
 
     #[inline]
-    pub fn generate(self) -> Vec<Arc<String>> {
+    pub fn generate(self) -> Vec<String> {
         match self.query {
             Some(query) => FuzzyVec::from_vec(self.entries).search(&query),
             None => self.entries,
@@ -228,7 +227,7 @@ pub fn path_completion(
     include_dirs: bool,
     executable_only: bool,
     remove_dot_slash_prefix: bool
-) -> Vec<Arc<String>> {
+) -> Vec<String> {
 
     let current_word = match &ctx.current_literal {
         Some(range) => Some(ctx.input.as_str()[range.clone()].to_owned()),
@@ -317,7 +316,7 @@ pub fn path_completion(
                         path = path.strip_prefix("./").unwrap().to_path_buf();
                     }
 
-                    entries.push(Arc::new(path.to_str().unwrap().to_owned()));
+                    entries.push(path.to_str().unwrap().to_owned());
                 }
             }
         }
@@ -333,7 +332,7 @@ pub fn path_completion(
     compgen.generate()
 }
 
-pub fn cmd_completion(ctx: &InputContext) -> Vec<Arc<String>> {
+pub fn cmd_completion(ctx: &InputContext) -> Vec<String> {
     match &ctx.current_literal {
         Some(range) => {
             let query = &ctx.input[range.clone()];
@@ -420,7 +419,7 @@ impl CompSpecBuilder {
     }
 }
 
-pub fn invoke_bash_completion(ctx: &InputContext) -> std::io::Result<Vec<Arc<String>>> {
+pub fn invoke_bash_completion(ctx: &InputContext) -> std::io::Result<Vec<String>> {
     trace!("invoke_bash_completion: line='{}'", ctx.input);
 
     let bash_path = if cfg!(target_os = "macos") {
@@ -451,7 +450,7 @@ pub fn invoke_bash_completion(ctx: &InputContext) -> std::io::Result<Vec<Arc<Str
             if output.status.success() {
                 let mut results = Vec::new();
                 for line in stdout.lines() {
-                    results.push(Arc::new(line.to_owned()));
+                    results.push(line.to_owned());
                 }
                 Ok(results)
             } else {

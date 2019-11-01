@@ -26,7 +26,7 @@ use std::io::prelude::*;
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::io::FromRawFd;
 use std::os::unix::io::RawFd;
-use std::sync::Arc;
+use std::rc::Rc;
 use std::cell::RefCell;
 use failure::Error;
 
@@ -96,7 +96,7 @@ pub enum ProcessState {
 #[derive(Debug)]
 pub struct Frame {
     /// A `(variable name, varible)` map.
-    vars: HashMap<String, Arc<Variable>>,
+    vars: HashMap<String, Rc<Variable>>,
 }
 
 impl Frame {
@@ -107,23 +107,23 @@ impl Frame {
     }
 
     pub fn define(&mut self, key: &str) {
-        self.vars.insert(key.into(), Arc::new(Variable::new(None)));
+        self.vars.insert(key.into(), Rc::new(Variable::new(None)));
     }
 
     pub fn set(&mut self, key: &str, value: Value) {
-        self.vars.insert(key.into(), Arc::new(Variable::new(Some(value))));
+        self.vars.insert(key.into(), Rc::new(Variable::new(Some(value))));
     }
 
-    pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
+    pub fn remove(&mut self, key: &str) -> Option<Rc<Variable>> {
         self.vars.remove(key)
     }
 
-    pub fn get(&self, key: &str) -> Option<Arc<Variable>> {
+    pub fn get(&self, key: &str) -> Option<Rc<Variable>> {
         self.vars.get(key).cloned()
     }
 
     /// Returns `$1`, `$2`, ...
-    pub fn get_args(&self) -> Vec<Arc<Variable>> {
+    pub fn get_args(&self) -> Vec<Rc<Variable>> {
         let mut args = Vec::new();
         for i in 1.. {
             if let Some(var) = self.get(&i.to_string()) {
@@ -161,12 +161,12 @@ impl Frame {
     }
 
     /// Removes `$<index>`.
-    pub fn remove_nth_arg(&mut self, index: usize) -> Option<Arc<Variable>> {
+    pub fn remove_nth_arg(&mut self, index: usize) -> Option<Rc<Variable>> {
         self.remove(&index.to_string())
     }
 
     /// Returns `$<index>`.
-    pub fn get_nth_arg(&self, index: usize) -> Option<Arc<Variable>> {
+    pub fn get_nth_arg(&self, index: usize) -> Option<Rc<Variable>> {
         self.get(&index.to_string())
     }
 
@@ -272,12 +272,11 @@ pub struct Isolate {
     script_name: String,
     term_fd: RawFd,
     shell_termios: Option<Termios>,
-    tcsetpgrp_enabled: bool,
 
     /// `$?`
     last_status: i32,
     /// `$!`
-    last_back_job: Option<Arc<Job>>,
+    last_back_job: Option<Rc<Job>>,
 
     /// Global scope.
     global: Frame,
@@ -291,19 +290,17 @@ pub struct Isolate {
     pub nounset: bool,
     pub noexec: bool,
 
-    jobs: HashMap<JobId, Arc<Job>>,
+    jobs: HashMap<JobId, Rc<Job>>,
     background_jobs: HashSet<JobId>,
-    last_fore_job: Option<Arc<Job>>,
+    last_fore_job: Option<Rc<Job>>,
     states: HashMap<Pid, ProcessState>,
-    pid_job_mapping: HashMap<Pid, Arc<Job>>,
+    pid_job_mapping: HashMap<Pid, Rc<Job>>,
 
     // pushd(1) / popd(1) stack
     cd_stack: Vec<String>,
 
     completions: HashMap<String, CompSpec>,
 }
-
-unsafe impl Send for Isolate {}
 
 macro_rules! bool_to_int {
     ($e:expr) => {
@@ -330,7 +327,6 @@ impl Isolate {
             interactive,
             term_fd: 0 /* stdin */,
             shell_termios,
-            tcsetpgrp_enabled: true,
             last_status: 0,
             exported: HashSet::new(),
             aliases: HashMap::new(),
@@ -353,16 +349,6 @@ impl Isolate {
     #[inline]
     pub fn interactive(&self) -> bool {
         self.interactive
-    }
-
-    #[inline]
-    pub fn enable_tcsetpgrp(&mut self) {
-        self.tcsetpgrp_enabled = true;
-    }
-
-    #[inline]
-    pub fn disable_tcsetpgrp(&mut self) {
-        self.tcsetpgrp_enabled = false;
     }
 
     #[inline]
@@ -428,7 +414,7 @@ impl Isolate {
         frame.set(key, value);
     }
 
-    pub fn remove(&mut self, key: &str) -> Option<Arc<Variable>> {
+    pub fn remove(&mut self, key: &str) -> Option<Rc<Variable>> {
         if let Some(var) = self.current_frame_mut().remove(key) {
             return Some(var);
         }
@@ -440,7 +426,7 @@ impl Isolate {
         None
     }
 
-    pub fn get(&self, key: &str) -> Option<Arc<Variable>> {
+    pub fn get(&self, key: &str) -> Option<Rc<Variable>> {
         if let Some(var) = self.current_frame().get(key) {
             Some(var)
         } else {
@@ -490,7 +476,7 @@ impl Isolate {
         self.cd_stack.pop()
     }
 
-    fn call_completion_function(&mut self, func_name: &str, ctx: &InputContext) -> Vec<Arc<String>> {
+    fn call_completion_function(&mut self, func_name: &str, ctx: &InputContext) -> Vec<String> {
         let locals = vec![
             ("COMP_WORDS", Value::Array(ctx.words.clone())),
             ("COMP_CWORD", Value::String(ctx.current_word.to_string()))
@@ -501,13 +487,7 @@ impl Isolate {
                 self.get("COMPREPLY")
                     .and_then(|reply| {
                         match reply.value() {
-                            Some(Value::Array(arr)) => {
-                                debug!("arr = {:?}", arr);
-                                let entries = arr.iter()
-                                    .map(|elem| Arc::new(elem.clone()))
-                                    .collect();
-                                Some(entries)
-                            },
+                            Some(Value::Array(arr)) => Some(arr.clone()),
                             _ => None,
                         }
                     })
@@ -529,7 +509,7 @@ impl Isolate {
     }
 
     /// Returns completion candidates.
-    pub fn complete(&mut self, ctx: &InputContext) -> Vec<Arc<String>> {
+    pub fn complete(&mut self, ctx: &InputContext) -> Vec<String> {
         trace!("complete: ctx={:?}", ctx);
 
         let cmd_name = if let Some(name) = ctx.words.get(0) {
@@ -951,9 +931,9 @@ impl Isolate {
         }
     }
 
-    pub fn create_job(&mut self, name: String, pgid: Pid, childs: Vec<Pid>) -> Arc<Job> {
+    pub fn create_job(&mut self, name: String, pgid: Pid, childs: Vec<Pid>) -> Rc<Job> {
         let id = self.alloc_job_id();
-        let job = Arc::new(Job::new(id, pgid, name, childs.clone()));
+        let job = Rc::new(Job::new(id, pgid, name, childs.clone()));
         for child in childs {
             self.set_process_state(child, ProcessState::Running);
             self.pid_job_mapping.insert(child, job.clone());
@@ -964,7 +944,7 @@ impl Isolate {
     }
 
     #[inline]
-    pub fn jobs(&self) -> Vec<Arc<Job>> {
+    pub fn jobs(&self) -> Vec<Rc<Job>> {
         let mut jobs = Vec::new();
         for job in self.jobs.values() {
             jobs.push(job.clone());
@@ -983,15 +963,15 @@ impl Isolate {
     }
 
     #[inline]
-    pub fn last_fore_job(&self) -> Option<Arc<Job>> {
+    pub fn last_fore_job(&self) -> Option<Rc<Job>> {
         self.last_fore_job.as_ref().cloned()
     }
 
-    pub fn find_job_by_id(&self, id: JobId) -> Option<Arc<Job>> {
+    pub fn find_job_by_id(&self, id: JobId) -> Option<Rc<Job>> {
         self.jobs.get(&id).cloned()
     }
 
-    pub fn continue_job(&mut self, job: &Arc<Job>, background: bool) {
+    pub fn continue_job(&mut self, job: &Rc<Job>, background: bool) {
         // Mark all stopped processes as running.
         for proc in &job.processes {
             if let ProcessState::Stopped(_) = self.get_process_state(*proc).unwrap() {
@@ -1007,18 +987,14 @@ impl Isolate {
     }
 
     pub fn set_terminal_process_group(&self, pgid: Pid) {
-        if self.tcsetpgrp_enabled {
-            tcsetpgrp(self.term_fd, pgid).expect("failed to tcsetpgrp");
-        }
+        tcsetpgrp(self.term_fd, pgid).expect("failed to tcsetpgrp");
     }
 
     pub fn restore_terminal_attrs(&self, termios: &Termios) {
-        if self.tcsetpgrp_enabled {
-            tcsetattr(self.term_fd, TCSADRAIN, termios).expect("failed to tcsetattr");
-        }
+        tcsetattr(self.term_fd, TCSADRAIN, termios).expect("failed to tcsetattr");
     }
 
-    pub fn run_in_foreground(&mut self, job: &Arc<Job>, sigcont: bool) -> ProcessState {
+    pub fn run_in_foreground(&mut self, job: &Rc<Job>, sigcont: bool) -> ProcessState {
         self.last_fore_job = Some(job.clone());
         self.background_jobs.remove(&job.id);
 
@@ -1037,9 +1013,7 @@ impl Isolate {
         let status = self.wait_for_job(&job);
 
         // Save the current terminal status.
-        if self.tcsetpgrp_enabled {
-            job.termios.replace(Some(tcgetattr(self.term_fd).expect("failed to tcgetattr")));
-        }
+        job.termios.replace(Some(tcgetattr(self.term_fd).expect("failed to tcgetattr")));
 
         // Go back into the shell.
         self.set_terminal_process_group(self.shell_pgid);
@@ -1048,7 +1022,7 @@ impl Isolate {
         status
     }
 
-    pub fn run_in_background(&mut self, job: &Arc<Job>, sigcont: bool) {
+    pub fn run_in_background(&mut self, job: &Rc<Job>, sigcont: bool) {
         self.last_back_job = Some(job.clone());
         self.background_jobs.insert(job.id);
 
@@ -1057,7 +1031,7 @@ impl Isolate {
         }
     }
 
-    pub fn destroy_job(&mut self, job: &Arc<Job>) {
+    pub fn destroy_job(&mut self, job: &Rc<Job>) {
         for proc in &*job.processes {
             self.pid_job_mapping.remove(&proc);
         }
@@ -1093,7 +1067,7 @@ impl Isolate {
 
     /// Waits for all processes in the job to exit. Note that the job will be
     /// deleted from `Isolate` if the process has exited.
-    pub fn wait_for_job(&mut self, job: &Arc<Job>) -> ProcessState {
+    pub fn wait_for_job(&mut self, job: &Rc<Job>) -> ProcessState {
         loop {
             if job.completed(self) || job.stopped(self) {
                 break;

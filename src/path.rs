@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs::read_dir;
-use std::sync::{RwLock, Arc};
+use std::sync::RwLock;
 use crate::fuzzy::FuzzyVec;
 use crate::config::Config;
 
@@ -27,7 +27,7 @@ pub fn lookup_external_command(cmd: &str) -> Option<String> {
 }
 
 /// Generates command name completions filtered by `query`.
-pub fn complete(query: &str) -> Vec<Arc<String>> {
+pub fn complete(query: &str) -> Vec<String> {
     let fuzzy_vec = PATH_FUZZY_VEC.read().unwrap();
     fuzzy_vec.search(query)
 }
@@ -48,7 +48,7 @@ fn path_loader(path: &str) {
                 let basename = file.file_name().to_str().unwrap().to_owned();
                 let fullpath = file.path().to_str().unwrap().to_owned();
                 table.insert(basename.clone(), fullpath);
-                fuzzy_vec.append(Arc::new(basename));
+                fuzzy_vec.append(basename);
             }
         }
     }

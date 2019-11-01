@@ -39,7 +39,6 @@ mod doctor;
 
 use std::process;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::os::unix::io::IntoRawFd;
 use structopt::StructOpt;
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
@@ -51,8 +50,7 @@ use crate::exec::ExitStatus;
 use crate::config::Config;
 use crate::variable::Value;
 
-fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
-    let isolate_lock = Arc::new(Mutex::new(raw_isolate));
+fn interactive_mode(config: &Config, mut isolate: exec::Isolate) -> ExitStatus {
 
     // Ignore job-control-related signals in order not to stop the shell.
     // (refer https://www.gnu.org/software/libc/manual)
@@ -68,24 +66,17 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
 
     //Evaluate rc scripts asynchronously since it may take too long.
     let rc = config.rc.clone();
-    let isolate_lock2 = isolate_lock.clone();
     let (pipe_out, pipe_in) = unistd::pipe().expect("failed to create a pipe");
-    let nshrc_loader = std::thread::spawn(move || {
-        let mut isolate = isolate_lock2.lock().unwrap();
 
-        // Disallow tweaking the terminal by nshrc scripts; it causes EIO on macOS.
-        isolate.disable_tcsetpgrp();
-
-        // Execute nshrc.
-        let stdin = std::fs::File::open("/dev/null").unwrap();
-        isolate.run_str_with_stdio(&rc, stdin.into_raw_fd(), pipe_in, pipe_in);
-        unistd::close(pipe_in).unwrap();
-    });
+    // Execute nshrc.
+    let stdin = std::fs::File::open("/dev/null").unwrap();
+    isolate.run_str_with_stdio(&rc, stdin.into_raw_fd(), pipe_in, pipe_in);
+    unistd::close(pipe_in).unwrap();
 
     // TODO: Ensure that nshrc loader grabs the lock.
 
     // Render the prompt and wait for an user input.
-    let mut line = match input::input(config, isolate_lock.clone()) {
+    let mut line = match input::input(config, &mut isolate) {
         Ok(line) => {
             println!();
             line
@@ -94,10 +85,6 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
             return ExitStatus::ExitedWith(0);
         }
     };
-
-    // Now we have to execute the first command from the prompt. Wait for the
-    // nshrc loader to finish and enter the main loop.
-    nshrc_loader.join().unwrap();
 
     // Print stdout/stderr from nshrc.
     let mut nshrc_out = String::new();
@@ -116,14 +103,11 @@ fn interactive_mode(config: &Config, raw_isolate: exec::Isolate) -> ExitStatus {
     }
 
     loop {
-        let mut isolate = isolate_lock.lock().unwrap();
-        isolate.enable_tcsetpgrp();
         isolate.run_str(&line);
         isolate.check_background_jobs();
-        drop(isolate);
 
         // Read the next line.
-        line = match input::input(config, isolate_lock.clone()) {
+        line = match input::input(config, &mut isolate) {
             Ok(line) => {
                 println!();
                 line

@@ -1,12 +1,11 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
 ///
 /// A ordered `Vec` which supports fuzzy search.
 ///
 pub struct FuzzyVec {
     /// The *unordered* array of a haystack.
-    entries: Vec<Arc<String>>,
+    entries: Vec<String>,
 }
 
 impl FuzzyVec {
@@ -18,7 +17,7 @@ impl FuzzyVec {
     }
 
     /// Creates a `FuzzyVec` from `entries`.
-    pub fn from_vec(entries: Vec<Arc<String>>) -> FuzzyVec {
+    pub fn from_vec(entries: Vec<String>) -> FuzzyVec {
         FuzzyVec {
             entries,
         }
@@ -36,18 +35,18 @@ impl FuzzyVec {
     }
 
     /// Returns the nth entry from the end of the entries.
-    pub fn nth_last(&self, nth: usize) -> Option<Arc<String>> {
+    pub fn nth_last(&self, nth: usize) -> Option<String> {
         self.entries.get(self.entries.len() - nth - 1).cloned()
     }
 
     /// appends a entry.
-    pub fn append(&mut self, entry: Arc<String>) {
+    pub fn append(&mut self, entry: String) {
         self.entries.push(entry);
     }
 
     /// Searches entiries for `query` in *fuzzy* way and returns the result
     /// ordered by the similarity.
-    pub fn search(&self, query: &str) -> Vec<Arc<String>> {
+    pub fn search(&self, query: &str) -> Vec<String> {
         fuzzy_search(&self.entries, query)
     }
 }
@@ -57,7 +56,7 @@ impl FuzzyVec {
 ///
 /// TODO: Implement smart one.
 ///
-fn fuzzy_search(entries: &[Arc<String>], query: &str) -> Vec<Arc<String>> {
+fn fuzzy_search(entries: &[String], query: &str) -> Vec<String> {
         let mut filtered = Vec::new();
 
         if query.is_empty() {

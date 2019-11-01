@@ -2,7 +2,7 @@ use crate::builtins::InternalCommandContext;
 use crate::exec::{ExitStatus, JobId, Job};
 use structopt::StructOpt;
 use std::io::Write;
-use std::sync::Arc;
+use std::rc::Rc;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "fg", about = "fg command.")]
@@ -15,7 +15,7 @@ struct Opt {
 pub(super) fn parse_job_id(
     ctx: &mut InternalCommandContext,
     job_id: Option<String>
-) -> Result<Arc<Job>, ExitStatus> {
+) -> Result<Rc<Job>, ExitStatus> {
     let id = match job_id {
         Some(job_id) => {
             let job_id = job_id.as_str();

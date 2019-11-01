@@ -5,7 +5,6 @@ use crate::history::{HistorySelector, search_history, append_history};
 use crate::prompt::PromptRenderer;
 use crate::config::Config;
 use std::io::{self, Write, Stdout, Stdin};
-use std::sync::{Arc, Mutex};
 use termion;
 use termion::event::{Event, Key};
 use termion::input::TermRead;
@@ -301,7 +300,7 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
 }
 
 /// Prints the prompt and read a line from stdin.
-pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<String, InputError> {
+pub fn input(config: &Config, isolate: &mut Isolate) -> Result<String, InputError> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
 
@@ -326,7 +325,7 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
     let mut mode = InputMode::Normal;
     let mut history = HistorySelector::new();
-    let mut renderer = PromptRenderer::new(isolate_lock.clone(), &config.prompt);
+    let mut renderer = PromptRenderer::new(&config.prompt);
     let mut stdin_events = stdin.events();
     let mut exec = false;
 
@@ -336,10 +335,10 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
         let x_max = termion::terminal_size().unwrap().0 as usize;
         let prompt = match &mode {
             InputMode::Completion(completion) => {
-                renderer.render(&input_ctx, user_cursor, x_max, Some(completion))
+                renderer.render(isolate, &input_ctx, user_cursor, x_max, Some(completion))
             }
             InputMode::Normal => {
-                renderer.render(&input_ctx, user_cursor, x_max, None)
+                renderer.render(isolate, &input_ctx, user_cursor, x_max, None)
             }
         };
 
@@ -374,7 +373,6 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                             completion.move_cursor(1);
                         }
                         InputMode::Normal => {
-                            let mut isolate = isolate_lock.lock().unwrap();
                             let completion = CompletionSelector::new(isolate.complete(&input_ctx));
                             if completion.len() == 1 {
                                 // There is only one completion candidate. Select it and go back into
@@ -394,7 +392,6 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                         }
 
                         if let InputMode::Completion(_) = mode {
-                            let mut isolate = isolate_lock.lock().unwrap();
                             let new = CompletionSelector::new(isolate.complete(&input_ctx));
                             mode = InputMode::Completion(new);
                         }
@@ -546,7 +543,6 @@ pub fn input(config: &Config, isolate_lock: Arc<Mutex<Isolate>>) -> Result<Strin
                             user_cursor += 1;
 
                             if let InputMode::Completion(_) = mode {
-                                let mut isolate = isolate_lock.lock().unwrap();
                                 let new = CompletionSelector::new(isolate.complete(&input_ctx));
                                 mode = InputMode::Completion(new);
                             }

@@ -5,7 +5,6 @@ use crate::context_parser::InputContext;
 use pest::Parser;
 use pest::iterators::{Pairs, Pair};
 use std::fmt::Write;
-use std::sync::{Arc, Mutex};
 use std::path::Path;
 use termion;
 use nix::unistd;
@@ -345,7 +344,6 @@ fn replace_newline_with_clear(text: &str) -> String {
 }
 
 pub struct PromptRenderer {
-    isolate_lock: Arc<Mutex<Isolate>>,
     prompt_str: String,
     prompt_last_line_len: usize,
     last_rendered_lines: u16,
@@ -355,7 +353,7 @@ pub struct PromptRenderer {
 }
 
 impl PromptRenderer {
-    pub fn new(isolate_lock: Arc<Mutex<Isolate>>, prompt_fmt: &str) -> PromptRenderer {
+    pub fn new(prompt_fmt: &str) -> PromptRenderer {
         // Parse and render the prompt.
         let (prompt_str, prompt_last_line_len) = match parse_prompt(prompt_fmt) {
             Ok(fmt) => draw_prompt(&fmt),
@@ -366,7 +364,6 @@ impl PromptRenderer {
         };
 
         PromptRenderer {
-            isolate_lock,
             prompt_str,
             prompt_last_line_len,
             last_rendered_lines: 0,
@@ -387,9 +384,9 @@ impl PromptRenderer {
     /// Renders the prompt, the user input, and completions (if supplied).
     /// TODO: needs refactoring
     /// TODO: handle terminal screen size changes
-    pub fn render(&mut self, ctx: &InputContext, user_cursor: usize, x_max: usize, completions: Option<&CompletionSelector>) -> String {
+    pub fn render(&mut self, isolate: &mut Isolate, ctx: &InputContext, user_cursor: usize, x_max: usize, completions: Option<&CompletionSelector>) -> String {
         // Apply syntax highlighting.
-        let colored_user_input = highlight(ctx, self.isolate_lock.clone());
+        let colored_user_input = highlight(ctx, isolate);
 
         // Render completions.
         let (completion_str, completion_lines) = if let Some(completions) = completions {
@@ -600,45 +597,46 @@ mod benchmarks {
 
     #[bench]
     fn simple_prompt_rendering(b: &mut Bencher) {
-        let isolate_lock = Arc::new(Mutex::new(Isolate::new("", true)));
-        let mut renderer = PromptRenderer::new(isolate_lock, "$ ");
+        let mut isolate = Isolate::new("", true);
+        let mut renderer = PromptRenderer::new("$ ");
         let ctx = context_parser::parse("ls -alhG ~", 0);
         b.iter(|| {
-            renderer.render(&ctx, 0, 80, None);
+            renderer.render(&mut isolate, &ctx, 0, 80, None);
         });
     }
 
     #[bench]
     fn complex_prompt_rendering(b: &mut Bencher) {
-        let isolate_lock = Arc::new(Mutex::new(Isolate::new("", true)));
-        let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
-        let mut renderer = PromptRenderer::new(isolate_lock, prompt);
+        let mut isolate = Isolate::new("", true);
+        let prompt =
+            "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
+        let mut renderer = PromptRenderer::new(prompt);
         let ctx = context_parser::parse("ls -alhG ~", 0);
 
-        use std::sync::Arc;
         let completions = CompletionSelector::new(vec![
-            Arc::new("Desktop".to_owned()),
-            Arc::new("Documents".to_owned()),
-            Arc::new("Downloads".to_owned()),
-            Arc::new("Pictures".to_owned()),
-            Arc::new("Videos".to_owned()),
-            Arc::new("Dropbox".to_owned()),
+            "Desktop".to_owned(),
+            "Documents".to_owned(),
+            "Downloads".to_owned(),
+            "Pictures".to_owned(),
+            "Videos".to_owned(),
+            "Dropbox".to_owned(),
         ]);
 
         b.iter(|| {
-            renderer.render(&ctx, 10, 80, Some(&completions));
+            renderer.render(&mut isolate, &ctx, 10, 80, Some(&completions));
         });
     }
 
     #[bench]
     fn complex_prompt_rendering_without_completions(b: &mut Bencher) {
-        let isolate_lock = Arc::new(Mutex::new(Isolate::new("", true)));
-        let prompt = "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
-        let mut renderer = PromptRenderer::new(isolate_lock, prompt);
+        let mut isolate = Isolate::new("", true);
+        let prompt =
+            "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
+        let mut renderer = PromptRenderer::new(prompt);
         let ctx = context_parser::parse("ls -alhG ~", 0);
 
         b.iter(|| {
-            renderer.render(&ctx, 10, 80, None);
+            renderer.render(&mut isolate, &ctx, 10, 80, None);
         });
     }
 }

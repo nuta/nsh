@@ -4,9 +4,8 @@ use crate::exec::Isolate;
 use crate::context_parser::{
     InputContext, Span, KeywordType, QuoteType, CommandSepType
 };
-use std::sync::{Arc, Mutex};
 
-pub fn highlight(ctx: &InputContext, isolate_lock: Arc<Mutex<Isolate>>) -> String {
+pub fn highlight(ctx: &InputContext, isolate: &mut Isolate) -> String {
     use std::fmt::Write;
     use termion::color::{Fg, Red, Blue, Yellow, Green, Cyan};
     use termion::style::{Bold, Reset};
@@ -28,10 +27,9 @@ pub fn highlight(ctx: &InputContext, isolate_lock: Arc<Mutex<Isolate>>) -> Strin
 
         match span {
             Span::Argv0(cmd) => {
-                let isolate = isolate_lock.try_lock();
                 let command_exists = lookup_external_command(&cmd).is_some()
                     || INTERNAL_COMMANDS.contains_key(cmd.as_str())
-                    || isolate.map(|i| i.lookup_alias(cmd.as_str()).is_some()).unwrap_or(false);
+                    || isolate.lookup_alias(cmd.as_str()).is_some();
 
                 if command_exists {
                    write!(buf, "{}{}{}{}", Bold, argv0_color, cmd, Reset).ok();
@@ -125,10 +123,10 @@ mod benchmarks {
 
     #[bench]
     fn syntax_highlight_bench(b: &mut Bencher) {
-        let isolate_lock = Arc::new(Mutex::new(Isolate::new("", true)));
+        let mut isolate = Isolate::new("", true);
         let parsed = parse("ls -avh $(echo hello) \"string ${ls:=bar $(cowsay) } boo\" yay", 0);
         b.iter(|| {
-            highlight(&parsed, isolate_lock.clone());
+            highlight(&parsed, &mut isolate);
         })
     }
 }
