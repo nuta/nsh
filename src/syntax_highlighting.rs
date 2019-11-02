@@ -123,7 +123,7 @@ mod benchmarks {
 
     #[bench]
     fn syntax_highlight_bench(b: &mut Bencher) {
-        let mut isolate = Isolate::new("", true);
+        let mut isolate = Isolate::new();
         let parsed = parse("ls -avh $(echo hello) \"string ${ls:=bar $(cowsay) } boo\" yay", 0);
         b.iter(|| {
             highlight(&parsed, &mut isolate);

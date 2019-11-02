@@ -2132,7 +2132,7 @@ impl Isolate {
 
 #[test]
 fn test_expr() {
-    let mut isolate = Isolate::new("nsh", false);
+    let mut isolate = Isolate::new();
     assert_eq!(
         isolate.evaluate_expr(&&Expr::Mul(BinaryExpr {
             lhs: Box::new(Expr::Literal(2)),
