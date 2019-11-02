@@ -1,5 +1,11 @@
 # Change Log
 
+## v0.2.0
+- Removed experimental support for bash-completion.
+  - It's too buggy. We should implement bash features used by bash-completion
+    instead of depending on an external Bash.
+- Fixed some bugs.
+
 ## v0.1.5
 No functional changes. Just fixed a build error.
 
