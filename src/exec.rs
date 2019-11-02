@@ -1,5 +1,5 @@
 use crate::builtins::{InternalCommandContext, INTERNAL_COMMANDS, InternalCommandError};
-use crate::completion::{CompSpec, cmd_completion, path_completion, invoke_bash_completion};
+use crate::completion::{CompSpec, cmd_completion, path_completion};
 use crate::context_parser::{self, InputContext};
 use crate::parser::{
     self, Ast, ExpansionOp, RunIf, Expr, BinaryExpr, Span, Word, Initializer,
@@ -554,15 +554,9 @@ impl Isolate {
 
             results
         } else {
-            // Compspec if not defined for the command. Try invoking Bash
-            // internally.
-            match invoke_bash_completion(ctx) {
-                Ok(results) => results,
-                Err(_) => {
-                    // Fallback.
-                    path_completion(ctx, true, true, false, true)
-                }
-            }
+            // Compspec if not defined for the command. Fall back to the path
+            // completion.
+            path_completion(ctx, true, true, false, true)
         }
     }
 
