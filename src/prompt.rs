@@ -409,16 +409,15 @@ impl PromptRenderer {
             termion::style::Reset,
         ).ok();
 
-
         //
         //                                      cursor_x
         //                    (horizontal offset from the beginning of the line)
-        //                                         v
-        //                      _________________________________________
-        //           +---      > |[chandler@ross-macbook.local]            |
-        //  cursor_y |       > > |$ for x in a b c d very_loooooooooooooooo|
-        //     = 3   |       > | |ooooooooooooooooooooooooooooooooooooooong| <- wrapped
-        //           +---    > | |_wrapped_word do ssh[TAB]                | <- wrapped
+        //                                            v
+        //                        _________________________________________
+        //                     > |[chandler@ross-macbook.local]            |
+        //  cursor_y         > > |$ for x in a b c d very_loooooooooooooooo|
+        //     = 3           > | |ooooooooooooooooooooooooooooooooooooooong| <- wrapped
+        //                   > | |_wrapped_word do ssh[TAB]                | <- wrapped
         //                 > | | |monica-hidden-door.local                 |
         //                 > | | |joey-chair.local                         |
         //              >  > | | |1/2                                      |
@@ -442,7 +441,7 @@ impl PromptRenderer {
         let rendered_lines = prompt_lines + (user_input_lines - 1) + completion_lines;
 
         // Move the cursor (y-axis).
-        let cursor_y_offset = (cursor_y as i32 + 1) - rendered_lines as i32;
+        let cursor_y_offset = cursor_y as i32 - rendered_lines as i32;
         write!(buf, "{}", move_cursor_y(cursor_y_offset, false)).ok();
 
         // Move the cursor to the beginning of the line.
