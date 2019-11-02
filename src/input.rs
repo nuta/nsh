@@ -304,21 +304,17 @@ pub fn input(config: &Config, isolate: &mut Isolate) -> Result<String, InputErro
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
 
-    // FIXME: The latest termion published to the crates.io does not include
-    // a bug fix to DetectCursorPos: https://github.com/redox-os/termion/pull/145
-    /*
-    let current_x = stdout.cursor_pos().unwrap().0 - 1;
-    if current_x != 0 {
-        // The prompt is not at the beginning of a line. This could be caused
-        // if the previous command didn't print the trailing newline
-        // (e.g. `echo -n hello`). Print a marker `(newline)' and a newline.
-        writeln!(stdout, "{}{}(no newline){}",
-            termion::style::Bold,
-            termion::style::Invert,
-            termion::style::Reset
-        ).ok();
-    }
-    */
+    // Just like PROMPT_SP in zsh, in case the command didn't printed a newline
+    // at the end of the output, print '$' and a carriage return to preserve the
+    // content (e.g. foo of `echo -n foo`).
+    let screen_width = termion::terminal_size().unwrap().0 as usize;
+    write!(stdout, "{}{}${}{space:>width$}\r",
+        termion::style::Bold,
+        termion::style::Invert,
+        termion::style::Reset,
+        space = " ",
+        width = screen_width - 1,
+    ).ok();
 
     let word_split = " /\t";
     let mut user_input = UserInput::new();
