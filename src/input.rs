@@ -3,7 +3,6 @@ use crate::exec::Isolate;
 use crate::context_parser;
 use crate::history::{HistorySelector, search_history, append_history};
 use crate::prompt::PromptRenderer;
-use crate::config::Config;
 use std::io::{self, Write, Stdout, Stdin};
 use termion;
 use termion::event::{Event, Key};
@@ -299,8 +298,10 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
     }
 }
 
+const DEFAULT_PROMPT: &'static str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
+
 /// Prints the prompt and read a line from stdin.
-pub fn input(config: &Config, isolate: &mut Isolate) -> Result<String, InputError> {
+pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
 
@@ -321,7 +322,12 @@ pub fn input(config: &Config, isolate: &mut Isolate) -> Result<String, InputErro
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
     let mut mode = InputMode::Normal;
     let mut history = HistorySelector::new();
-    let mut renderer = PromptRenderer::new(&config.prompt);
+    let prompt = 
+        &isolate
+            .get("PROMPT")
+            .map(|var| var.as_str().to_owned())
+            .unwrap_or(DEFAULT_PROMPT.to_owned());
+    let mut renderer = PromptRenderer::new(prompt);
     let mut stdin_events = stdin.events();
     let mut exec = false;
 

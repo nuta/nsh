@@ -34,23 +34,16 @@ mod utils;
 mod history;
 mod fuzzy;
 mod variable;
-mod config;
 mod doctor;
 
 use std::process;
 use std::path::PathBuf;
-use std::os::unix::io::IntoRawFd;
 use structopt::StructOpt;
 use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
-use nix::unistd;
-use std::os::unix::io::FromRawFd;
-use std::io::prelude::*;
 use termion::is_tty;
 use crate::exec::ExitStatus;
-use crate::config::Config;
-use crate::variable::Value;
 
-fn interactive_mode(config: &Config, mut isolate: exec::Isolate) -> ExitStatus {
+fn interactive_mode(mut isolate: exec::Isolate) -> ExitStatus {
 
     // Ignore job-control-related signals in order not to stop the shell.
     // (refer https://www.gnu.org/software/libc/manual)
@@ -64,19 +57,8 @@ fn interactive_mode(config: &Config, mut isolate: exec::Isolate) -> ExitStatus {
         sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
     }
 
-    //Evaluate rc scripts asynchronously since it may take too long.
-    let rc = config.rc.clone();
-    let (pipe_out, pipe_in) = unistd::pipe().expect("failed to create a pipe");
-
-    // Execute nshrc.
-    let stdin = std::fs::File::open("/dev/null").unwrap();
-    isolate.run_str_with_stdio(&rc, stdin.into_raw_fd(), pipe_in, pipe_in);
-    unistd::close(pipe_in).unwrap();
-
-    // TODO: Ensure that nshrc loader grabs the lock.
-
     // Render the prompt and wait for an user input.
-    let mut line = match input::input(config, &mut isolate) {
+    let mut line = match input::input(&mut isolate) {
         Ok(line) => {
             println!();
             line
@@ -86,28 +68,12 @@ fn interactive_mode(config: &Config, mut isolate: exec::Isolate) -> ExitStatus {
         }
     };
 
-    // Print stdout/stderr from nshrc.
-    let mut nshrc_out = String::new();
-    let mut nshrc_out_file = unsafe { std::fs::File::from_raw_fd(pipe_out) };
-    nshrc_out_file.read_to_string(&mut nshrc_out).unwrap();
-    if !nshrc_out.is_empty() {
-        eprintln!(
-            concat!(
-                "{}nshrc stdout/stderr -----------------------{}\n",
-                "{}\n",
-                "{}-------------------------------------------{}"
-            ),
-            termion::style::Bold, termion::style::Reset,
-            &nshrc_out,
-            termion::style::Bold, termion::style::Reset);
-    }
-
     loop {
         isolate.run_str(&line);
         isolate.check_background_jobs();
 
         // Read the next line.
-        line = match input::input(config, &mut isolate) {
+        line = match input::input(&mut isolate) {
             Ok(line) => {
                 println!();
                 line
@@ -119,43 +85,47 @@ fn interactive_mode(config: &Config, mut isolate: exec::Isolate) -> ExitStatus {
     }
 }
 
+pub fn load_nshrc() -> String {
+    use std::path::Path;
+    use std::io::Read;
+
+    let home_dir = dirs::home_dir().unwrap();
+    let nshrc_path = Path::new(&home_dir).join(".nshrc");
+    let mut nshrc = String::with_capacity(2048);
+    let mut file =
+        std::fs::File::open(nshrc_path).expect("failed to load ~/.nshrc");
+    file.read_to_string(&mut nshrc).expect("failed to load ~/.nshrc");
+
+    nshrc
+}
+
 fn shell_main(opt: Opt) {
-    // Load ~/.nshrc
-    let config = match config::load_nshrc() {
-        Ok(config) => config,
-        Err(err) => {
-            warn!("nsh: warning: failed to read nshrc: {}", err);
-            config::default_config()
-        }
-    };
+    // Load and execute nshrc.
+    let mut isolate = exec::Isolate::new();
+    let nshrc = load_nshrc();
+    isolate.run_str(&nshrc);
 
     // Initialize subsystems.
-    path::init(&config);
-    history::init(&config);
+    history::init();
 
     let stdout = std::fs::File::create("/dev/stdout").unwrap();
-    let interactive = is_tty(&stdout) && opt.command.is_none() && opt.file.is_none();
+    isolate.set_interactive(is_tty(&stdout) && opt.command.is_none()
+        && opt.file.is_none());
     let status = match (opt.command, opt.file) {
         (Some(command), _) => {
-            let mut isolate = exec::Isolate::new("nsh", interactive);
-            isolate.set_and_export("PATH", Value::String(config.path.clone()));
             isolate.run_str(&command)
         },
         (_, Some(file)) => {
-            let script_name = file.to_str().unwrap();
-            let mut isolate = exec::Isolate::new(script_name, interactive);
-            isolate.set_and_export("PATH", Value::String(config.path.clone()));
+            isolate.set_script_name(file.to_str().unwrap());
             isolate.run_file(file)
         },
         (_, _) => {
-            if !interactive {
+            if !isolate.interactive() {
                 eprintln!("nsh: warning: stdout is not a tty");
                 process::exit(0);
             }
 
-            let mut isolate = exec::Isolate::new("nsh", interactive);
-            isolate.set_and_export("PATH", Value::String(config.path.clone()));
-            interactive_mode(&config, isolate)
+            interactive_mode(isolate)
         },
     };
 

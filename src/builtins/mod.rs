@@ -22,7 +22,6 @@ mod pushd;
 mod popd;
 mod complete;
 mod compgen;
-mod nsh_config;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
@@ -78,7 +77,6 @@ lazy_static! {
         commands.insert("complete", crate::builtins::complete::command);
         commands.insert("compgen", crate::builtins::compgen::command);
         commands.insert("eval", crate::builtins::eval::command);
-        commands.insert("nsh-config", crate::builtins::nsh_config::command);
         commands
     };
 }

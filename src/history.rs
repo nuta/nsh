@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufRead, Write};
 use std::sync::Mutex;
-use crate::config::Config;
 use crate::fuzzy::FuzzyVec;
 
 lazy_static! {
@@ -141,7 +140,7 @@ impl HistorySelector {
     }
 }
 
-pub fn init(_config: &Config) {
+pub fn init() {
     std::thread::spawn(|| {
         load_history();
     });

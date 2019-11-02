@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::fs::read_dir;
 use std::sync::RwLock;
 use crate::fuzzy::FuzzyVec;
-use crate::config::Config;
 
 lazy_static! {
     /// A `(command name, absolute path to the executable)` table.
@@ -59,8 +58,4 @@ pub fn reload_paths(path: &str) {
     std::thread::spawn(move || {
         path_loader(&path);
     });
-}
-
-pub fn init(config: &Config) {
-    reload_paths(&config.path);
 }

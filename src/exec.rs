@@ -313,20 +313,13 @@ macro_rules! bool_to_int {
 }
 
 impl Isolate {
-    pub fn new(script_name: &str, interactive: bool) -> Isolate {
-        let shell_pgid = getpid();
-        let shell_termios = if interactive {
-            Some(tcgetattr(0 /* stdin */).expect("failed to tcgetattr"))
-        } else {
-            None
-        };
-
+    pub fn new() -> Isolate {
         Isolate {
-            shell_pgid,
-            script_name: script_name.to_string(),
-            interactive,
+            shell_pgid: getpid(),
+            script_name: "".to_owned(),
+            interactive: false,
             term_fd: 0 /* stdin */,
-            shell_termios,
+            shell_termios: None,
             last_status: 0,
             exported: HashSet::new(),
             aliases: HashMap::new(),
@@ -344,6 +337,19 @@ impl Isolate {
             last_back_job: None,
             completions: HashMap::new(),
         }
+    }
+
+    pub fn set_script_name(&mut self, name: &str) {
+        self.script_name = name.to_owned();
+    }
+
+    pub fn set_interactive(&mut self, interactive: bool) {
+        self.interactive = interactive;
+        self.shell_termios = if interactive {
+            Some(tcgetattr(0 /* stdin */).expect("failed to tcgetattr"))
+        } else {
+            None
+        };
     }
 
     #[inline]
@@ -445,11 +451,6 @@ impl Isolate {
             },
             _ => None,
         }
-    }
-
-    pub fn set_and_export(&mut self, name: &str, value: Value) {
-        self.set(name, value, false);
-        self.export(name);
     }
 
     pub fn export(&mut self, name: &str) {
