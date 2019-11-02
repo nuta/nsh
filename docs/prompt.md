@@ -1,5 +1,10 @@
 # Prompt Format `($PROMPT)`
 
+**Example:**
+```bash
+PROMPT="\{bold}\{cyan}\{username}@\{hostname}\{reset}: \if{in_repo}{\{green}[\{repo_status}]\{reset}}{} \{current_dir}\n\$ \{reset}"
+```
+
 ## Current context values
 |          **Value**            |                **Description**               |
 |:-----------------------------:|:--------------------------------------------:|
