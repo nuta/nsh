@@ -49,7 +49,7 @@ def run_test(build, test):
         print(bash_stdout)
         print("bash stderr -------------------------")
         print(bash_stderr)
-        return
+        return False
 
     if disable_output_check == False and bash_stdout.rstrip() != expected_stdout.rstrip():
         cprint("unexpected bash output (fix {}!)".format(expected_stdout_path), "red", attrs=["bold"])
@@ -59,7 +59,7 @@ def run_test(build, test):
         print(bash_stdout)
         print("bash stderr -------------------------")
         print(bash_stderr)
-        return
+        return False
 
     # Run the test.
     p = subprocess.Popen(
@@ -84,7 +84,7 @@ def run_test(build, test):
         print(stdout)
         print("stderr ------------------------------")
         print(stderr)
-        return
+        return False
 
     if disable_output_check == False and stderr.rstrip() != expected_stderr.rstrip():
         cprint("unexpected stderr", "red", attrs=["bold"])
@@ -94,13 +94,14 @@ def run_test(build, test):
         print(stdout)
         print("stderr ------------------------------")
         print(stderr)
-        return
+        return False
 
     if returncode != expected_returncode:
         cprint("exited with {}".format(returncode), "red", attrs=["bold"])
-        return
+        return False
 
     cprint("ok", "green", attrs=["bold"])
+    return True
 
 def main():
     parser = argparse.ArgumentParser()
@@ -120,8 +121,14 @@ def main():
         build = "debug"
         subprocess.run(["cargo", "build"], check=True)
 
+    num_failed = 0
     for test in tests:
-        run_test(build, test)
+        if not run_test(build, test):
+            num_failed += 1
+
+    if num_failed > 0:
+        cprint("{} tests failed".format(num_failed), "red", attrs=["bold"])
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
