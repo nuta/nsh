@@ -92,8 +92,11 @@ pub fn load_nshrc() -> String {
     let home_dir = dirs::home_dir().unwrap();
     let nshrc_path = Path::new(&home_dir).join(".nshrc");
     let mut nshrc = String::with_capacity(2048);
-    let mut file =
-        std::fs::File::open(nshrc_path).expect("failed to load ~/.nshrc");
+    let mut file = match std::fs::File::open(nshrc_path) {
+        Ok(file) => file,
+        Err(_) => return String::new(),
+    };
+    
     file.read_to_string(&mut nshrc).expect("failed to load ~/.nshrc");
 
     nshrc
