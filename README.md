@@ -88,7 +88,7 @@ Testing
 -------
 ```
 $ cargo test
-$ ./tools/run-blackbox-tests.py
+$ ./run-tests.py
 ```
 
 Debugging
