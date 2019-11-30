@@ -102,11 +102,18 @@ pub fn load_nshrc() -> String {
     nshrc
 }
 
+const DEFAULT_PATH: &str =
+    "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
+
 fn shell_main(opt: Opt) {
     // Load and execute nshrc.
     let mut isolate = exec::Isolate::new();
     let nshrc = load_nshrc();
     isolate.run_str(&nshrc);
+
+    if isolate.get("PATH").is_none() {
+        crate::path::reload_paths(DEFAULT_PATH);
+    }
 
     // Initialize subsystems.
     history::init();
