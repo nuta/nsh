@@ -1,5 +1,8 @@
 # Change Log
 
+## v0.2.1
+-  Don't panic even if ~/.nshrc does not exist.
+
 ## v0.2.0
 - Removed experimental support for bash-completion.
   - It's too buggy. We should implement bash features used by bash-completion
