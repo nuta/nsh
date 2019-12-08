@@ -9,7 +9,7 @@ A command-line shell that focuses on performance and productivity featuing:
 - A not-yet-completed-but-aims-to-be **Bash compatible** interactive shell.
 - **Tab completions** and **syntax highlighting** like **[fish](http://fishshell.com/)**.
 - A builtin **interactive fuzzy completion filter** like **[fzf](https://github.com/junegunn/fzf)**.
-- Builtin **zero configration** features and web-based config editor: `nsh-config`.
+- Builtin **zero configration** features.
 - **Written in Rust** :crab:
 
 ![screenshot](https://gist.githubusercontent.com/seiyanuta/5747db6c43978d9aa1941ce321cc1741/raw/405b7a1156292fd0456010b657f299b1daa367ff/nsh.png)
@@ -67,7 +67,6 @@ Comparisons
 | **POSIX shell features**   | **Yes**              | **Yes**             | **Yes**                      | original syntax             | No             |
 | **Bash compatibility**     | partially supported           | **100% compatible** | **provides `emulate(1)`**    | requires Bass               | No             |
 | **Prompt UX**              | **(aims to be) awesome**           | minimum standard    | comfortable                  | **awesome**                 | comfortable    |
-| **Configuration easiness** | **web-based config** | insufficient        | oh-my-zsh or very long zshrc | **web-based config**        | insufficient   |
 | **Name**                   | not bad              | **noble**           | **cool**                     | **cute**                    | **super cool** |
 
 
