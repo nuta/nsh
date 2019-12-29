@@ -8,7 +8,7 @@ keywords = ["shell"]
 categories = ["command-line-utilities"]
 readme = "README.md"
 license = "CC0-1.0 OR MIT"
-repository = "https://github.com/seiyanuta/nsh"
+repository = "https://github.com/nuta/nsh"
 include = [
     "**/*.rs",
     "**/*.pest",

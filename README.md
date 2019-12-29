@@ -3,7 +3,7 @@ nsh
 [![Build Status](https://travis-ci.com/seiyanuta/nsh.svg?branch=master)](https://travis-ci.com/seiyanuta/nsh)
 [![Latest version](https://img.shields.io/crates/v/nsh.svg)](https://crates.io/crates/nsh)
 
-**Currently nsh is incomplete and not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/seiyanuta/nsh/issues)!**
+**Currently nsh is incomplete and not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/nuta/nsh/issues)!**
 
 A command-line shell that focuses on performance and productivity featuing:
 - A not-yet-completed-but-aims-to-be **Bash compatible** interactive shell.
@@ -32,7 +32,7 @@ Configuration
 Set the following variables in `~/.nshrc`:
 
 - `$PATH`
-- `$PROMPT`: The prompt format. See [prompt.md](https://github.com/seiyanuta/nsh/blob/master/docs/prompt.md) for details.
+- `$PROMPT`: The prompt format. See [prompt.md](https://github.com/nuta/nsh/blob/master/docs/prompt.md) for details.
 
 Key Shortcuts
 -------------
@@ -101,9 +101,9 @@ nsh is in *alpha* stage: there are many missing features which Bash provides, th
 source code, and there must be bugs. To make nsh practical for daily use, I need your help!
 
 ### How can I contribute?
-- **Report bugs** in [GitHub issues](https://github.com/seiyanuta/nsh/issues). Please attach
+- **Report bugs** in [GitHub issues](https://github.com/nuta/nsh/issues). Please attach
   a minimal reproducible example (e.g. shell script) *if possible*. It helps me to fix the bug easier.
-- **Suggest enhancements** in [GitHub issues](https://github.com/seiyanuta/nsh/issues).
+- **Suggest enhancements** in [GitHub issues](https://github.com/nuta/nsh/issues).
 - **Submit a Pull Request** which implements a new feature, fixes a bug, refactors code, rephrases sentences in documentation, etc.
 
 License

@@ -186,7 +186,7 @@ fn main() {
 
         eprintln!("{}", info);
         eprintln!("{:#?}", backtrace::Backtrace::new());
-        eprintln!("nsh: Something went wrong. Check out ~/.nsh.log and please file this bug on GitHub: https://github.com/seiyanuta/nsh/issues")
+        eprintln!("nsh: Something went wrong. Check out ~/.nsh.log and please file this bug on GitHub: https://github.com/nuta/nsh/issues")
     }));
 
     shell_main(opt);
