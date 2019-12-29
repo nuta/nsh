@@ -21,15 +21,15 @@ addons:
   homebrew:
     update: true
     packages:
-      - python3
+      - python
 
 before_install:
   - cargo --version
   - bash --version
   - python --version
-  - python3 --version
 
 install:
+  - brew link --overwrite python
   - pip3 install -r tools/requirements.txt
 
 script:
