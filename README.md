@@ -1,6 +1,6 @@
 nsh
 ====
-[![Build Status](https://travis-ci.com/seiyanuta/nsh.svg?branch=master)](https://travis-ci.com/seiyanuta/nsh)
+[![Build Status](https://travis-ci.com/nuta/nsh.svg?branch=master)](https://travis-ci.com/nuta/nsh)
 [![Latest version](https://img.shields.io/crates/v/nsh.svg)](https://crates.io/crates/nsh)
 
 **Currently nsh is incomplete and not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/nuta/nsh/issues)!**
