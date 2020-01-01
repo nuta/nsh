@@ -398,7 +398,7 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                             mode = InputMode::Completion(new);
                         }
                     }
-                    Event::Key(Key::Up) => {
+                    Event::Key(Key::Up) | Event::Key(Key::Ctrl('p')) => {
                         match &mut mode {
                             InputMode::Normal => {
                                 history.prev(user_input.as_str());
@@ -412,7 +412,7 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                             }
                         }
                     }
-                    Event::Key(Key::Down) => {
+                    Event::Key(Key::Down) | Event::Key(Key::Ctrl('n')) => {
                         match &mut mode {
                             InputMode::Normal => {
                                 history.next();
