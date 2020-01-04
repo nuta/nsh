@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 ///
 /// A ordered `Vec` which supports fuzzy search.
 ///
@@ -57,48 +55,30 @@ impl FuzzyVec {
 /// TODO: Implement smart one.
 ///
 fn fuzzy_search(entries: &[String], query: &str) -> Vec<String> {
-        let mut filtered = Vec::new();
+    if query.is_empty() {
+        // Return the all entries.
+        return entries.iter().cloned().collect();
+    }
 
-        if query.is_empty() {
-            // Return the all entries.
-            for e in entries {
-                filtered.push(e.clone());
-            }
-
-            return filtered;
-        }
-
-        // Filter entries by the query.
-'entry_loop:
-        for e in entries {
-            let mut iter = e.as_str().chars();
-            for ch in query.chars() {
-                if iter.find(|c| *c == ch).is_none() {
-                    // unmatch
-                    continue 'entry_loop;
+    /// Check if entries contain the query characters with correct order.
+    fn is_fuzzily_matched(s: &str, query: &str) -> bool {
+        let mut iter = s.chars();
+        for q in query.chars() {
+            loop {
+                match iter.next() {
+                    None => return false,
+                    Some(c) if c == q => break,
+                    Some(_) => {},
                 }
             }
-
-            filtered.push(e.clone());
         }
+        true
+    }
 
-        // Sort results by computing scores (or similarity).
-        let mut sorted_map = BTreeMap::new();
-        for (i, entry) in filtered.iter().enumerate() {
-            let score = compute_score(&entry, query);
-
-            // The keys are sorted by `score`. Here we embed an unique number `i` in
-            // lower 24 bits to make the key unique.
-            let key = (u32::from(score) << 24) | i as u32;
-            sorted_map.insert(key, entry.clone());
-        }
-
-        let mut sorted = Vec::new();
-        for value in sorted_map.values() {
-            sorted.push(value.clone());
-        }
-
-        sorted
+    // Filter entries by the query.
+    let mut filtered = entries.iter().filter(|s| is_fuzzily_matched(s, query)).cloned().collect::<Vec<_>>();
+    filtered.sort_by_cached_key(|entry| compute_score(entry, query));
+    filtered
 }
 
 /// Computes the similarity. Lower is more similar.
@@ -110,4 +90,18 @@ fn compute_score(entry: &str, query: &str) -> u8 {
     }
 
     std::cmp::max(score, 0) as u8
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fuzzy_search() {
+        let entries = &["abc".to_owned(), "bca".to_owned(), "cba".to_owned()];
+        let query = "bc";
+        // "cba" does not contain "bc" with correct order, so "cba" must be removed.
+        assert_eq!(fuzzy_search(entries, query), vec!["bca".to_owned(), "abc".to_owned()]);
+    }
 }
