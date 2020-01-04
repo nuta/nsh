@@ -34,6 +34,10 @@ impl FuzzyVec {
 
     /// Returns the nth entry from the end of the entries.
     pub fn nth_last(&self, nth: usize) -> Option<String> {
+        if self.entries.is_empty() {
+            return None;
+        }
+
         self.entries.get(self.entries.len() - nth - 1).cloned()
     }
 
