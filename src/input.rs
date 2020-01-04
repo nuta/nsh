@@ -240,22 +240,22 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
                         return false;
                     },
                     // Move the user input cursor to left.
-                    Event::Key(Key::Left) => {
+                    Event::Key(Key::Left) | Event::Key(Key::Ctrl('b')) => {
                         user_cursor = user_cursor.saturating_sub(1);
                     },
                     // Move the user input cursor to right.
-                    Event::Key(Key::Right) => {
+                    Event::Key(Key::Right) | Event::Key(Key::Ctrl('f')) => {
                         user_cursor += 1;
                         if user_cursor > user_input.len() {
                             user_cursor = user_input.len();
                         }
                     },
                     // Select the previous history.
-                    Event::Key(Key::Up) => {
+                    Event::Key(Key::Up) | Event::Key(Key::Ctrl('p')) => {
                         selected = selected.saturating_sub(1);
                     },
                     // Select the next history.
-                    Event::Key(Key::Down) => {
+                    Event::Key(Key::Down) | Event::Key(Key::Ctrl('n')) => {
                         selected += 1;
                         let max = std::cmp::min(display_len as usize, entries.len());
                         if selected > max.saturating_sub(1) {
@@ -426,7 +426,7 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                             }
                         }
                     }
-                    Event::Key(Key::Left) => {
+                    Event::Key(Key::Left) | Event::Key(Key::Ctrl('b')) => {
                         if user_cursor > 0 {
                             user_cursor -= 1;
                         }
@@ -435,7 +435,7 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                             mode = InputMode::Normal;
                         }
                     }
-                    Event::Key(Key::Right) => {
+                    Event::Key(Key::Right) | Event::Key(Key::Ctrl('f')) => {
                         if user_cursor < user_input.len() {
                             user_cursor += 1;
                         }
