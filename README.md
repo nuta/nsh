@@ -20,13 +20,6 @@ Installation
 $ cargo install nsh
 ```
 
-To enable completions, install ([bash-completion](https://github.com/scop/bash-completion)). If you are using macOS,
-install newer Bash as well:
-
-```
-$ brew install bash bash-completion@2
-```
-
 Configuration
 -------------
 Set the following variables in `~/.nshrc`:
