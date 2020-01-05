@@ -103,7 +103,7 @@ impl Shell {
     }
 
     pub fn last_status(&self) -> i32 {
-        return self.last_status;
+        self.last_status
     }
 
     pub fn set_last_status(&mut self, status: i32) {

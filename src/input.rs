@@ -303,7 +303,7 @@ fn history_search_mode(
     }
 }
 
-const DEFAULT_PROMPT: &'static str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
+const DEFAULT_PROMPT: &str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
 
 /// Prints the prompt and read a line from stdin.
 pub fn input(shell: &mut Shell) -> Result<String, InputError> {
@@ -333,7 +333,7 @@ pub fn input(shell: &mut Shell) -> Result<String, InputError> {
     let prompt = &shell
         .get("PROMPT")
         .map(|var| var.as_str().to_owned())
-        .unwrap_or(DEFAULT_PROMPT.to_owned());
+        .unwrap_or_else(|| DEFAULT_PROMPT.to_owned());
     let mut renderer = PromptRenderer::new(prompt);
     let mut stdin_events = stdin.events();
     let mut exec = false;

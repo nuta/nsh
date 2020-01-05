@@ -59,7 +59,7 @@ impl FuzzyVec {
 fn fuzzy_search(entries: &[String], query: &str) -> Vec<String> {
     if query.is_empty() {
         // Return the all entries.
-        return entries.iter().cloned().collect();
+        return entries.to_vec();
     }
 
     /// Check if entries contain the query characters with correct order.
