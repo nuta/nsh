@@ -765,9 +765,9 @@ pub fn eval(
 
 #[test]
 fn test_expr() {
-    let mut isolate = Isolate::new();
+    let mut shell = Shell::new();
     assert_eq!(
-        isolate.evaluate_expr(&&Expr::Mul(BinaryExpr {
+        evaluate_expr(&mut shell, &&Expr::Mul(BinaryExpr {
             lhs: Box::new(Expr::Literal(2)),
             rhs: Box::new(Expr::Add(BinaryExpr {
                 lhs: Box::new(Expr::Literal(3)),
@@ -777,9 +777,9 @@ fn test_expr() {
         2 * (3 + 7)
     );
 
-    isolate.set("x", Value::String(3.to_string()), false);
+    shell.set("x", Value::String(3.to_string()), false);
     assert_eq!(
-        isolate.evaluate_expr(&&Expr::Add(BinaryExpr {
+        evaluate_expr(&mut shell, &&Expr::Add(BinaryExpr {
             lhs: Box::new(Expr::Literal(1)),
             rhs: Box::new(Expr::Add(BinaryExpr {
                 lhs: Box::new(Expr::Mul(BinaryExpr {
