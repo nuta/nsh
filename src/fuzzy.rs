@@ -89,7 +89,11 @@ fn fuzzy_search<'a>(entries: &'a [String], query: &str) -> Vec<&'a str> {
 
 /// Computes the similarity. Lower is more similar.
 fn compute_score(entry: &str, query: &str) -> u8 {
-    let mut score: isize = 255;
+    let mut score: isize = std::isize::MAX;
+
+    if entry == query {
+        score -= 100;
+    }
 
     if entry.starts_with(query) {
         score -= 10;
@@ -104,12 +108,24 @@ mod tests {
 
     #[test]
     fn test_fuzzy_search() {
-        let entries = &["abc".to_owned(), "bca".to_owned(), "cba".to_owned()];
-        let query = "bc";
-        // "cba" does not contain "bc" with correct order, so "cba" must be removed.
-        assert_eq!(
-            fuzzy_search(entries, query),
-            vec!["bca", "abc"]
-        );
+        {
+            let entries = &["abc".to_owned(), "bca".to_owned(), "cba".to_owned()];
+            let query = "bc";
+            // "cba" does not contain "bc" with correct order, so "cba" must be removed.
+            assert_eq!(
+                fuzzy_search(entries, query),
+                vec!["bca", "abc"]
+            );
+        }
+
+        // Ensure that the exact match takes priority.
+        {
+            let entries = &["g++8".to_owned(), "g++9".to_owned(), "g++".to_owned()];
+            let query = "g++";
+            assert_eq!(
+                fuzzy_search(entries, query),
+                vec!["g++", "g++8", "g++9"]
+            );
+        }
     }
 }
