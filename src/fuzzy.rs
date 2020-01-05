@@ -89,7 +89,7 @@ fn fuzzy_search<'a>(entries: &'a [String], query: &str) -> Vec<&'a str> {
 
 /// Computes the similarity. Lower is more similar.
 fn compute_score(entry: &str, query: &str) -> u8 {
-    let mut score: isize = std::isize::MAX;
+    let mut score = std::u8::MAX;
 
     if entry == query {
         score -= 100;
@@ -99,7 +99,7 @@ fn compute_score(entry: &str, query: &str) -> u8 {
         score -= 10;
     }
 
-    std::cmp::max(score, 0) as u8
+    score
 }
 
 #[cfg(test)]
