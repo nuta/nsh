@@ -760,7 +760,7 @@ pub fn eval(
 
 #[test]
 fn test_expr() {
-    let mut shell = Shell::new();
+    let mut shell = Shell::new(std::path::Path::new("/dev/null"));
     assert_eq!(
         evaluate_expr(&mut shell, &&Expr::Mul(BinaryExpr {
             lhs: Box::new(Expr::Literal(2)),

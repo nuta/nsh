@@ -44,7 +44,8 @@ mod variable;
 use crate::process::{check_background_jobs, ExitStatus};
 use crate::variable::Value;
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
-use std::path::PathBuf;
+use std::fs::File;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 use structopt::StructOpt;
 use termion::is_tty;
@@ -92,8 +93,6 @@ fn interactive_mode(mut shell: crate::shell::Shell) -> ExitStatus {
 
 pub fn load_nshrc() -> String {
     use std::io::Read;
-    use std::path::Path;
-
     let home_dir = dirs::home_dir().unwrap();
     let nshrc_path = Path::new(&home_dir).join(".nshrc");
     let mut nshrc = String::with_capacity(2048);
@@ -111,17 +110,22 @@ pub fn load_nshrc() -> String {
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 
 fn shell_main(opt: Opt) {
+    // Create a history file if it does not exist.
+    let home_dir = dirs::home_dir()
+        .expect("failed to get the path to the home directory");
+    let history_path = Path::new(&home_dir).join(".nsh_history");
+    if !history_path.exists() {
+        File::create(&history_path).unwrap();
+    }
+
     // Load and execute nshrc.
-    let mut shell = crate::shell::Shell::new();
+    let mut shell = crate::shell::Shell::new(&history_path);
     let nshrc = load_nshrc();
     shell.run_str(&nshrc);
 
     if shell.get("PATH").is_none() {
         shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
     }
-
-    // Initialize subsystems.
-    history::init();
 
     let stdout = std::fs::File::create("/dev/stdout").unwrap();
     shell.set_interactive(is_tty(&stdout) && opt.command.is_none() && opt.file.is_none());

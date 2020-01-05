@@ -652,7 +652,7 @@ mod benchmarks {
 
     #[bench]
     fn simple_prompt_rendering(b: &mut Bencher) {
-        let mut shell = Shell::new();
+        let mut shell = Shell::new(std::path::Path::new("/dev/null"));
         let mut renderer = PromptRenderer::new("$ ");
         let ctx = context_parser::parse("ls -alhG ~", 0);
         b.iter(|| {
@@ -662,7 +662,7 @@ mod benchmarks {
 
     #[bench]
     fn complex_prompt_rendering(b: &mut Bencher) {
-        let mut shell = Shell::new();
+        let mut shell = Shell::new(std::path::Path::new("/dev/null"));
         let prompt =
             "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
         let mut renderer = PromptRenderer::new(prompt);
@@ -684,7 +684,7 @@ mod benchmarks {
 
     #[bench]
     fn complex_prompt_rendering_without_completions(b: &mut Bencher) {
-        let mut shell = Shell::new();
+        let mut shell = Shell::new(std::path::Path::new("/dev/null"));
         let prompt =
             "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
         let mut renderer = PromptRenderer::new(prompt);

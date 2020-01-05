@@ -1,6 +1,6 @@
 use crate::completion::{complete, CompletionSelector};
 use crate::context_parser;
-use crate::history::{append_history, search_history, HistorySelector};
+use crate::history::History;
 use crate::prompt::PromptRenderer;
 use crate::shell::Shell;
 use std::io::{self, Stdin, Stdout, Write};
@@ -116,8 +116,55 @@ impl UserInput {
     }
 }
 
+pub struct HistorySelector {
+    offset: usize,
+    user_input: String,
+}
+
+impl HistorySelector {
+    pub fn new() -> HistorySelector {
+        HistorySelector {
+            offset: 0,
+            user_input: String::new(),
+        }
+    }
+    
+    /// Returns None if `self.offset` is 0 otherwise `self.offset - 1`th entry.
+    pub fn current(&self, history: &History) -> String {
+        if self.offset == 0 {
+            //  Reached to the end of histories. Restore the saved state.
+            self.user_input.clone()
+        } else {
+            history.nth_last(self.offset - 1).unwrap()
+        }
+    }
+    
+    /// Selects the previous history entry. Save the current user (not yet executed)
+    /// input if needed.
+    pub fn prev(&mut self, history: &History, user_input: &str) {
+        if self.offset == 0 {
+            // Entering the history selection. Save the current state.state.
+            self.user_input = user_input.to_string();
+        }
+        
+        let hist_len = history.len();
+        self.offset += 1;
+        if self.offset >= hist_len {
+            self.offset = hist_len;
+        }
+    }
+    
+    /// Select the next history entry.
+    pub fn next(&mut self) {
+        if self.offset > 0 {
+            self.offset -= 1;
+        }
+    }
+}
+
 /// Returns true if the user wants to execute the command immediately.
 fn history_search_mode(
+    history: &History,
     stdout: &mut Stdout,
     events: &mut termion::input::Events<Stdin>,
     user_input: &mut UserInput,
@@ -171,7 +218,7 @@ fn history_search_mode(
 
         // Search history for user input.
         let mut history_lines = String::new();
-        let entries = search_history(user_input.as_str());
+        let entries = history.search(user_input.as_str());
         let max = std::cmp::min(display_len as usize, entries.len());
         if selected > max.saturating_sub(1) {
             selected = max.saturating_sub(1);
@@ -412,8 +459,8 @@ pub fn input(shell: &mut Shell) -> Result<String, InputError> {
                     Event::Key(Key::Up) | Event::Key(Key::Ctrl('p')) => {
                         match &mut mode {
                             InputMode::Normal => {
-                                history.prev(user_input.as_str());
-                                let line = history.current();
+                                history.prev(shell.history(), user_input.as_str());
+                                let line = history.current(shell.history());
                                 user_input = UserInput::from_str(&line);
                                 user_cursor = user_input.len();
                             }
@@ -427,7 +474,7 @@ pub fn input(shell: &mut Shell) -> Result<String, InputError> {
                         match &mut mode {
                             InputMode::Normal => {
                                 history.next();
-                                let line = history.current();
+                                let line = history.current(shell.history());
                                 user_input = UserInput::from_str(&line);
                                 user_cursor = user_input.len();
                             }
@@ -547,7 +594,7 @@ pub fn input(shell: &mut Shell) -> Result<String, InputError> {
                         renderer.clear_screen(&mut stdout);
                     }
                     Event::Key(Key::Ctrl('r')) => {
-                        exec = history_search_mode(&mut stdout, &mut stdin_events, &mut user_input);
+                        exec = history_search_mode(shell.history(), &mut stdout, &mut stdin_events, &mut user_input);
                         user_cursor = user_input.len();
                     }
                     Event::Key(Key::Char(ch)) => match (&mut mode, ch) {
@@ -569,7 +616,7 @@ pub fn input(shell: &mut Shell) -> Result<String, InputError> {
     }
 
     write!(stdout, "{}", renderer.render_clear_completions()).ok();
-    append_history(user_input.as_str());
+    shell.history_mut().append(user_input.as_str());
     trace!("input: '{}'", user_input.as_str());
     Ok(user_input.as_str().to_owned())
 }

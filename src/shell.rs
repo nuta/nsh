@@ -1,5 +1,6 @@
 use crate::completion::CompSpec;
 use crate::eval::eval;
+use crate::history::History;
 use crate::parser;
 use crate::path::PathTable;
 use crate::process::{ExitStatus, Job, JobId, ProcessState};
@@ -11,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::prelude::*;
 use std::os::unix::io::RawFd;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 /// A isolated shell execution environment.
@@ -25,6 +26,8 @@ pub struct Shell {
     /// A saved terminal state.
     pub shell_termios: Option<Termios>,
 
+    /// Command histroy.
+    history: History,
     /// `$PATH`
     pub path_table: PathTable,
     /// `$?`
@@ -66,12 +69,13 @@ pub struct Shell {
 }
 
 impl Shell {
-    pub fn new() -> Shell {
+    pub fn new(history_path: &Path) -> Shell {
         Shell {
             shell_pgid: getpid(),
             script_name: "".to_owned(),
             interactive: false,
             shell_termios: None,
+            history: History::new(history_path),
             path_table: PathTable::new(),
             last_status: 0,
             exported: HashSet::new(),
@@ -259,6 +263,14 @@ impl Shell {
             Some(Value::String(s)) => s.parse().ok(),
             _ => None,
         })
+    }
+
+    pub fn history(&self) -> &History {
+        &self.history
+    }
+
+    pub fn history_mut(&mut self) -> &mut History {
+        &mut self.history
     }
 
     pub fn jobs(&self) -> &HashMap<JobId, Rc<Job>> {

@@ -122,7 +122,7 @@ mod benchmarks {
 
     #[bench]
     fn syntax_highlight_bench(b: &mut Bencher) {
-        let mut shell = Shell::new();
+        let mut shell = Shell::new(Path::new("/dev/null"));
         let parsed = parse(
             "ls -avh $(echo hello) \"string ${ls:=bar $(cowsay) } boo\" yay",
             0,
