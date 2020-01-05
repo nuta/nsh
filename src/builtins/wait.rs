@@ -1,7 +1,8 @@
 use super::fg::parse_job_id;
 use crate::builtins::InternalCommandContext;
-use crate::process::{wait_for_job, ExitStatus};
+use crate::process::{wait_for_job, ExitStatus, Job};
 use std::io::Write;
+use std::rc::Rc;
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -25,7 +26,9 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
                 }
             } else {
                 // Wait for all jobs.
-                for job in &ctx.shell.jobs() {
+                let jobs: Vec<Rc<Job>> =
+                    ctx.shell.jobs().values().cloned().collect();
+                for job in &jobs {
                     wait_for_job(ctx.shell, job);
                 }
 

@@ -16,6 +16,7 @@ use std::cell::RefCell;
 use std::ffi::CString;
 use std::fmt;
 use std::fs::OpenOptions;
+use std::hash::{Hash, Hasher};
 use std::os::unix::io::IntoRawFd;
 use std::os::unix::io::RawFd;
 use std::rc::Rc;
@@ -102,6 +103,7 @@ pub struct Job {
     pub id: JobId,
     pub pgid: Pid,
     pub cmd: String,
+    // TODO: Remove entries in shell.states on destruction.
     pub processes: Vec<Pid>,
     pub termios: RefCell<Option<Termios>>,
 }
@@ -139,7 +141,7 @@ impl Job {
 
     pub fn completed(&self, shell: &Shell) -> bool {
         self.processes.iter().all(|pid| {
-            let state = get_process_state(shell, *pid).unwrap();
+            let state = shell.get_process_state(*pid).unwrap();
             match state {
                 ProcessState::Completed(_) => true,
                 _ => false,
@@ -149,7 +151,7 @@ impl Job {
 
     pub fn stopped(&self, shell: &Shell) -> bool {
         self.processes.iter().all(|pid| {
-            let state = get_process_state(shell, *pid).unwrap();
+            let state = shell.get_process_state(*pid).unwrap();
             match state {
                 ProcessState::Stopped(_) => true,
                 _ => false,
@@ -158,23 +160,25 @@ impl Job {
     }
 }
 
-pub fn create_job(shell: &mut Shell, name: String, pgid: Pid, childs: Vec<Pid>) -> Rc<Job> {
-    let id = shell.alloc_job_id();
-    let job = Rc::new(Job::new(id, pgid, name, childs.clone()));
-    for child in childs {
-        set_process_state(shell, child, ProcessState::Running);
-        shell.pid_job_mapping.insert(child, job.clone());
+impl PartialEq for Job {
+    fn eq(&self, other: &Job) -> bool {
+        self.id == other.id
     }
+}
 
-    shell.jobs.insert(id, job.clone());
-    job
+impl Eq for Job {}
+
+impl Hash for Job {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
 }
 
 pub fn continue_job(shell: &mut Shell, job: &Rc<Job>, background: bool) {
     // Mark all stopped processes as running.
     for proc in &job.processes {
-        if let ProcessState::Stopped(_) = get_process_state(shell, *proc).unwrap() {
-            set_process_state(shell, *proc, ProcessState::Running);
+        if let ProcessState::Stopped(_) = shell.get_process_state(*proc).unwrap() {
+            shell.set_process_state(*proc, ProcessState::Running);
         }
     }
 
@@ -185,24 +189,23 @@ pub fn continue_job(shell: &mut Shell, job: &Rc<Job>, background: bool) {
     }
 }
 
-pub fn set_terminal_process_group(shell: &Shell, pgid: Pid) {
-    tcsetpgrp(shell.term_fd, pgid).expect("failed to tcsetpgrp");
+/// Put the given pgid (job) into the foreground.
+fn set_terminal_process_group(pgid: Pid) {
+    tcsetpgrp(0, pgid).expect("failed to tcsetpgrp");
 }
 
-pub fn restore_terminal_attrs(shell: &Shell, termios: &Termios) {
-    tcsetattr(shell.term_fd, TCSADRAIN, termios).expect("failed to tcsetattr");
+fn restore_terminal_attrs(termios: &Termios) {
+    tcsetattr(0, TCSADRAIN, termios).expect("failed to tcsetattr");
 }
 
 pub fn run_in_foreground(shell: &mut Shell, job: &Rc<Job>, sigcont: bool) -> ProcessState {
     shell.last_fore_job = Some(job.clone());
-    shell.background_jobs.remove(&job.id);
-
-    // Put the job into the foreground.
-    set_terminal_process_group(shell, job.pgid);
+    shell.background_jobs_mut().remove(job);
+    set_terminal_process_group(job.pgid);
 
     if sigcont {
         if let Some(ref termios) = *job.termios.borrow() {
-            restore_terminal_attrs(shell, termios);
+            restore_terminal_attrs(termios);
         }
         kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
         trace!("sent sigcont");
@@ -213,18 +216,18 @@ pub fn run_in_foreground(shell: &mut Shell, job: &Rc<Job>, sigcont: bool) -> Pro
 
     // Save the current terminal status.
     job.termios
-        .replace(Some(tcgetattr(shell.term_fd).expect("failed to tcgetattr")));
+        .replace(Some(tcgetattr(0).expect("failed to tcgetattr")));
 
     // Go back into the shell.
-    set_terminal_process_group(shell, shell.shell_pgid);
-    restore_terminal_attrs(shell, shell.shell_termios.as_ref().unwrap());
+    set_terminal_process_group(shell.shell_pgid);
+    restore_terminal_attrs(shell.shell_termios.as_ref().unwrap());
 
     status
 }
 
 pub fn run_in_background(shell: &mut Shell, job: &Rc<Job>, sigcont: bool) {
-    shell.last_back_job = Some(job.clone());
-    shell.background_jobs.insert(job.id);
+    shell.set_last_back_job(job.clone());
+    shell.background_jobs_mut().insert(job.clone());
 
     if sigcont {
         kill_process_group(job.pgid, Signal::SIGCONT).expect("failed to kill(SIGCONT)");
@@ -232,17 +235,16 @@ pub fn run_in_background(shell: &mut Shell, job: &Rc<Job>, sigcont: bool) {
 }
 
 pub fn destroy_job(shell: &mut Shell, job: &Rc<Job>) {
-    for proc in &*job.processes {
-        shell.pid_job_mapping.remove(&proc);
-    }
+    // TODO: Remove processes from shell.pid_job_mapping
+    // TODO: I suppose this function should be Drop::drop().
 
-    if shell.background_jobs.remove(&job.id) {
+    if shell.background_jobs_mut().remove(job) {
         // The job was a background job. Notify the user that the job
         // has finished.
         println!("[{}] Done: {}", job.id, job.cmd);
     }
 
-    shell.jobs.remove(&job.id).unwrap();
+    shell.jobs_mut().remove(&job.id).unwrap();
 
     if let Some(ref last_job) = shell.last_fore_job {
         if job.id == last_job.id {
@@ -255,8 +257,7 @@ pub fn destroy_job(shell: &mut Shell, job: &Rc<Job>) {
 /// have been finished.
 pub fn check_background_jobs(shell: &mut Shell) {
     while let Some(pid) = wait_for_any_process(shell, true) {
-        // This `get` won't return None.
-        let job = &shell.pid_job_mapping[&pid].clone();
+        let job = shell.get_job_by_pid(pid).unwrap().clone();
         if job.completed(shell) {
             destroy_job(shell, &job);
         } else if job.stopped(shell) {
@@ -277,7 +278,7 @@ pub fn wait_for_job(shell: &mut Shell, job: &Rc<Job>) -> ProcessState {
     }
 
     // Get the exit status of the last process.
-    let state = get_process_state(shell, *job.processes.iter().last().unwrap()).cloned();
+    let state = shell.get_process_state(*job.processes.iter().last().unwrap()).cloned();
 
     match state {
         Some(ProcessState::Completed(_)) => {
@@ -323,18 +324,8 @@ pub fn wait_for_any_process(shell: &mut Shell, no_block: bool) -> Option<Pid> {
         }
     };
 
-    set_process_state(shell, pid, state);
+    shell.set_process_state(pid, state);
     Some(pid)
-}
-
-/// Updates the process state.
-fn set_process_state(shell: &mut Shell, pid: Pid, state: ProcessState) {
-    shell.states.insert(pid, state);
-}
-
-/// Returns the process state.
-fn get_process_state(shell: &Shell, pid: Pid) -> Option<&ProcessState> {
-    shell.states.get(&pid)
 }
 
 /// Spawn a child process and execute a command.
@@ -433,10 +424,8 @@ pub fn run_external_command(
                 };
 
                 if !ctx.background {
-                    set_terminal_process_group(shell, pgid);
-
-                    // Place the terminal out of raw mode.
-                    restore_terminal_attrs(shell, shell.shell_termios.as_ref().unwrap());
+                    set_terminal_process_group(pgid);
+                    restore_terminal_attrs(shell.shell_termios.as_ref().unwrap());
                 }
 
                 // Accept job-control-related signals (refer https://www.gnu.org/software/libc/manual/html_node/Launching-Jobs.html)

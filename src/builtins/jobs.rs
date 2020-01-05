@@ -11,7 +11,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("jobs: argv={:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(_) => {
-            for job in ctx.shell.jobs() {
+            for job in ctx.shell.jobs().values() {
                 writeln!(
                     ctx.stdout,
                     "[{}] {}: {}",

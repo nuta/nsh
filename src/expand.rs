@@ -57,10 +57,10 @@ pub fn expand_param(
 ) -> Result<Vec<Option<String>>> {
     match name {
         "?" => {
-            return Ok(vec![Some(shell.last_status.to_string())]);
+            return Ok(vec![Some(shell.last_status().to_string())]);
         }
         "!" => {
-            let pgid = match &shell.last_back_job {
+            let pgid = match shell.last_back_job() {
                 Some(job) => job.pgid.to_string(),
                 None => 0.to_string(),
             };

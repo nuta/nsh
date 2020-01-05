@@ -441,7 +441,7 @@ fn run_command(shell: &mut Shell, command: &parser::Command, ctx: &Context) -> R
         }
         parser::Command::Return { status } => {
             if let Some(status) = status {
-                shell.last_status = *status;
+                shell.set_last_status(*status);
             }
 
             ExitStatus::Return
@@ -591,12 +591,12 @@ fn run_pipeline(
     // Wait for the last command in the pipeline.
     let last_status = match last_result {
         Some(ExitStatus::ExitedWith(status)) => {
-            shell.last_status = status;
+            shell.set_last_status(status);
             ExitStatus::ExitedWith(status)
         }
         Some(ExitStatus::Running(_)) => {
             let cmd_name = code.to_owned();
-            let job = create_job(shell, cmd_name, pgid.unwrap(), childs);
+            let job = shell.create_job(cmd_name, pgid.unwrap(), childs);
 
             if !shell.interactive {
                 if background {
@@ -606,7 +606,7 @@ fn run_pipeline(
 
                 match wait_for_job(shell, &job) {
                     ProcessState::Completed(status) => {
-                        shell.last_status = status;
+                        shell.set_last_status(status);
                         ExitStatus::ExitedWith(status)
                     }
                     ProcessState::Stopped(_) => ExitStatus::Running(pgid.unwrap()),

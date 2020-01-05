@@ -15,42 +15,52 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 /// A isolated shell execution environment.
-/// TODO: Make fields private.
 pub struct Shell {
+    /// The shell's pgid.
     pub shell_pgid: Pid,
+    /// Whether the shell is interactive.
     pub interactive: bool,
     /// $0
     pub script_name: String,
-    pub term_fd: RawFd,
+    /// A saved terminal state.
     pub shell_termios: Option<Termios>,
 
     /// `$?`
-    pub last_status: i32,
+    last_status: i32,
     /// `$!`
-    pub last_back_job: Option<Rc<Job>>,
+    last_back_job: Option<Rc<Job>>,
 
     /// Global scope.
-    pub global: Frame,
+    global: Frame,
     /// Local scopes (variables declared with `local').
-    pub frames: Vec<Frame>,
-    pub exported: HashSet<String>,
-    pub aliases: HashMap<String, String>,
+    frames: Vec<Frame>,
+    /// Exported variable names.
+    exported: HashSet<String>,
+    /// Alias (`alias(1)`).
+    aliases: HashMap<String, String>,
 
-    // Shell options.
+    /// `set -e`
     pub errexit: bool,
+    /// `set -u`
     pub nounset: bool,
+    /// `set -n`
     pub noexec: bool,
 
-    pub jobs: HashMap<JobId, Rc<Job>>,
-    pub background_jobs: HashSet<JobId>,
-    pub last_fore_job: Option<Rc<Job>>,
-    pub states: HashMap<Pid, ProcessState>,
-    pub pid_job_mapping: HashMap<Pid, Rc<Job>>,
-
-    // pushd(1) / popd(1) stack
+    /// Jobs.
+    jobs: HashMap<JobId, Rc<Job>>,
+    /// Background jobs.
+    background_jobs: HashSet<Rc<Job>>,
+    /// The current process states spawned by the shell.
+    states: HashMap<Pid, ProcessState>,
+    /// The mapping from a pid (not job's pgid) to its job.
+    pid_job_mapping: HashMap<Pid, Rc<Job>>,
+    /// A stack of pathes maintained by pushd(1) / popd(1).
     cd_stack: Vec<String>,
-
+    /// Completion definitions.
     compspecs: HashMap<String, CompSpec>,
+
+    // TODO: Remove this field or make it private.
+    pub last_fore_job: Option<Rc<Job>>,
 }
 
 impl Shell {
@@ -59,7 +69,6 @@ impl Shell {
             shell_pgid: getpid(),
             script_name: "".to_owned(),
             interactive: false,
-            term_fd: 0, /* stdin */
             shell_termios: None,
             last_status: 0,
             exported: HashSet::new(),
@@ -91,6 +100,22 @@ impl Shell {
         } else {
             None
         };
+    }
+
+    pub fn last_status(&self) -> i32 {
+        return self.last_status;
+    }
+
+    pub fn set_last_status(&mut self, status: i32) {
+        self.last_status = status;
+    }
+
+    pub fn last_back_job(&self) -> &Option<Rc<Job>> {
+        &self.last_back_job
+    }
+
+    pub fn set_last_back_job(&mut self, job: Rc<Job>) {
+        self.last_back_job = Some(job);
     }
 
     #[inline]
@@ -233,23 +258,51 @@ impl Shell {
         })
     }
 
-    #[inline]
-    pub fn jobs(&self) -> Vec<Rc<Job>> {
-        let mut jobs = Vec::new();
-        for job in self.jobs.values() {
-            jobs.push(job.clone());
-        }
-
-        jobs
+    pub fn jobs(&self) -> &HashMap<JobId, Rc<Job>> {
+        &self.jobs
     }
 
-    pub fn alloc_job_id(&mut self) -> JobId {
+    pub fn jobs_mut(&mut self) -> &mut HashMap<JobId, Rc<Job>> {
+        &mut self.jobs
+    }
+
+    pub fn background_jobs_mut(&mut self) -> &mut HashSet<Rc<Job>> {
+        &mut self.background_jobs
+    }
+
+    /// Updates the process state.
+    pub fn set_process_state(&mut self, pid: Pid, state: ProcessState) {
+        self.states.insert(pid, state);
+    }
+
+    /// Returns the process state.
+    pub fn get_process_state(&self, pid: Pid) -> Option<&ProcessState> {
+        self.states.get(&pid)
+    }
+
+    pub fn get_job_by_pid(&self, pid: Pid) -> Option<&Rc<Job>> {
+        self.pid_job_mapping.get(&pid)
+    }
+
+    fn alloc_job_id(&mut self) -> JobId {
         let mut id = 1;
         while self.jobs.contains_key(&JobId::new(id)) {
             id += 1;
         }
 
         JobId::new(id)
+    }
+
+    pub fn create_job(&mut self, name: String, pgid: Pid, childs: Vec<Pid>) -> Rc<Job> {
+        let id = self.alloc_job_id();
+        let job = Rc::new(Job::new(id, pgid, name, childs.clone()));
+        for child in childs {
+            self.set_process_state(child, ProcessState::Running);
+            self.pid_job_mapping.insert(child, job.clone());
+        }
+
+        self.jobs_mut().insert(id, job.clone());
+        job
     }
 
     #[inline]

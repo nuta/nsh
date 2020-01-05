@@ -464,7 +464,7 @@ pub fn complete(shell: &mut Shell, ctx: &InputContext) -> Vec<String> {
 
     let cmd_name = if let Some(name) = ctx.words.get(0) {
         let name = name.as_str().to_owned();
-        match shell.aliases.get(&name) {
+        match shell.lookup_alias(&name) {
             Some(alias) if !alias.contains(' ') => {
                 // The alias named `name' is defined and it is a command
                 // (does not contain whitespaces). Use its value as the
