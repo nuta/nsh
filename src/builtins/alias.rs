@@ -43,7 +43,11 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             }
         }
     } else {
-        // TODO: list defined aliases
+        // List defined aliases.
+        for (name, cmd) in ctx.shell.aliases() {
+            writeln!(ctx.stdout, "{}='{}'", name, cmd).ok();
+        }
+
         ExitStatus::ExitedWith(0)
     }
 }

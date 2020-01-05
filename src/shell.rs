@@ -232,6 +232,10 @@ impl Shell {
         self.exported.iter()
     }
 
+    pub fn aliases(&self) -> std::collections::hash_map::Iter<String, String> {
+        self.aliases.iter()
+    }
+
     pub fn add_alias(&mut self, name: &str, body: String) {
         self.aliases.insert(name.to_string(), body);
     }
