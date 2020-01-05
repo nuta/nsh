@@ -1,7 +1,7 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
-use structopt::StructOpt;
+use crate::process::ExitStatus;
 use std::io::Write;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "unset", about = "Set command.")]
@@ -15,9 +15,9 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
 
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
-            ctx.isolate.remove(&opts.name);
+            ctx.shell.remove(&opts.name);
             ExitStatus::ExitedWith(0)
-        },
+        }
         Err(err) => {
             writeln!(ctx.stderr, "nsh: unset: {}", err).ok();
             ExitStatus::ExitedWith(1)

@@ -1,7 +1,7 @@
+use crate::fuzzy::FuzzyVec;
 use std::collections::BTreeMap;
 use std::fs::read_dir;
 use std::sync::RwLock;
-use crate::fuzzy::FuzzyVec;
 
 lazy_static! {
     /// A `(command name, absolute path to the executable)` table.

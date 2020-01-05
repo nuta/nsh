@@ -1,9 +1,13 @@
+use crate::context_parser::{self, InputContext};
+use crate::eval::*;
+use crate::fuzzy::FuzzyVec;
+use crate::process::*;
+use crate::shell::Shell;
+use crate::variable::*;
 use dirs;
 use std::collections::VecDeque;
-use std::path::{Path, PathBuf};
 use std::os::unix::fs::PermissionsExt;
-use crate::fuzzy::FuzzyVec;
-use crate::context_parser::InputContext;
+use std::path::{Path, PathBuf};
 
 /// A completion-related prompt states.
 pub struct CompletionSelector {
@@ -96,7 +100,7 @@ impl CompletionSelector {
         &self,
         ctx: &InputContext,
         user_input: &str,
-        user_cursor: &mut usize
+        user_cursor: &mut usize,
     ) -> String {
         let selected = match self.get(self.selected_index()) {
             Some(selected) => selected,
@@ -122,15 +126,16 @@ impl CompletionSelector {
         };
 
         // add a slash or space after the word.
-        let append = if path.is_dir() {
-            "/"
-        } else {
-            " "
-        };
+        let append = if path.is_dir() { "/" } else { " " };
 
-        trace!("complete: '{}' '{}' '{}' '{}'", prefix, selected, append, suffix);
-        *user_cursor = prefix.chars().count() +
-            selected.chars().count() + append.chars().count();
+        trace!(
+            "complete: '{}' '{}' '{}' '{}'",
+            prefix,
+            selected,
+            append,
+            suffix
+        );
+        *user_cursor = prefix.chars().count() + selected.chars().count() + append.chars().count();
         return format!("{}{}{}{}", prefix, selected, append, suffix);
     }
 }
@@ -224,9 +229,8 @@ pub fn path_completion(
     include_files: bool,
     include_dirs: bool,
     executable_only: bool,
-    remove_dot_slash_prefix: bool
+    remove_dot_slash_prefix: bool,
 ) -> Vec<String> {
-
     let current_word = match &ctx.current_literal {
         Some(range) => Some(ctx.input.as_str()[range.clone()].to_owned()),
         None => None,
@@ -251,16 +255,21 @@ pub fn path_completion(
 
             path.push(sub_path);
             remaining_dirs.push_front(path);
-        },
+        }
         // Downloads/
         Some(given_dir) if given_dir.ends_with('/') => {
             remaining_dirs.push_front(PathBuf::from(given_dir));
-        },
+        }
         // Downloads/monica-lotte
         Some(given_dir) if given_dir.contains('/') => {
             // Remove the last part: `Downloads/monica-lotte' -> `Downloads'
-            remaining_dirs.push_front(PathBuf::from(given_dir.clone()).parent().unwrap().to_path_buf());
-        },
+            remaining_dirs.push_front(
+                PathBuf::from(given_dir.clone())
+                    .parent()
+                    .unwrap()
+                    .to_path_buf(),
+            );
+        }
         // Download
         _ => {
             remaining_dirs.push_front(PathBuf::from("."));
@@ -271,8 +280,7 @@ pub fn path_completion(
     let mut max_scan = 1024; // TODO: compute this by machine performance
 
     // Scan the directories in breadth-first way.
-'scan_loop:
-    while let Some(dir_path) = remaining_dirs.pop_front() {
+    'scan_loop: while let Some(dir_path) = remaining_dirs.pop_front() {
         if let Ok(dirent) = std::fs::read_dir(dir_path) {
             for entry in dirent {
                 if max_scan < 0 {
@@ -304,9 +312,9 @@ pub fn path_completion(
                     if path.starts_with(&home_dir) {
                         // The path is in the home directory. Replace the prefix
                         // with `~/'.
-                        path = PathBuf::from("~").join(
-                            path.strip_prefix(&home_dir).unwrap()
-                        ).to_path_buf();
+                        path = PathBuf::from("~")
+                            .join(path.strip_prefix(&home_dir).unwrap())
+                            .to_path_buf();
                     }
 
                     if remove_dot_slash_prefix && path.starts_with("./") {
@@ -337,7 +345,7 @@ pub fn cmd_completion(ctx: &InputContext) -> Vec<String> {
             let mut entries = crate::path::complete(query);
             entries.extend(path_completion(ctx, true, false, true, false));
             entries
-        },
+        }
         None => crate::path::complete(""),
     }
 }
@@ -414,5 +422,87 @@ impl CompSpecBuilder {
             filenames_if_empty: self.filenames_if_empty,
             dirnames_if_empty: self.dirnames_if_empty,
         }
+    }
+}
+
+fn call_completion_function(shell: &mut Shell, func_name: &str, ctx: &InputContext) -> Vec<String> {
+    let locals = vec![
+        ("COMP_WORDS", Value::Array(ctx.words.clone())),
+        ("COMP_CWORD", Value::String(ctx.current_word.to_string())),
+    ];
+
+    match call_function_in_shell_context(shell, func_name, &[], locals) {
+        Ok(ExitStatus::ExitedWith(0)) => shell
+            .get("COMPREPLY")
+            .and_then(|reply| match reply.value() {
+                Some(Value::Array(arr)) => Some(arr.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(Vec::new),
+        Ok(status) => {
+            // Something went wrong within the function. Just ignore it.
+            eprintln!(
+                "nsh: failed to invoke a completion function `{}': {:?}",
+                func_name, status
+            );
+            Vec::new()
+        }
+        Err(err) => {
+            // Something went wrong (BUG).
+            eprintln!(
+                "nsh: BUG: failed to invoke a function `{}': {}",
+                func_name, err
+            );
+            Vec::new()
+        }
+    }
+}
+
+/// Returns completion candidates.
+pub fn complete(shell: &mut Shell, ctx: &InputContext) -> Vec<String> {
+    trace!("complete: ctx={:?}", ctx);
+
+    let cmd_name = if let Some(name) = ctx.words.get(0) {
+        let name = name.as_str().to_owned();
+        match shell.aliases.get(&name) {
+            Some(alias) if !alias.contains(' ') => {
+                // The alias named `name' is defined and it is a command
+                // (does not contain whitespaces). Use its value as the
+                // target command name.
+                alias.to_owned()
+            }
+            _ => name,
+        }
+    } else {
+        "".to_owned()
+    };
+
+    let current_span = ctx.current_span.map(|index| &ctx.spans[index]);
+    if let Some(context_parser::Span::Argv0(_)) = current_span {
+        // The cursor is at the first word, namely, the command.
+        cmd_completion(ctx)
+    } else if let Some(compspec) = shell.get_compspec(cmd_name.as_str()) {
+        let compspec = compspec.clone();
+        let mut results = Vec::new();
+        if let Some(name) = compspec.func_name() {
+            results = call_completion_function(shell, &name, ctx);
+        }
+
+        if results.is_empty() {
+            // No completion candidates. Try defaults.
+            results.extend(path_completion(
+                ctx,
+                compspec.filenames_if_empty(),
+                compspec.dirnames_if_empty(),
+                false,
+                true,
+            ));
+        }
+
+        results
+    } else {
+        // Compspec if not defined for the command. Fall back to the path
+        // completion.
+        path_completion(ctx, true, true, false, true)
     }
 }

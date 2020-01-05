@@ -1,8 +1,8 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
 use crate::parser;
-use std::io::Write;
+use crate::process::ExitStatus;
 use pest::Parser;
+use std::io::Write;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Alias {
@@ -16,13 +16,13 @@ struct AliasParser;
 
 fn parse_alias(alias: &str) -> Result<Alias, parser::ParseError> {
     AliasParser::parse(Rule::alias, alias)
-    .map_err(|err| parser::ParseError::Fatal(err.to_string()))
-    .and_then(|mut pairs| {
-        let mut inner = pairs.next().unwrap().into_inner();
-        let name = inner.next().unwrap().as_span().as_str().to_owned();
-        let body = inner.next().unwrap().as_str().to_owned();
-        Ok(Alias { name, body })
-    })
+        .map_err(|err| parser::ParseError::Fatal(err.to_string()))
+        .and_then(|mut pairs| {
+            let mut inner = pairs.next().unwrap().into_inner();
+            let name = inner.next().unwrap().as_span().as_str().to_owned();
+            let body = inner.next().unwrap().as_str().to_owned();
+            Ok(Alias { name, body })
+        })
 }
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
@@ -30,7 +30,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     if let Some(alias) = ctx.argv.get(1) {
         match parse_alias(alias) {
             Ok(Alias { name, body }) => {
-                ctx.isolate.add_alias(&name, body);
+                ctx.shell.add_alias(&name, body);
                 ExitStatus::ExitedWith(0)
             }
             Err(parser::ParseError::Fatal(err)) => {

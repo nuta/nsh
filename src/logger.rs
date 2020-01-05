@@ -1,10 +1,9 @@
-
-use std::sync::Mutex;
+use log::{Level, LevelFilter, Metadata, Record};
 use std::fs::OpenOptions;
 use std::io::prelude::*;
-use log::{Record, Metadata, Level, LevelFilter};
-use termion::style::{Bold, Reset};
+use std::sync::Mutex;
 use termion::color;
+use termion::style::{Bold, Reset};
 
 struct Logger {
     file: Mutex<std::fs::File>,
@@ -20,26 +19,26 @@ impl log::Log for Logger {
             let mut file = self.file.lock().unwrap();
             let mut level_color = String::new();
             match record.level() {
-                Level::Info  => {
+                Level::Info => {
                     use std::fmt::Write;
                     write!(level_color, "{}", color::Fg(color::Blue)).ok();
-                },
+                }
                 Level::Error => {
                     use std::fmt::Write;
                     write!(level_color, "{}", color::Fg(color::LightRed)).ok();
-                },
+                }
                 Level::Warn => {
                     use std::fmt::Write;
                     write!(level_color, "{}", color::Fg(color::LightMagenta)).ok();
-                },
+                }
                 Level::Debug => {
                     use std::fmt::Write;
                     write!(level_color, "{}", color::Fg(color::Green)).ok();
-                },
+                }
                 _ => {
                     use std::fmt::Write;
                     write!(level_color, "{}", color::Fg(color::Reset)).ok();
-                },
+                }
             }
 
             writeln!(
@@ -52,7 +51,8 @@ impl log::Log for Logger {
                 record.target(),
                 Reset,
                 record.args()
-            ).ok();
+            )
+            .ok();
         }
     }
 

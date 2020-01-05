@@ -4,11 +4,11 @@
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
-extern crate structopt;
 extern crate dirs;
-extern crate nix;
-extern crate termion;
 extern crate glob;
+extern crate nix;
+extern crate structopt;
+extern crate termion;
 #[macro_use]
 extern crate failure;
 extern crate pest;
@@ -16,35 +16,40 @@ extern crate pest;
 extern crate pest_derive;
 extern crate backtrace;
 
-#[cfg(test)] #[macro_use] extern crate pretty_assertions;
-#[cfg(test)] extern crate test;
+#[cfg(test)]
+#[macro_use]
+extern crate pretty_assertions;
+#[cfg(test)]
+extern crate test;
 
-mod logger;
 mod builtins;
 mod completion;
-mod exec;
-mod pattern;
-mod input;
-mod parser;
 mod context_parser;
+mod doctor;
+mod eval;
+mod expand;
+mod fuzzy;
+mod history;
+mod input;
+mod logger;
+mod parser;
 mod path;
+mod pattern;
+mod process;
 mod prompt;
+mod shell;
 mod syntax_highlighting;
 mod utils;
-mod history;
-mod fuzzy;
 mod variable;
-mod doctor;
 
-use std::process;
+use crate::process::{check_background_jobs, ExitStatus};
+use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use std::path::PathBuf;
+use std::process::exit;
 use structopt::StructOpt;
-use nix::sys::signal::{SigHandler, SigAction, SaFlags, SigSet, Signal, sigaction};
 use termion::is_tty;
-use crate::exec::ExitStatus;
 
-fn interactive_mode(mut isolate: exec::Isolate) -> ExitStatus {
-
+fn interactive_mode(mut shell: crate::shell::Shell) -> ExitStatus {
     // Ignore job-control-related signals in order not to stop the shell.
     // (refer https://www.gnu.org/software/libc/manual)
     // Don't ignore SIGCHLD! If you ignore it waitpid(2) returns ECHILD.
@@ -58,7 +63,7 @@ fn interactive_mode(mut isolate: exec::Isolate) -> ExitStatus {
     }
 
     // Render the prompt and wait for an user input.
-    let mut line = match input::input(&mut isolate) {
+    let mut line = match input::input(&mut shell) {
         Ok(line) => {
             println!();
             line
@@ -69,11 +74,11 @@ fn interactive_mode(mut isolate: exec::Isolate) -> ExitStatus {
     };
 
     loop {
-        isolate.run_str(&line);
-        isolate.check_background_jobs();
+        shell.run_str(&line);
+        check_background_jobs(&mut shell);
 
         // Read the next line.
-        line = match input::input(&mut isolate) {
+        line = match input::input(&mut shell) {
             Ok(line) => {
                 println!();
                 line
@@ -86,8 +91,8 @@ fn interactive_mode(mut isolate: exec::Isolate) -> ExitStatus {
 }
 
 pub fn load_nshrc() -> String {
-    use std::path::Path;
     use std::io::Read;
+    use std::path::Path;
 
     let home_dir = dirs::home_dir().unwrap();
     let nshrc_path = Path::new(&home_dir).join(".nshrc");
@@ -96,22 +101,22 @@ pub fn load_nshrc() -> String {
         Ok(file) => file,
         Err(_) => return String::new(),
     };
-    
-    file.read_to_string(&mut nshrc).expect("failed to load ~/.nshrc");
+
+    file.read_to_string(&mut nshrc)
+        .expect("failed to load ~/.nshrc");
 
     nshrc
 }
 
-const DEFAULT_PATH: &str =
-    "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
+const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 
 fn shell_main(opt: Opt) {
     // Load and execute nshrc.
-    let mut isolate = exec::Isolate::new();
+    let mut shell = crate::shell::Shell::new();
     let nshrc = load_nshrc();
-    isolate.run_str(&nshrc);
+    shell.run_str(&nshrc);
 
-    if isolate.get("PATH").is_none() {
+    if shell.get("PATH").is_none() {
         crate::path::reload_paths(DEFAULT_PATH);
     }
 
@@ -119,39 +124,39 @@ fn shell_main(opt: Opt) {
     history::init();
 
     let stdout = std::fs::File::create("/dev/stdout").unwrap();
-    isolate.set_interactive(is_tty(&stdout) && opt.command.is_none()
-        && opt.file.is_none());
+    shell.set_interactive(is_tty(&stdout) && opt.command.is_none() && opt.file.is_none());
     let status = match (opt.command, opt.file) {
-        (Some(command), _) => {
-            isolate.run_str(&command)
-        },
+        (Some(command), _) => shell.run_str(&command),
         (_, Some(file)) => {
-            isolate.set_script_name(file.to_str().unwrap());
-            isolate.run_file(file)
-        },
+            shell.set_script_name(file.to_str().unwrap());
+            shell.run_file(file)
+        }
         (_, _) => {
-            if !isolate.interactive() {
+            if !shell.interactive() {
                 eprintln!("nsh: warning: stdout is not a tty");
-                process::exit(0);
+                exit(0);
             }
 
-            interactive_mode(isolate)
-        },
+            interactive_mode(shell)
+        }
     };
 
     match status {
-        ExitStatus::ExitedWith(status) => process::exit(status),
+        ExitStatus::ExitedWith(status) => exit(status),
         ExitStatus::Running(_) => {
             eprintln!("nsh: warning: some jobs are running in background");
-            process::exit(0);
-        },
-        ExitStatus::NoExec=> process::exit(0),
+            exit(0);
+        }
+        ExitStatus::NoExec => exit(0),
         _ => panic!("unexpected {:?}", status),
     }
 }
 
 #[derive(StructOpt, Debug)]
-#[structopt(name="nsh", about="A command-line shell that focuses on performance and productivity.")]
+#[structopt(
+    name = "nsh",
+    about = "A command-line shell that focuses on performance and productivity."
+)]
 struct Opt {
     /// Check your terminal environment.
     #[structopt(long = "doctor")]

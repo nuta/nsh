@@ -1,7 +1,7 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
-use structopt::StructOpt;
+use crate::process::ExitStatus;
 use std::io::Write;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "pushd", about = "Pushd command.")]
@@ -16,12 +16,16 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             let dir = if let Some(dir) = opts.dir {
                 dir
             } else {
-                std::env::current_dir().unwrap().to_str().unwrap().to_owned()
+                std::env::current_dir()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned()
             };
 
-            ctx.isolate.pushd(dir);
+            ctx.shell.pushd(dir);
             ExitStatus::ExitedWith(0)
-        },
+        }
         Err(err) => {
             writeln!(ctx.stderr, "nsh: pushd: {}", err).ok();
             ExitStatus::ExitedWith(1)

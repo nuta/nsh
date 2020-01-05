@@ -1,34 +1,35 @@
-use crate::exec::{ExitStatus, Isolate};
+use crate::process::ExitStatus;
+use crate::shell::Shell;
 use crate::utils::FdFile;
 use std::collections::BTreeMap;
-use std::io::{Write};
+use std::io::Write;
 
 mod alias;
+mod bg;
 mod cd;
+mod compgen;
+mod complete;
 mod echo;
+mod eval;
 mod exit;
 mod export;
-mod eval;
-mod source;
-mod set;
 mod fg;
-mod bg;
 mod jobs;
-mod wait;
-mod shift;
-mod read;
-mod unset;
-mod pushd;
 mod popd;
-mod complete;
-mod compgen;
+mod pushd;
+mod read;
+mod set;
+mod shift;
+mod source;
+mod unset;
+mod wait;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
-    pub isolate: &'a mut Isolate,
+    pub shell: &'a mut Shell,
     pub stdin: FdFile,
     pub stdout: FdFile,
-    pub stderr: FdFile
+    pub stderr: FdFile,
 }
 
 #[derive(Debug, Fail)]

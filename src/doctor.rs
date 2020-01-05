@@ -4,14 +4,28 @@ use termion::style;
 
 macro_rules! print_title {
     ($title:expr) => {
-        println!("{}{}{}{}{}", style::Reset, style::Bold, style::Underline, $title, style::Reset);
+        println!(
+            "{}{}{}{}{}",
+            style::Reset,
+            style::Bold,
+            style::Underline,
+            $title,
+            style::Reset
+        );
     };
 }
 
 macro_rules! print_env {
     ($key:expr) => {
         let value = std::env::var($key).unwrap_or_else(|_| "".to_owned());
-        println!("{}{}={}{}{}", style::Reset, $key, color::Fg(color::Green), value, style::Reset);
+        println!(
+            "{}{}={}{}{}",
+            style::Reset,
+            $key,
+            color::Fg(color::Green),
+            value,
+            style::Reset
+        );
     };
 }
 

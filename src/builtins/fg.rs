@@ -1,8 +1,8 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::{ExitStatus, JobId, Job};
-use structopt::StructOpt;
+use crate::process::{continue_job, ExitStatus, Job, JobId};
 use std::io::Write;
 use std::rc::Rc;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "fg", about = "fg command.")]
@@ -14,7 +14,7 @@ struct Opt {
 // Used by bg.
 pub(super) fn parse_job_id(
     ctx: &mut InternalCommandContext,
-    job_id: Option<String>
+    job_id: Option<String>,
 ) -> Result<Rc<Job>, ExitStatus> {
     let id = match job_id {
         Some(job_id) => {
@@ -25,25 +25,23 @@ pub(super) fn parse_job_id(
                     Err(_) => {
                         writeln!(ctx.stderr, "nsh: invalid job id `{}'", job_id).ok();
                         return Err(ExitStatus::ExitedWith(1));
-                    },
+                    }
                 }
             } else {
                 writeln!(ctx.stderr, "nsh: invalid job id `{}'", job_id).ok();
                 return Err(ExitStatus::ExitedWith(1));
             }
-        },
-        None => {
-            match ctx.isolate.last_fore_job() {
-                Some(job) => job.id(),
-                None => {
-                    writeln!(ctx.stderr, "nsh: no jobs to run").ok();
-                    return Err(ExitStatus::ExitedWith(1));
-                }
-            }
         }
+        None => match ctx.shell.last_fore_job() {
+            Some(job) => job.id(),
+            None => {
+                writeln!(ctx.stderr, "nsh: no jobs to run").ok();
+                return Err(ExitStatus::ExitedWith(1));
+            }
+        },
     };
 
-    match ctx.isolate.find_job_by_id(id) {
+    match ctx.shell.find_job_by_id(id) {
         Some(job) => Ok(job),
         None => {
             writeln!(ctx.stderr, "nsh: no such job `{}'", id).ok();
@@ -55,14 +53,12 @@ pub(super) fn parse_job_id(
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("fg: argv={:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
-        Ok(opts) => {
-            match parse_job_id(ctx, opts.job_id) {
-                Ok(job) => {
-                    ctx.isolate.continue_job(&job, false);
-                    ExitStatus::ExitedWith(0)
-                },
-                Err(status) => status,
+        Ok(opts) => match parse_job_id(ctx, opts.job_id) {
+            Ok(job) => {
+                continue_job(ctx.shell, &job, false);
+                ExitStatus::ExitedWith(0)
             }
+            Err(status) => status,
         },
         Err(err) => {
             writeln!(ctx.stderr, "nsh: fg: {}", err).ok();

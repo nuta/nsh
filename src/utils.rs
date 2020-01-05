@@ -21,19 +21,20 @@ impl FdFile {
                 Ok(read_len) if read_len == 0 => break,
                 // Read a character.
                 Ok(_) => {
-                    if ch[0] == 0x0a /* newline */ {
+                    if ch[0] == 0x0a
+                    /* newline */
+                    {
                         break;
                     }
 
                     line.push(ch[0]);
-                },
+                }
                 // Something went wrong.
                 Err(err) => {
                     trace!("read_line: error: {:?}", err);
                     break;
                 }
             }
-
         }
 
         if line.is_empty() {

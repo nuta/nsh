@@ -1,8 +1,8 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
 use crate::completion::CompSpecBuilder;
-use structopt::StructOpt;
+use crate::process::ExitStatus;
 use std::io::Write;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "complete", about = "Compgen command.")]
@@ -21,14 +21,17 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             let mut compspec = CompSpecBuilder::new();
             for option in opts.options {
                 match option.as_str() {
-                    "dirnames"  => { compspec.dirnames_if_empty(true); },
-                    "filenames" => { compspec.filenames_if_empty(true); },
+                    "dirnames" => {
+                        compspec.dirnames_if_empty(true);
+                    }
+                    "filenames" => {
+                        compspec.filenames_if_empty(true);
+                    }
                     "bashdefault" | "default" => {
                         compspec.dirnames_if_empty(true);
-                    },
+                    }
                     _ => {
-                        writeln!(ctx.stderr, "nsh: complete: unknown option: `{}'",
-                            option).ok();
+                        writeln!(ctx.stderr, "nsh: complete: unknown option: `{}'", option).ok();
                         return ExitStatus::ExitedWith(1);
                     }
                 }
@@ -40,11 +43,11 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
 
             let compspec = compspec.build();
             for command in opts.commands {
-                ctx.isolate.set_compspec(&command, compspec.clone());
+                ctx.shell.set_compspec(&command, compspec.clone());
             }
 
             ExitStatus::ExitedWith(0)
-        },
+        }
         Err(err) => {
             writeln!(ctx.stderr, "nsh: complete: {}", err).ok();
             ExitStatus::ExitedWith(1)

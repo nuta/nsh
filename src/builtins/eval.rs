@@ -1,5 +1,5 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
+use crate::process::ExitStatus;
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     // Concatenate arguemts into a string.
@@ -9,5 +9,5 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         program.push(' ');
     }
 
-    ctx.isolate.run_str(&program)
+    ctx.shell.run_str(&program)
 }

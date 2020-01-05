@@ -1,9 +1,9 @@
-use pest::Parser;
 use pest::iterators::Pair;
-use termion::color::Fg;
-use termion::color;
-use termion::style;
+use pest::Parser;
 use std::os::unix::io::RawFd;
+use termion::color;
+use termion::color::Fg;
+use termion::style;
 
 #[derive(Parser)]
 #[grammar = "shell.pest"]
@@ -115,7 +115,7 @@ pub enum Command {
     Break,
     Continue,
     Return {
-        status: Option<i32>
+        status: Option<i32>,
     },
     Case {
         word: Word,
@@ -134,7 +134,7 @@ pub enum Command {
     SubShellGroup {
         terms: Vec<Term>,
     },
-    Cond(Box<CondExpr>)
+    Cond(Box<CondExpr>),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -192,7 +192,7 @@ pub enum ExpansionOp {
         pattern: Word,
         replacement: Word,
         replace_all: bool,
-    }
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -207,10 +207,7 @@ pub enum Expr {
     Sub(BinaryExpr),
     Mul(BinaryExpr),
     Div(BinaryExpr),
-    Assign {
-        name: String,
-        rhs: Box<Expr>
-    },
+    Assign { name: String, rhs: Box<Expr> },
     Literal(i32),
 
     // `foo` in $((foo + 1))
@@ -252,19 +249,39 @@ pub enum Span {
     // ~, ~mike, ...
     Tilde(Option<String>),
     // $foo, ${foo}, ${foo:-default}, ...
-    Parameter { name: String, op: ExpansionOp, quoted: bool },
+    Parameter {
+        name: String,
+        op: ExpansionOp,
+        quoted: bool,
+    },
     // $${foo[1]} ...
-    ArrayParameter { name: String, index: Expr, quoted: bool },
+    ArrayParameter {
+        name: String,
+        index: Expr,
+        quoted: bool,
+    },
     // $(echo hello && echo world)
-    Command { body: Vec<Term>, quoted: bool },
+    Command {
+        body: Vec<Term>,
+        quoted: bool,
+    },
     // <(echo hello)
-    ProcSubst { body: Vec<Term>, subst_type: ProcSubstType },
+    ProcSubst {
+        body: Vec<Term>,
+        subst_type: ProcSubstType,
+    },
     // $((1 + 2 * 3))
-    ArithExpr { expr: Expr },
+    ArithExpr {
+        expr: Expr,
+    },
     // *
-    AnyString { quoted: bool },
+    AnyString {
+        quoted: bool,
+    },
     // ?
-    AnyChar { quoted: bool },
+    AnyChar {
+        quoted: bool,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -295,13 +312,13 @@ macro_rules! wsnl {
                 Rule::newline => {
                     $self.visit_newline(next);
                     $pairs.next()
-                },
+                }
                 _ => Some(next),
             }
         } else {
             None
         }
-    }
+    };
 }
 
 struct ShellParser {
@@ -327,7 +344,7 @@ impl ShellParser {
         let subst_type = match direction.as_span().as_str() {
             "<(" => ProcSubstType::StdoutToFile,
             ">(" => ProcSubstType::FileToStdin,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         let body = self.visit_compound_list(compound_list);
@@ -337,7 +354,7 @@ impl ShellParser {
     // command_span = !{ "$(" ~ compound_list ~ ")" }
     fn visit_command_span(&mut self, pair: Pair<Rule>, quoted: bool) -> Span {
         let body = self.visit_compound_list(pair.into_inner().next().unwrap());
-        Span::Command { body, quoted}
+        Span::Command { body, quoted }
     }
 
     // param_ex_span = { "$" ~ "{" ~ length_op ~ expandable_var_name ~ param_opt? ~ "}" }
@@ -345,7 +362,12 @@ impl ShellParser {
         let mut inner = pair.into_inner();
         let length_op = inner.next().unwrap().as_span().as_str().to_owned();
         let name = inner.next().unwrap().as_span().as_str().to_owned();
-        let index = inner.next().unwrap().into_inner().next().map(|p| self.visit_expr(p));
+        let index = inner
+            .next()
+            .unwrap()
+            .into_inner()
+            .next()
+            .map(|p| self.visit_expr(p));
 
         let op = if length_op == "#" {
             ExpansionOp::Length
@@ -358,9 +380,9 @@ impl ShellParser {
                 .map(|p| self.visit_word(p))
                 .unwrap_or_else(|| Word(vec![]));
             match symbol {
-                "-"  => ExpansionOp::GetNullableOrDefault(default_word),
+                "-" => ExpansionOp::GetNullableOrDefault(default_word),
                 ":-" => ExpansionOp::GetOrDefault(default_word),
-                "="  => ExpansionOp::GetNullableOrDefaultAndAssign(default_word),
+                "=" => ExpansionOp::GetNullableOrDefaultAndAssign(default_word),
                 ":=" => ExpansionOp::GetOrDefaultAndAssign(default_word),
                 "/" | "//" => {
                     let spans = rest
@@ -414,8 +436,12 @@ impl ShellParser {
                     let pattern = Word(pattern_spans);
                     let replacement = Word(replacement_spans);
                     let replace_all = symbol == "//";
-                    ExpansionOp::Subst { pattern, replacement, replace_all }
-                },
+                    ExpansionOp::Subst {
+                        pattern,
+                        replacement,
+                        replace_all,
+                    }
+                }
                 _ => unreachable!(),
             }
         } else {
@@ -423,7 +449,11 @@ impl ShellParser {
         };
 
         if let Some(index) = index {
-            Span::ArrayParameter { name, index, quoted }
+            Span::ArrayParameter {
+                name,
+                index,
+                quoted,
+            }
         } else {
             Span::Parameter { name, op, quoted }
         }
@@ -431,7 +461,13 @@ impl ShellParser {
 
     // param_span = { "$" ~ expandable_var_name }
     fn visit_param_span(&mut self, pair: Pair<Rule>, quoted: bool) -> Span {
-        let name = pair.into_inner().next().unwrap().as_span().as_str().to_owned();
+        let name = pair
+            .into_inner()
+            .next()
+            .unwrap()
+            .as_span()
+            .as_str()
+            .to_owned();
         let op = ExpansionOp::GetOrEmpty;
         Span::Parameter { name, op, quoted }
     }
@@ -456,21 +492,19 @@ impl ShellParser {
             Rule::num => {
                 let lit: i32 = primary.as_span().as_str().parse().unwrap();
                 Expr::Literal(sign * lit)
-            },
+            }
             Rule::var_name => {
                 let name = primary.as_span().as_str().to_owned();
                 match inner.next() {
-                    Some(incdec) => {
-                        match incdec.as_span().as_str() {
-                            "++" => Expr::Inc(name),
-                            "--" => Expr::Dec(name),
-                            "" => Expr::Parameter { name },
-                            _ => unreachable!(),
-                        }
-                    }
-                    _ => Expr::Parameter { name }
+                    Some(incdec) => match incdec.as_span().as_str() {
+                        "++" => Expr::Inc(name),
+                        "--" => Expr::Dec(name),
+                        "" => Expr::Parameter { name },
+                        _ => unreachable!(),
+                    },
+                    _ => Expr::Parameter { name },
                 }
-            },
+            }
             Rule::expr => Expr::Expr(Box::new(self.visit_expr(primary))),
             _ => unreachable!(),
         }
@@ -486,9 +520,15 @@ impl ShellParser {
         if let Some(op) = inner.next() {
             let rhs = self.visit_term(inner.next().unwrap());
             match op.as_span().as_str() {
-                "*" => Expr::Mul(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
-                "/" => Expr::Div(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
-                _ => unreachable!()
+                "*" => Expr::Mul(BinaryExpr {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                }),
+                "/" => Expr::Div(BinaryExpr {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                }),
+                _ => unreachable!(),
             }
         } else {
             lhs
@@ -505,9 +545,15 @@ impl ShellParser {
         if let Some(op) = inner.next() {
             let rhs = self.visit_expr(inner.next().unwrap());
             match op.as_span().as_str() {
-                "+" => Expr::Add(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
-                "-" => Expr::Sub(BinaryExpr { lhs: Box::new(lhs), rhs: Box::new(rhs) }),
-                _ => unreachable!()
+                "+" => Expr::Add(BinaryExpr {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                }),
+                "-" => Expr::Sub(BinaryExpr {
+                    lhs: Box::new(lhs),
+                    rhs: Box::new(rhs),
+                }),
+                _ => unreachable!(),
             }
         } else {
             lhs
@@ -528,16 +574,17 @@ impl ShellParser {
                 let op = inner.next().unwrap();
                 let rhs = self.visit_expr(inner.next().unwrap());
                 match op.as_span().as_str() {
-                    "=" => Expr::Assign { name, rhs: Box::new(rhs) },
-                    _ => unreachable!()
-                }
-            }
-            _ => {
-                match pair.as_rule() {
-                    Rule::assign => self.visit_arith_expr(first),
+                    "=" => Expr::Assign {
+                        name,
+                        rhs: Box::new(rhs),
+                    },
                     _ => unreachable!(),
                 }
             }
+            _ => match pair.as_rule() {
+                Rule::assign => self.visit_arith_expr(first),
+                _ => unreachable!(),
+            },
         }
     }
 
@@ -560,11 +607,11 @@ impl ShellParser {
                     match op.as_span().as_str() {
                         "==" => Expr::Eq(Box::new(lhs), Box::new(rhs)),
                         "!=" => Expr::Ne(Box::new(lhs), Box::new(rhs)),
-                        ">"  => Expr::Gt(Box::new(lhs), Box::new(rhs)),
+                        ">" => Expr::Gt(Box::new(lhs), Box::new(rhs)),
                         ">=" => Expr::Ge(Box::new(lhs), Box::new(rhs)),
-                        "<"  => Expr::Lt(Box::new(lhs), Box::new(rhs)),
+                        "<" => Expr::Lt(Box::new(lhs), Box::new(rhs)),
                         "<=" => Expr::Le(Box::new(lhs), Box::new(rhs)),
-                        _ => unreachable!()
+                        _ => unreachable!(),
                     }
                 } else {
                     lhs
@@ -610,10 +657,8 @@ impl ShellParser {
             Rule::word => {
                 let word = self.visit_word(primary);
                 Box::new(CondExpr::Word(word))
-            },
-            Rule::cond_expr => {
-                self.visit_cond_expr(primary)
-            },
+            }
+            Rule::cond_expr => self.visit_cond_expr(primary),
             _ => unreachable!(),
         }
     }
@@ -632,7 +677,7 @@ impl ShellParser {
                 "-ge" => Box::new(CondExpr::Ge(lhs, rhs)),
                 "==" | "=" => Box::new(CondExpr::StrEq(lhs, rhs)),
                 "!=" => Box::new(CondExpr::StrNe(lhs, rhs)),
-                _ => unimplemented!()
+                _ => unimplemented!(),
             }
         } else {
             lhs
@@ -705,28 +750,38 @@ impl ShellParser {
                                 let lit_ch = ch.as_str().chars().nth(0).unwrap();
                                 chars.push(LiteralChar::Normal(lit_ch))
                             }
-                            _ => unreachable!()
+                            _ => unreachable!(),
                         }
                     }
                     spans.push(Span::LiteralChars(chars));
-                },
+                }
                 Rule::literal_span if !literal_chars => {
                     spans.push(Span::Literal(self.visit_escape_sequences(span, None)));
-                },
+                }
                 Rule::double_quoted_span => {
                     for span_in_quote in span.into_inner() {
                         match span_in_quote.as_rule() {
                             Rule::literal_in_double_quoted_span => {
-                                spans.push(Span::Literal(self.visit_escape_sequences(span_in_quote, Some("\"`$"))));
+                                spans.push(Span::Literal(
+                                    self.visit_escape_sequences(span_in_quote, Some("\"`$")),
+                                ));
                             }
-                            Rule::backtick_span => spans.push(self.visit_command_span(span_in_quote, true)),
-                            Rule::command_span => spans.push(self.visit_command_span(span_in_quote, true)),
-                            Rule::param_span => spans.push(self.visit_param_span(span_in_quote, true)),
-                            Rule::param_ex_span => spans.push(self.visit_param_ex_span(span_in_quote, true)),
+                            Rule::backtick_span => {
+                                spans.push(self.visit_command_span(span_in_quote, true))
+                            }
+                            Rule::command_span => {
+                                spans.push(self.visit_command_span(span_in_quote, true))
+                            }
+                            Rule::param_span => {
+                                spans.push(self.visit_param_span(span_in_quote, true))
+                            }
+                            Rule::param_ex_span => {
+                                spans.push(self.visit_param_ex_span(span_in_quote, true))
+                            }
                             _ => unreachable!(),
                         }
                     }
-                },
+                }
                 Rule::single_quoted_span => {
                     for span_in_quote in span.into_inner() {
                         match span_in_quote.as_rule() {
@@ -736,7 +791,7 @@ impl ShellParser {
                             _ => unreachable!(),
                         }
                     }
-                },
+                }
                 Rule::expr_span => spans.push(self.visit_expr_span(span)),
                 Rule::param_span => spans.push(self.visit_param_span(span, false)),
                 Rule::param_ex_span => spans.push(self.visit_param_ex_span(span, false)),
@@ -744,19 +799,22 @@ impl ShellParser {
                 Rule::command_span => spans.push(self.visit_command_span(span, false)),
                 Rule::proc_subst_span => spans.push(self.visit_proc_subst_span(span)),
                 Rule::tilde_span => {
-                    let username = span.into_inner().next().map(|p| p.as_span().as_str().to_owned());
+                    let username = span
+                        .into_inner()
+                        .next()
+                        .map(|p| p.as_span().as_str().to_owned());
                     spans.push(Span::Tilde(username));
-                },
+                }
                 Rule::any_string_span => {
                     spans.push(Span::AnyString { quoted: false });
-                },
+                }
                 Rule::any_char_span => {
                     spans.push(Span::AnyChar { quoted: false });
-                },
+                }
                 _ => {
                     println!("unimpl: {:?}", span);
                     unimplemented!();
-                },
+                }
             }
         }
 
@@ -773,7 +831,7 @@ impl ShellParser {
     // redirect = { fd ~ redirect_direction ~ (word | redirect_to_fd) }
     fn visit_redirect(&mut self, pair: Pair<Rule>) -> Redirection {
         let mut inner = pair.into_inner();
-        let fd     = inner.next().unwrap();
+        let fd = inner.next().unwrap();
         let symbol = inner.next().unwrap();
         let target = inner.next().unwrap();
 
@@ -788,10 +846,17 @@ impl ShellParser {
         let target = match target.as_rule() {
             Rule::word => RedirectionType::File(self.visit_word(target)),
             Rule::redirect_to_fd => {
-                let target_fd = target.into_inner().next().unwrap().as_span().as_str().parse().unwrap();
+                let target_fd = target
+                    .into_inner()
+                    .next()
+                    .unwrap()
+                    .as_span()
+                    .as_str()
+                    .parse()
+                    .unwrap();
                 RedirectionType::Fd(target_fd)
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         };
 
         Redirection {
@@ -810,19 +875,38 @@ impl ShellParser {
         let mut inner = pair.into_inner();
 
         let name = inner.next().unwrap().as_span().as_str().to_owned();
-        let index = inner.next().unwrap().into_inner().next().map(|p| self.visit_expr(p));
+        let index = inner
+            .next()
+            .unwrap()
+            .into_inner()
+            .next()
+            .map(|p| self.visit_expr(p));
         let initializer = inner.next().unwrap().into_inner().next().unwrap();
         match initializer.as_rule() {
             Rule::string_initializer => {
-                let word = Initializer::String(self.visit_word(initializer.into_inner().next().unwrap()));
-                Assignment { name, initializer: word, index }
-            },
+                let word =
+                    Initializer::String(self.visit_word(initializer.into_inner().next().unwrap()));
+                Assignment {
+                    name,
+                    initializer: word,
+                    index,
+                }
+            }
             Rule::array_initializer => {
-                let word = Initializer::Array(initializer.into_inner().map(|p| self.visit_word(p)).collect());
+                let word = Initializer::Array(
+                    initializer
+                        .into_inner()
+                        .map(|p| self.visit_word(p))
+                        .collect(),
+                );
                 let index = None;
-                Assignment { name, initializer: word, index }
-            },
-            _ => unreachable!()
+                Assignment {
+                    name,
+                    initializer: word,
+                    index,
+                }
+            }
+            _ => unreachable!(),
         }
     }
 
@@ -852,10 +936,12 @@ impl ShellParser {
                     redirects.push(Redirection {
                         fd: 0, // stdin
                         direction: RedirectionDirection::Input,
-                        target: RedirectionType::UnresolvedHereDoc(self.fetch_and_add_heredoc_index())
+                        target: RedirectionType::UnresolvedHereDoc(
+                            self.fetch_and_add_heredoc_index(),
+                        ),
                     });
                 }
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
 
@@ -894,13 +980,16 @@ impl ShellParser {
                     let mut inner = elif.into_inner();
                     let condition = self.visit_compound_list(inner.next().unwrap());
                     let then_part = self.visit_compound_list(inner.next().unwrap());
-                    elif_parts.push(ElIf { condition, then_part });
-                },
+                    elif_parts.push(ElIf {
+                        condition,
+                        then_part,
+                    });
+                }
                 Rule::else_part => {
                     let mut inner = elif.into_inner();
                     let body = self.visit_compound_list(inner.next().unwrap());
                     else_part = Some(body);
-                },
+                }
                 _ => unreachable!(),
             }
         }
@@ -910,7 +999,7 @@ impl ShellParser {
             then_part,
             elif_parts,
             else_part,
-            redirects: vec![] // TODO:
+            redirects: vec![], // TODO:
         }
     }
 
@@ -930,10 +1019,15 @@ impl ShellParser {
             match case.as_rule() {
                 Rule::case_item => {
                     let mut inner = case.into_inner();
-                    let patterns = inner.next().unwrap().into_inner().map(|w| self.visit_word(w)).collect();
+                    let patterns = inner
+                        .next()
+                        .unwrap()
+                        .into_inner()
+                        .map(|w| self.visit_word(w))
+                        .collect();
                     let body = self.visit_compound_list(inner.next().unwrap());
                     cases.push(CaseItem { patterns, body });
-                },
+                }
                 Rule::newline => self.visit_newline(case),
                 _ => unreachable!(),
             }
@@ -950,10 +1044,7 @@ impl ShellParser {
         let condition = self.visit_compound_list(inner.next().unwrap());
         let body = self.visit_compound_list(inner.next().unwrap());
 
-        Command::While {
-            condition,
-            body,
-        }
+        Command::While { condition, body }
     }
 
     // word_list = { word* }
@@ -963,7 +1054,12 @@ impl ShellParser {
     fn visit_for_command(&mut self, pair: Pair<Rule>) -> Command {
         let mut inner = pair.into_inner();
         let var_name = inner.next().unwrap().as_span().as_str().to_owned();
-        let words = inner.next().unwrap().into_inner().map(|w| self.visit_word(w)).collect();
+        let words = inner
+            .next()
+            .unwrap()
+            .into_inner()
+            .map(|w| self.visit_word(w))
+            .collect();
         let compound_list = wsnl!(self, inner).unwrap();
         let body = self.visit_compound_list(compound_list);
 
@@ -1005,10 +1101,7 @@ impl ShellParser {
         let compound_list = wsnl!(self, inner).unwrap();
         let body = Box::new(self.visit_command(compound_list));
 
-        Command::FunctionDef {
-            name,
-            body,
-        }
+        Command::FunctionDef { name, body }
     }
 
     // local_definition = { "local" ~ (assignment | var_name)+ }
@@ -1027,7 +1120,10 @@ impl ShellParser {
 
     // assignment_command = { assignment+ }
     fn visit_assignment_command(&mut self, pair: Pair<Rule>) -> Command {
-        let assignments = pair.into_inner().map(|inner| self.visit_assignment(inner)).collect();
+        let assignments = pair
+            .into_inner()
+            .map(|inner| self.visit_assignment(inner))
+            .collect();
         Command::Assignment { assignments }
     }
 
@@ -1050,7 +1146,9 @@ impl ShellParser {
     // return = { return ~ num? }
     fn visit_return_command(&mut self, pair: Pair<Rule>) -> Command {
         let mut inner = pair.into_inner();
-        let status = inner.next().map(|status| status.as_span().as_str().parse().unwrap());
+        let status = inner
+            .next()
+            .map(|status| status.as_span().as_str().parse().unwrap());
 
         Command::Return { status }
     }
@@ -1073,22 +1171,22 @@ impl ShellParser {
     fn visit_command(&mut self, pair: Pair<Rule>) -> Command {
         let inner = pair.into_inner().next().unwrap();
         match inner.as_rule() {
-            Rule::simple_command => { self.visit_simple_command(inner) },
-            Rule::if_command => { self.visit_if_command(inner) },
-            Rule::while_command => { self.visit_while_command(inner) },
-            Rule::arith_for_command => { self.visit_arith_for_command(inner) },
-            Rule::for_command => { self.visit_for_command(inner) },
-            Rule::case_command => { self.visit_case_command(inner) },
-            Rule::group => { self.visit_group_command(inner) },
-            Rule::subshell_group => { self.visit_subshell_group_command(inner) },
-            Rule::break_command => { Command::Break },
-            Rule::continue_command => { Command::Continue },
-            Rule::return_command => { self.visit_return_command(inner) },
-            Rule::assignment_command => { self.visit_assignment_command(inner) },
-            Rule::local_definition => { self.visit_local_definition(inner) },
-            Rule::function_definition => { self.visit_function_definition(inner) },
-            Rule::cond_ex => { self.visit_cond_ex(inner) },
-            _ => unreachable!()
+            Rule::simple_command => self.visit_simple_command(inner),
+            Rule::if_command => self.visit_if_command(inner),
+            Rule::while_command => self.visit_while_command(inner),
+            Rule::arith_for_command => self.visit_arith_for_command(inner),
+            Rule::for_command => self.visit_for_command(inner),
+            Rule::case_command => self.visit_case_command(inner),
+            Rule::group => self.visit_group_command(inner),
+            Rule::subshell_group => self.visit_subshell_group_command(inner),
+            Rule::break_command => Command::Break,
+            Rule::continue_command => Command::Continue,
+            Rule::return_command => self.visit_return_command(inner),
+            Rule::assignment_command => self.visit_assignment_command(inner),
+            Rule::local_definition => self.visit_local_definition(inner),
+            Rule::function_definition => self.visit_function_definition(inner),
+            Rule::cond_ex => self.visit_cond_ex(inner),
+            _ => unreachable!(),
         }
     }
 
@@ -1110,18 +1208,16 @@ impl ShellParser {
         let mut inner = pair.into_inner();
         if let Some(pipeline) = inner.next() {
             let commands = self.visit_pipeline(pipeline);
-            terms.push(Pipeline {
-                commands,
-                run_if
-            });
+            terms.push(Pipeline { commands, run_if });
 
-            let next_run_if = inner.next().map(|sep| {
-                match sep.as_span().as_str() {
+            let next_run_if = inner
+                .next()
+                .map(|sep| match sep.as_span().as_str() {
                     "||" => RunIf::Failure,
                     "&&" => RunIf::Success,
                     _ => RunIf::Always,
-                }
-            }).unwrap_or(RunIf::Always);
+                })
+                .unwrap_or(RunIf::Always);
 
             if let Some(rest) = wsnl!(self, inner) {
                 terms.extend(self.visit_and_or_list(rest, next_run_if));
@@ -1146,16 +1242,16 @@ impl ShellParser {
                     Rule::compound_list => {
                         rest = Some(sep_or_rest);
                         break;
-                    },
+                    }
                     _ => {
                         let sep = sep_or_rest.into_inner().next().unwrap();
                         match sep.as_rule() {
                             Rule::background => {
                                 background = true;
-                            },
+                            }
                             Rule::newline => {
                                 self.visit_newline(sep);
-                            },
+                            }
                             Rule::seq_sep => (),
                             _ => (),
                         }
@@ -1183,13 +1279,13 @@ impl ShellParser {
 
     pub fn visit_newline(&mut self, pair: Pair<Rule>) {
         if let Some(newline_inner) = pair.into_inner().next() {
-           if Rule::heredoc_body == newline_inner.as_rule() {
+            if Rule::heredoc_body == newline_inner.as_rule() {
                 let lines: Vec<Vec<Word>> = newline_inner
                     .into_inner()
                     .map(|line| line.into_inner().map(|w| self.visit_word(w)).collect())
                     .collect();
                 self.heredocs.push(HereDoc(lines));
-           }
+            }
         }
     }
 
@@ -1202,7 +1298,11 @@ impl ShellParser {
                 let mut new_commands = Vec::new();
                 for command in pipeline.commands {
                     match command {
-                        Command::SimpleCommand { argv, redirects, assignments } => {
+                        Command::SimpleCommand {
+                            argv,
+                            redirects,
+                            assignments,
+                        } => {
                             let mut new_redirects = Vec::new();
                             for redirect in redirects {
                                 match redirect.target {
@@ -1210,10 +1310,12 @@ impl ShellParser {
                                         new_redirects.push(Redirection {
                                             fd: 0, // stdin
                                             direction: RedirectionDirection::Input,
-                                            target: RedirectionType::HereDoc(self.heredocs[index].clone())
+                                            target: RedirectionType::HereDoc(
+                                                self.heredocs[index].clone(),
+                                            ),
                                         })
-                                    },
-                                    _ => new_redirects.push(redirect)
+                                    }
+                                    _ => new_redirects.push(redirect),
                                 }
                             }
 
@@ -1223,7 +1325,7 @@ impl ShellParser {
                                 assignments,
                             })
                         }
-                        _ => new_commands.push(command)
+                        _ => new_commands.push(command),
                     }
                 }
 
@@ -1255,9 +1357,7 @@ impl ShellParser {
                     Ok(self.resolve_heredocs(Ast { terms }))
                 }
             }
-            Err(err) => {
-                Err(ParseError::Fatal(err.to_string()))
-            }
+            Err(err) => Err(ParseError::Fatal(err.to_string())),
         }
     }
 
@@ -1268,9 +1368,15 @@ impl ShellParser {
             for _ in 0..level {
                 print!("  ");
             }
-            println!("{}{}{}{:?}{}: {:?}",
-                style::Reset, style::Bold, Fg(color::Magenta),
-                pair.as_rule(), style::Reset, pair.as_span().as_str());
+            println!(
+                "{}{}{}{:?}{}: {:?}",
+                style::Reset,
+                style::Bold,
+                Fg(color::Magenta),
+                pair.as_rule(),
+                style::Reset,
+                pair.as_span().as_str()
+            );
 
             self.dump(pair.into_inner(), level + 1);
         }
@@ -1280,7 +1386,8 @@ impl ShellParser {
     #[allow(unused)]
     pub fn parse_and_dump(&mut self, script: &str) {
         let merged_script = script.to_string().replace("\\\n", "");
-        let pairs = PestShellParser::parse(Rule::script, &merged_script).unwrap_or_else(|e| panic!("{}", e));
+        let pairs = PestShellParser::parse(Rule::script, &merged_script)
+            .unwrap_or_else(|e| panic!("{}", e));
         self.dump(pairs, 0);
     }
 }
@@ -1289,7 +1396,6 @@ pub fn parse(script: &str) -> Result<Ast, ParseError> {
     let mut parser = ShellParser::new();
     parser.parse(script)
 }
-
 
 #[allow(unused)]
 macro_rules! literal_word_vec {
@@ -1530,12 +1636,16 @@ pub fn test_simple_commands() {
                         assignments: vec![
                             Assignment {
                                 name: "PORT".into(),
-                                initializer: Initializer::String(Word(vec![Span::Literal("1234".into())])),
+                                initializer: Initializer::String(Word(vec![Span::Literal(
+                                    "1234".into()
+                                )])),
                                 index: None,
                             },
                             Assignment {
                                 name: "RAILS_ENV".into(),
-                                initializer: Initializer::String(Word(vec![Span::Literal("production".into())])),
+                                initializer: Initializer::String(Word(vec![Span::Literal(
+                                    "production".into()
+                                )])),
                                 index: None,
                             }
                         ],
@@ -2248,17 +2358,13 @@ pub fn test_compound_commands() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::Assignment {
-                            assignments: vec![
-                                Assignment {
-                                    name: "x".into(),
-                                    initializer: Initializer::String(Word(vec![
-                                        Span::ArithExpr {
-                                            expr: Expr::Literal(123)
-                                        }
-                                    ])),
-                                    index: None,
-                                }
-                            ],
+                            assignments: vec![Assignment {
+                                name: "x".into(),
+                                initializer: Initializer::String(Word(vec![Span::ArithExpr {
+                                    expr: Expr::Literal(123)
+                                }])),
+                                index: None,
+                            }],
                         }],
                     }],
                 },
@@ -2280,7 +2386,9 @@ pub fn test_compound_commands() {
                                                 declarations: vec![
                                                     LocalDeclaration::Assignment(Assignment {
                                                         name: "x".into(),
-                                                        initializer: Initializer::String(Word(vec![Span::Literal("456".into())])),
+                                                        initializer: Initializer::String(Word(
+                                                            vec![Span::Literal("456".into())]
+                                                        )),
                                                         index: None,
                                                     }),
                                                     LocalDeclaration::Name("y".into()),
@@ -2299,7 +2407,9 @@ pub fn test_compound_commands() {
                                                     lit!("echo"),
                                                     Word(vec![Span::ArithExpr {
                                                         expr: Expr::Mul(BinaryExpr {
-                                                            lhs: Box::new(Expr::Parameter { name: "x".into() }),
+                                                            lhs: Box::new(Expr::Parameter {
+                                                                name: "x".into()
+                                                            }),
                                                             rhs: Box::new(Expr::Literal(2)),
                                                         })
                                                     }])
@@ -2628,9 +2738,7 @@ pub fn test_expansions() {
                                         Span::AnyString { quoted: false },
                                         Span::Literal("/e".into()),
                                     ]),
-                                    replacement: Word(vec![
-                                        Span::Literal("12345".into()),
-                                    ]),
+                                    replacement: Word(vec![Span::Literal("12345".into()),]),
                                     replace_all: false
                                 }
                             }]),
@@ -2655,13 +2763,13 @@ pub fn test_assignments() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Assignment {
-                        assignments: vec![
-                            Assignment {
-                                name: "foo".into(),
-                                initializer: Initializer::String(Word(vec![Span::Literal("bar".into())])),
-                                index: None,
-                            }
-                        ],
+                        assignments: vec![Assignment {
+                            name: "foo".into(),
+                            initializer: Initializer::String(Word(vec![Span::Literal(
+                                "bar".into()
+                            )])),
+                            index: None,
+                        }],
                     }],
                 }],
             }],
@@ -2677,18 +2785,16 @@ pub fn test_assignments() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Assignment {
-                        assignments: vec![
-                            Assignment {
-                                name: "foo".into(),
-                                initializer: Initializer::Array(vec![
-                                    Word(vec![Span::Literal("I wanna quit gym".into())]),
-                                    Word(vec![Span::Literal("holy moly".into())]),
-                                    Word(vec![Span::Literal("egg".into())]),
-                                    Word(vec![Span::Literal("spam spam beans spam".into())]),
-                                ]),
-                                index: None,
-                            }
-                        ],
+                        assignments: vec![Assignment {
+                            name: "foo".into(),
+                            initializer: Initializer::Array(vec![
+                                Word(vec![Span::Literal("I wanna quit gym".into())]),
+                                Word(vec![Span::Literal("holy moly".into())]),
+                                Word(vec![Span::Literal("egg".into())]),
+                                Word(vec![Span::Literal("spam spam beans spam".into())]),
+                            ]),
+                            index: None,
+                        }],
                     }],
                 }],
             }],
@@ -2704,21 +2810,19 @@ pub fn test_assignments() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::Assignment {
-                        assignments: vec![
-                            Assignment {
-                                name: "foo".into(),
-                                initializer: Initializer::String(Word(vec![Span::Literal("bar".into())])),
-                                index: Some(Expr::Add(
-                                    BinaryExpr {
-                                        lhs: Box::new(Expr::Parameter { name: "k".into() }),
-                                        rhs: Box::new(Expr::Mul(BinaryExpr {
-                                            lhs: Box::new(Expr::Literal(7)),
-                                            rhs: Box::new(Expr::Parameter { name: "c".into() }),
-                                        }))
-                                    }
-                                )),
-                            }
-                        ],
+                        assignments: vec![Assignment {
+                            name: "foo".into(),
+                            initializer: Initializer::String(Word(vec![Span::Literal(
+                                "bar".into()
+                            )])),
+                            index: Some(Expr::Add(BinaryExpr {
+                                lhs: Box::new(Expr::Parameter { name: "k".into() }),
+                                rhs: Box::new(Expr::Mul(BinaryExpr {
+                                    lhs: Box::new(Expr::Literal(7)),
+                                    rhs: Box::new(Expr::Parameter { name: "c".into() }),
+                                }))
+                            })),
+                        }],
                     }],
                 }],
             }],
@@ -2737,12 +2841,16 @@ pub fn test_assignments() {
                         assignments: vec![
                             Assignment {
                                 name: "nobody".into(),
-                                initializer: Initializer::String(Word(vec![Span::Literal("expects".into())])),
+                                initializer: Initializer::String(Word(vec![Span::Literal(
+                                    "expects".into()
+                                )])),
                                 index: None
                             },
                             Assignment {
                                 name: "the".into(),
-                                initializer: Initializer::String(Word(vec![Span::Literal("spanish inquisition".into())])),
+                                initializer: Initializer::String(Word(vec![Span::Literal(
+                                    "spanish inquisition".into()
+                                )])),
                                 index: None
                             },
                         ],
@@ -2802,9 +2910,7 @@ pub fn test_arith_expr() {
                                     lhs: Box::new(Expr::Literal(1)),
                                     rhs: Box::new(Expr::Add(BinaryExpr {
                                         lhs: Box::new(Expr::Literal(2)),
-                                        rhs: Box::new(Expr::Expr(
-                                            Box::new(Expr::Literal(-3))
-                                        )),
+                                        rhs: Box::new(Expr::Expr(Box::new(Expr::Literal(-3)))),
                                     })),
                                 }),
                             }]),
@@ -2834,13 +2940,9 @@ pub fn test_arith_expr() {
                                     rhs: Box::new(Expr::Sub(BinaryExpr {
                                         lhs: Box::new(Expr::Mul(BinaryExpr {
                                             lhs: Box::new(Expr::Literal(2)),
-                                            rhs: Box::new(Expr::Parameter {
-                                                name: "foo".into(),
-                                            }),
+                                            rhs: Box::new(Expr::Parameter { name: "foo".into() }),
                                         })),
-                                        rhs: Box::new(Expr::Parameter {
-                                            name: "bar".into(),
-                                        }),
+                                        rhs: Box::new(Expr::Parameter { name: "bar".into() }),
                                     })),
                                 }),
                             }]),
@@ -2950,7 +3052,12 @@ pub fn test_string_literal() {
                 pipelines: vec![Pipeline {
                     run_if: RunIf::Always,
                     commands: vec![Command::SimpleCommand {
-                        argv: vec![lit!("echo"), lit!("-e"), Word(vec![]), lit!("hello\\tworld")],
+                        argv: vec![
+                            lit!("echo"),
+                            lit!("-e"),
+                            Word(vec![]),
+                            lit!("hello\\tworld")
+                        ],
                         assignments: vec![],
                         redirects: vec![],
                     }]
@@ -3085,40 +3192,28 @@ pub fn test_cond_ex() {
                     pipelines: vec![Pipeline {
                         run_if: RunIf::Always,
                         commands: vec![Command::Assignment {
-                            assignments: vec![
-                                Assignment {
-                                    name: "hello".into(),
-                                    initializer: Initializer::String(lit!("world")),
-                                    index: None,
-                                }
-                            ],
+                            assignments: vec![Assignment {
+                                name: "hello".into(),
+                                initializer: Initializer::String(lit!("world")),
+                                index: None,
+                            }],
                         }],
                     }],
                 },
                 Term {
                     code: "[[ $hello == world ]]".into(),
                     background: false,
-                    pipelines: vec![
-                        Pipeline {
-                            run_if: RunIf::Always,
-                            commands: vec![
-                                Command::Cond(Box::new(
-                                    CondExpr::StrEq(
-                                        Box::new(CondExpr::Word(
-                                            Word(vec![Span::Parameter {
-                                                name: "hello".into(),
-                                                op: ExpansionOp::GetOrEmpty,
-                                                quoted: false,
-                                            }])
-                                        )),
-                                        Box::new(CondExpr::Word(
-                                            lit!("world"),
-                                        ))
-                                    )
-                                ))
-                            ]
-                        }
-                    ],
+                    pipelines: vec![Pipeline {
+                        run_if: RunIf::Always,
+                        commands: vec![Command::Cond(Box::new(CondExpr::StrEq(
+                            Box::new(CondExpr::Word(Word(vec![Span::Parameter {
+                                name: "hello".into(),
+                                op: ExpansionOp::GetOrEmpty,
+                                quoted: false,
+                            }]))),
+                            Box::new(CondExpr::Word(lit!("world"),))
+                        )))]
+                    }],
                 },
             ]
         })
@@ -3136,62 +3231,50 @@ pub fn test_heredoc() {
             "EOF\n"
         )),
         Ok(Ast {
-            terms: vec![
-                Term {
-                    code: "cat << EOF > file.txt".into(),
-                    background: false,
-                    pipelines: vec![
-                        Pipeline {
-                            run_if: RunIf::Always,
-                            commands: vec![
-                                Command::SimpleCommand {
-                                    argv: vec![
-                                        lit!("cat")
-                                    ],
-                                    redirects: vec![
-                                        Redirection {
-                                            fd: 0,
-                                            direction: RedirectionDirection::Input,
-                                            target: RedirectionType::HereDoc(HereDoc(vec![
-                                                vec![lit!("hello"), lit!("world")],
-                                                vec![lit!("from")],
-                                                vec![lit!("heredoc!")],
-                                            ])),
-                                        },
-                                        Redirection {
-                                            fd: 1,
-                                            direction: RedirectionDirection::Output,
-                                            target: RedirectionType::File(lit!("file.txt")),
-                                        }
-                                    ],
-                                    assignments: vec![],
-                                }
-                            ]
-                        }
-                    ],
-                },
-            ]
+            terms: vec![Term {
+                code: "cat << EOF > file.txt".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![lit!("cat")],
+                        redirects: vec![
+                            Redirection {
+                                fd: 0,
+                                direction: RedirectionDirection::Input,
+                                target: RedirectionType::HereDoc(HereDoc(vec![
+                                    vec![lit!("hello"), lit!("world")],
+                                    vec![lit!("from")],
+                                    vec![lit!("heredoc!")],
+                                ])),
+                            },
+                            Redirection {
+                                fd: 1,
+                                direction: RedirectionDirection::Output,
+                                target: RedirectionType::File(lit!("file.txt")),
+                            }
+                        ],
+                        assignments: vec![],
+                    }]
+                }],
+            },]
         })
     );
 }
 
 #[cfg(test)]
 mod benchmarks {
-    use test::Bencher;
     use super::*;
+    use test::Bencher;
 
     #[bench]
     fn newline_parsing_bench(b: &mut Bencher) {
-        b.iter(|| {
-            parse("\n")
-        });
+        b.iter(|| parse("\n"));
     }
 
     #[bench]
     fn simple_oneliner_parsing_bench(b: &mut Bencher) {
-        b.iter(|| {
-            parse("RAILS_ENV=development rails server -p 10022 && echo exited")
-        });
+        b.iter(|| parse("RAILS_ENV=development rails server -p 10022 && echo exited"));
     }
 
     #[bench]

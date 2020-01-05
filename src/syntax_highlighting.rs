@@ -1,13 +1,11 @@
-use crate::path::lookup_external_command;
 use crate::builtins::INTERNAL_COMMANDS;
-use crate::exec::Isolate;
-use crate::context_parser::{
-    InputContext, Span, KeywordType, QuoteType, CommandSepType
-};
+use crate::context_parser::{CommandSepType, InputContext, KeywordType, QuoteType, Span};
+use crate::path::lookup_external_command;
+use crate::shell::Shell;
 
-pub fn highlight(ctx: &InputContext, isolate: &mut Isolate) -> String {
+pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
     use std::fmt::Write;
-    use termion::color::{Fg, Red, Blue, Yellow, Green, Cyan};
+    use termion::color::{Blue, Cyan, Fg, Green, Red, Yellow};
     use termion::style::{Bold, Reset};
 
     let argv0_color = Fg(Green);
@@ -29,14 +27,13 @@ pub fn highlight(ctx: &InputContext, isolate: &mut Isolate) -> String {
             Span::Argv0(cmd) => {
                 let command_exists = lookup_external_command(&cmd).is_some()
                     || INTERNAL_COMMANDS.contains_key(cmd.as_str())
-                    || isolate.lookup_alias(cmd.as_str()).is_some();
+                    || shell.lookup_alias(cmd.as_str()).is_some();
 
                 if command_exists {
-                   write!(buf, "{}{}{}{}", Bold, argv0_color, cmd, Reset).ok();
+                    write!(buf, "{}{}{}{}", Bold, argv0_color, cmd, Reset).ok();
                 } else {
-                   write!(buf, "{}{}{}{}", Bold, invalid_argv0_color, cmd, Reset).ok();
+                    write!(buf, "{}{}{}{}", Bold, invalid_argv0_color, cmd, Reset).ok();
                 };
-
             }
             Span::Literal(span) => {
                 if span.starts_with('-') {
@@ -117,16 +114,19 @@ pub fn highlight(ctx: &InputContext, isolate: &mut Isolate) -> String {
 mod benchmarks {
     extern crate test;
 
-    use test::Bencher;
     use super::*;
     use crate::context_parser::parse;
+    use test::Bencher;
 
     #[bench]
     fn syntax_highlight_bench(b: &mut Bencher) {
-        let mut isolate = Isolate::new();
-        let parsed = parse("ls -avh $(echo hello) \"string ${ls:=bar $(cowsay) } boo\" yay", 0);
+        let mut shell = Shell::new();
+        let parsed = parse(
+            "ls -avh $(echo hello) \"string ${ls:=bar $(cowsay) } boo\" yay",
+            0,
+        );
         b.iter(|| {
-            highlight(&parsed, &mut isolate);
+            highlight(&parsed, &mut shell);
         })
     }
 }

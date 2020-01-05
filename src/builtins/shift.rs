@@ -1,8 +1,8 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
+use crate::process::ExitStatus;
 use crate::variable::Value;
-use structopt::StructOpt;
 use std::io::Write;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "shift", about = "shift command.")]
@@ -15,7 +15,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("shift: argv={:?}", ctx.argv);
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
-            let current = ctx.isolate.current_frame_mut();
+            let current = ctx.shell.current_frame_mut();
             let mut args = Vec::new();
             for i in 1.. {
                 if let Some(var) = current.get_nth_arg(i) {
@@ -32,7 +32,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             }
 
             ExitStatus::ExitedWith(0)
-        },
+        }
         Err(err) => {
             writeln!(ctx.stderr, "shift: {}", err).ok();
             ExitStatus::ExitedWith(1)

@@ -1,7 +1,7 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
-use std::path::Path;
+use crate::process::ExitStatus;
 use std::io::Write;
+use std::path::Path;
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     trace!("cd: argv={:?}", ctx.argv);
@@ -30,12 +30,10 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     };
 
     // TODO: make this configurable
-    ctx.isolate.pushd(old_dir.to_str().unwrap().to_owned());
+    ctx.shell.pushd(old_dir.to_str().unwrap().to_owned());
 
     match std::env::set_current_dir(&dir) {
-        Ok(_) => {
-            ExitStatus::ExitedWith(0)
-        },
+        Ok(_) => ExitStatus::ExitedWith(0),
         Err(err) => {
             writeln!(ctx.stderr, "nsh: cd: {}: `{}'", err, dir).ok();
             ExitStatus::ExitedWith(1)

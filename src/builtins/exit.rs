@@ -1,5 +1,5 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
+use crate::process::ExitStatus;
 
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     let exit_with = if let Some(exit_with) = ctx.argv.get(1) {

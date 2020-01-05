@@ -1,8 +1,8 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
 use crate::completion::CompGen;
-use structopt::StructOpt;
+use crate::process::ExitStatus;
 use std::io::Write;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "compgen", about = "Compgen command.")]
@@ -21,19 +21,24 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             let mut compgen = CompGen::new();
             for action in opts.actions {
                 match action.as_str() {
-                    "command"   => { compgen.include_commands(true); },
-                    "file"      => { compgen.include_files(true); },
-                    "directory" => { compgen.include_dirs(true); },
+                    "command" => {
+                        compgen.include_commands(true);
+                    }
+                    "file" => {
+                        compgen.include_files(true);
+                    }
+                    "directory" => {
+                        compgen.include_dirs(true);
+                    }
                     _ => {
-                        write!(ctx.stderr, "nsh: compgen: unknown action: `{}'",
-                            action).ok();
+                        write!(ctx.stderr, "nsh: compgen: unknown action: `{}'", action).ok();
                         return ExitStatus::ExitedWith(1);
                     }
                 }
             }
 
             if let Some(wordlist) = opts.wordlist {
-                compgen.wordlist(&wordlist, &ctx.isolate.ifs());
+                compgen.wordlist(&wordlist, &ctx.shell.ifs());
             }
 
             if let Some(query) = opts.query {
@@ -45,7 +50,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             }
 
             ExitStatus::ExitedWith(0)
-        },
+        }
         Err(err) => {
             writeln!(ctx.stderr, "nsh: compgen: {}", err).ok();
             ExitStatus::ExitedWith(1)

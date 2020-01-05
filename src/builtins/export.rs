@@ -1,5 +1,5 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
+use crate::process::ExitStatus;
 use crate::variable::Value;
 use std::io::Write;
 
@@ -8,14 +8,15 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         let frags: Vec<&str> = arg.splitn(2, '=').collect();
         let mut iter = frags.iter();
         let name = iter.next().unwrap();
-        ctx.isolate.export(&name);
+        ctx.shell.export(&name);
 
         if let Some(value) = iter.next() {
-            ctx.isolate.set(&name, Value::String(value.to_owned().to_string()), false);
+            ctx.shell
+                .set(&name, Value::String(value.to_owned().to_string()), false);
         }
     } else {
-        for name in ctx.isolate.exported_names() {
-            if let Some(var) = ctx.isolate.get(name) {
+        for name in ctx.shell.exported_names() {
+            if let Some(var) = ctx.shell.get(name) {
                 writeln!(ctx.stdout, "{}={}", name, var.as_str()).ok();
             }
         }

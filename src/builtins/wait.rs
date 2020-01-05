@@ -1,8 +1,8 @@
-use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
-use structopt::StructOpt;
-use std::io::Write;
 use super::fg::parse_job_id;
+use crate::builtins::InternalCommandContext;
+use crate::process::{wait_for_job, ExitStatus};
+use std::io::Write;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "wait", about = "wait command.")]
@@ -18,20 +18,20 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             if opts.job_id.is_some() {
                 match parse_job_id(ctx, opts.job_id) {
                     Ok(job) => {
-                        ctx.isolate.wait_for_job(&job);
+                        wait_for_job(ctx.shell, &job);
                         ExitStatus::ExitedWith(0)
-                    },
+                    }
                     Err(status) => status,
                 }
             } else {
                 // Wait for all jobs.
-                for job in &ctx.isolate.jobs() {
-                    ctx.isolate.wait_for_job(job);
+                for job in &ctx.shell.jobs() {
+                    wait_for_job(ctx.shell, job);
                 }
 
                 ExitStatus::ExitedWith(0)
             }
-        },
+        }
         Err(err) => {
             writeln!(ctx.stderr, "wait: {}", err).ok();
             ExitStatus::ExitedWith(1)

@@ -1,9 +1,9 @@
-use crate::completion::{CompletionSelector};
-use crate::exec::Isolate;
+use crate::completion::{complete, CompletionSelector};
 use crate::context_parser;
-use crate::history::{HistorySelector, search_history, append_history};
+use crate::history::{append_history, search_history, HistorySelector};
 use crate::prompt::PromptRenderer;
-use std::io::{self, Write, Stdout, Stdin};
+use crate::shell::Shell;
+use std::io::{self, Stdin, Stdout, Write};
 use termion;
 use termion::event::{Event, Key};
 use termion::input::TermRead;
@@ -117,7 +117,11 @@ impl UserInput {
 }
 
 /// Returns true if the user wants to execute the command immediately.
-fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<Stdin>, user_input: &mut UserInput) -> bool {
+fn history_search_mode(
+    stdout: &mut Stdout,
+    events: &mut termion::input::Events<Stdin>,
+    user_input: &mut UserInput,
+) -> bool {
     let (x_max, y_max) = termion::terminal_size().unwrap();
     let mut selected = 0;
     let saved_user_input = user_input.clone();
@@ -207,7 +211,8 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
             history_lines,
             howto_line,
             termion::cursor::Goto(1 + prompt.len() as u16 + user_cursor as u16, 1)
-        ).ok();
+        )
+        .ok();
         stdout.flush().ok();
 
         // Wait for keyboard events.
@@ -226,7 +231,7 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
                             *user_input = saved_user_input;
                             return false;
                         }
-                    },
+                    }
                     // Fill user input by the selected command and continue editing.
                     Event::Key(Key::Char('\t')) => {
                         restore_main_screen(stdout);
@@ -238,22 +243,22 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
                         }
 
                         return false;
-                    },
+                    }
                     // Move the user input cursor to left.
                     Event::Key(Key::Left) | Event::Key(Key::Ctrl('b')) => {
                         user_cursor = user_cursor.saturating_sub(1);
-                    },
+                    }
                     // Move the user input cursor to right.
                     Event::Key(Key::Right) | Event::Key(Key::Ctrl('f')) => {
                         user_cursor += 1;
                         if user_cursor > user_input.len() {
                             user_cursor = user_input.len();
                         }
-                    },
+                    }
                     // Select the previous history.
                     Event::Key(Key::Up) | Event::Key(Key::Ctrl('p')) => {
                         selected = selected.saturating_sub(1);
-                    },
+                    }
                     // Select the next history.
                     Event::Key(Key::Down) | Event::Key(Key::Ctrl('n')) => {
                         selected += 1;
@@ -261,39 +266,39 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
                         if selected > max.saturating_sub(1) {
                             selected = max.saturating_sub(1);
                         }
-                    },
+                    }
                     // Remove the previous character in the user input.
                     Event::Key(Key::Backspace) => {
                         if user_cursor > 0 {
                             user_input.remove(user_cursor - 1);
                             user_cursor -= 1;
                         }
-                    },
+                    }
                     // Remove the next character in the user input.
                     Event::Key(Key::Ctrl('d')) => {
                         if user_cursor < user_input.len() {
                             user_input.remove(user_cursor);
                         }
-                    },
+                    }
                     // Abort history mode.
                     Event::Key(Key::Ctrl('c')) => {
                         restore_main_screen(stdout);
                         *user_input = saved_user_input;
                         return false;
-                    },
+                    }
                     // An any key input.
                     Event::Key(Key::Char(ch)) => {
                         if user_input.len() < user_input_max as usize {
                             user_input.insert(user_cursor, ch);
                             user_cursor += 1;
                         }
-                    },
+                    }
                     ev => {
                         trace!("ignored event: {:?}", ev);
-                    },
+                    }
                 }
-            },
-            _ => unreachable!()
+            }
+            _ => unreachable!(),
         }
     }
 }
@@ -301,7 +306,7 @@ fn history_search_mode(stdout: &mut Stdout, events: &mut termion::input::Events<
 const DEFAULT_PROMPT: &'static str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
 
 /// Prints the prompt and read a line from stdin.
-pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
+pub fn input(shell: &mut Shell) -> Result<String, InputError> {
     let mut stdout = io::stdout().into_raw_mode().unwrap();
     let stdin = io::stdin();
 
@@ -309,24 +314,26 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
     // at the end of the output, print '$' and a carriage return to preserve the
     // content (e.g. foo of `echo -n foo`).
     let screen_width = termion::terminal_size().unwrap().0 as usize;
-    write!(stdout, "{}{}${}{space:>width$}\r",
+    write!(
+        stdout,
+        "{}{}${}{space:>width$}\r",
         termion::style::Bold,
         termion::style::Invert,
         termion::style::Reset,
         space = " ",
         width = screen_width - 1,
-    ).ok();
+    )
+    .ok();
 
     let word_split = " /\t";
     let mut user_input = UserInput::new();
     let mut user_cursor = 0; // The relative position in the input line. 0-origin.
     let mut mode = InputMode::Normal;
     let mut history = HistorySelector::new();
-    let prompt = 
-        &isolate
-            .get("PROMPT")
-            .map(|var| var.as_str().to_owned())
-            .unwrap_or(DEFAULT_PROMPT.to_owned());
+    let prompt = &shell
+        .get("PROMPT")
+        .map(|var| var.as_str().to_owned())
+        .unwrap_or(DEFAULT_PROMPT.to_owned());
     let mut renderer = PromptRenderer::new(prompt);
     let mut stdin_events = stdin.events();
     let mut exec = false;
@@ -337,11 +344,9 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
         let x_max = termion::terminal_size().unwrap().0 as usize;
         let prompt = match &mode {
             InputMode::Completion(completion) => {
-                renderer.render(isolate, &input_ctx, user_cursor, x_max, Some(completion))
+                renderer.render(shell, &input_ctx, user_cursor, x_max, Some(completion))
             }
-            InputMode::Normal => {
-                renderer.render(isolate, &input_ctx, user_cursor, x_max, None)
-            }
+            InputMode::Normal => renderer.render(shell, &input_ctx, user_cursor, x_max, None),
         };
 
         write!(stdout, "{}", prompt).ok();
@@ -364,7 +369,10 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                         InputMode::Normal => break 'input_line,
                         InputMode::Completion(completion) => {
                             let expanded = completion.select_and_update_input_and_cursor(
-                                &input_ctx, user_input.as_str(), &mut user_cursor);
+                                &input_ctx,
+                                user_input.as_str(),
+                                &mut user_cursor,
+                            );
                             user_input = UserInput::from_str(&expanded);
                             mode = InputMode::Normal;
                             continue 'input_line;
@@ -375,12 +383,15 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                             completion.move_cursor(1);
                         }
                         InputMode::Normal => {
-                            let completion = CompletionSelector::new(isolate.complete(&input_ctx));
+                            let completion = CompletionSelector::new(complete(shell, &input_ctx));
                             if completion.len() == 1 {
                                 // There is only one completion candidate. Select it and go back into
                                 // normal input mode.
                                 let expanded = completion.select_and_update_input_and_cursor(
-                                    &input_ctx, user_input.as_str(), &mut user_cursor);
+                                    &input_ctx,
+                                    user_input.as_str(),
+                                    &mut user_cursor,
+                                );
                                 user_input = UserInput::from_str(&expanded);
                             } else {
                                 mode = InputMode::Completion(completion);
@@ -394,7 +405,7 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                         }
 
                         if let InputMode::Completion(_) = mode {
-                            let new = CompletionSelector::new(isolate.complete(&input_ctx));
+                            let new = CompletionSelector::new(complete(shell, &input_ctx));
                             mode = InputMode::Completion(new);
                         }
                     }
@@ -405,7 +416,7 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                                 let line = history.current();
                                 user_input = UserInput::from_str(&line);
                                 user_cursor = user_input.len();
-                            },
+                            }
                             InputMode::Completion(completion) => {
                                 // Move to the previous candidate.
                                 completion.move_cursor(-1);
@@ -419,7 +430,7 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                                 let line = history.current();
                                 user_input = UserInput::from_str(&line);
                                 user_cursor = user_input.len();
-                            },
+                            }
                             InputMode::Completion(completion) => {
                                 // Move to the next candidate.
                                 completion.move_cursor(1);
@@ -447,11 +458,11 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                     Event::Key(Key::Ctrl('a')) => {
                         user_cursor = 0;
                         mode = InputMode::Normal;
-                    },
+                    }
                     Event::Key(Key::Ctrl('e')) => {
                         user_cursor = user_input.len();
                         mode = InputMode::Normal;
-                    },
+                    }
                     Event::Key(Key::Alt('b')) => {
                         // Skip the whitespace at the current position.
                         user_cursor = user_cursor.saturating_sub(1);
@@ -469,7 +480,7 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                         }
 
                         mode = InputMode::Normal;
-                    },
+                    }
                     Event::Key(Key::Alt('f')) => {
                         // Skip the whitespace at the current position.
                         user_cursor += 1;
@@ -491,10 +502,10 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
 
                         debug!("cursor: {}, {}", user_cursor, user_input.len());
                         mode = InputMode::Normal;
-                    },
+                    }
                     Event::Key(Key::Ctrl('k')) => {
                         user_input.truncate(user_cursor);
-                    },
+                    }
                     // Removes the provious word.
                     Event::Key(Key::Ctrl('w')) => {
                         // Remove whitespaces and slashes.
@@ -518,7 +529,7 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                         }
 
                         mode = InputMode::Normal;
-                    },
+                    }
                     Event::Key(Key::Ctrl('c')) => match mode {
                         InputMode::Normal => return Ok("".to_owned()),
                         InputMode::Completion(_) => {
@@ -529,9 +540,9 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                         if user_cursor < user_input.len() {
                             user_input.remove(user_cursor);
                         } else if user_input.is_empty() {
-                            return Err(InputError::Eof)
+                            return Err(InputError::Eof);
                         }
-                    },
+                    }
                     Event::Key(Key::Ctrl('l')) => {
                         renderer.clear_screen(&mut stdout);
                     }
@@ -545,7 +556,7 @@ pub fn input(isolate: &mut Isolate) -> Result<String, InputError> {
                             user_cursor += 1;
 
                             if let InputMode::Completion(_) = mode {
-                                let new = CompletionSelector::new(isolate.complete(&input_ctx));
+                                let new = CompletionSelector::new(complete(shell, &input_ctx));
                                 mode = InputMode::Completion(new);
                             }
                         }

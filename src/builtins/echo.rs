@@ -1,5 +1,5 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
+use crate::process::ExitStatus;
 use std::io::Write;
 
 fn handle_escape_sequence(escaped_arg: &str) -> String {
@@ -7,10 +7,23 @@ fn handle_escape_sequence(escaped_arg: &str) -> String {
     let mut escape = false;
     for ch in escaped_arg.chars() {
         match (escape, ch) {
-            (true, 'n') => { s.push('\n');  escape = false; }
-            (true, 't') => { s.push('\t');  escape = false; }
-            (true, 'e') => { s.push('\u{1b}');  escape = false; }
-            (true, ch)  => { s.push('\\'); s.push(ch); escape = false; }
+            (true, 'n') => {
+                s.push('\n');
+                escape = false;
+            }
+            (true, 't') => {
+                s.push('\t');
+                escape = false;
+            }
+            (true, 'e') => {
+                s.push('\u{1b}');
+                escape = false;
+            }
+            (true, ch) => {
+                s.push('\\');
+                s.push(ch);
+                escape = false;
+            }
             (false, '\\') => escape = true,
             (false, ch) => s.push(ch),
         }

@@ -16,9 +16,7 @@ impl FuzzyVec {
 
     /// Creates a `FuzzyVec` from `entries`.
     pub fn from_vec(entries: Vec<String>) -> FuzzyVec {
-        FuzzyVec {
-            entries,
-        }
+        FuzzyVec { entries }
     }
 
     /// Returns the number of entiries.
@@ -72,7 +70,7 @@ fn fuzzy_search(entries: &[String], query: &str) -> Vec<String> {
                 match iter.next() {
                     None => return false,
                     Some(c) if c == q => break,
-                    Some(_) => {},
+                    Some(_) => {}
                 }
             }
         }
@@ -80,7 +78,11 @@ fn fuzzy_search(entries: &[String], query: &str) -> Vec<String> {
     }
 
     // Filter entries by the query.
-    let mut filtered = entries.iter().filter(|s| is_fuzzily_matched(s, query)).cloned().collect::<Vec<_>>();
+    let mut filtered = entries
+        .iter()
+        .filter(|s| is_fuzzily_matched(s, query))
+        .cloned()
+        .collect::<Vec<_>>();
     filtered.sort_by_cached_key(|entry| compute_score(entry, query));
     filtered
 }
@@ -96,7 +98,6 @@ fn compute_score(entry: &str, query: &str) -> u8 {
     std::cmp::max(score, 0) as u8
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,6 +107,9 @@ mod tests {
         let entries = &["abc".to_owned(), "bca".to_owned(), "cba".to_owned()];
         let query = "bc";
         // "cba" does not contain "bc" with correct order, so "cba" must be removed.
-        assert_eq!(fuzzy_search(entries, query), vec!["bca".to_owned(), "abc".to_owned()]);
+        assert_eq!(
+            fuzzy_search(entries, query),
+            vec!["bca".to_owned(), "abc".to_owned()]
+        );
     }
 }

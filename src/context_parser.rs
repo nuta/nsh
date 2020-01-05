@@ -174,13 +174,19 @@ impl ContextParser {
         // Command separator.
         if s.starts_with("&&") {
             self.index += 2;
-            return (State::EnvOrArgv0, Span::CommandSep(CommandSepType::DoubleAnd));
+            return (
+                State::EnvOrArgv0,
+                Span::CommandSep(CommandSepType::DoubleAnd),
+            );
         }
 
         // Command separator.
         if s.starts_with('&') {
             self.index += 1;
-            return (State::EnvOrArgv0, Span::CommandSep(CommandSepType::SingleAnd));
+            return (
+                State::EnvOrArgv0,
+                Span::CommandSep(CommandSepType::SingleAnd),
+            );
         }
 
         // Whitespaces.
@@ -218,7 +224,7 @@ impl ContextParser {
             self.enter_block(BlockType::ParamExpand);
             self.nested_param_expands += 1;
             self.index += 3;
-           return (State::ParamName, Span::ParamExpandStart);
+            return (State::ParamName, Span::ParamExpandStart);
         }
 
         // The beginning of a parameter expansion.
@@ -226,7 +232,7 @@ impl ContextParser {
             self.enter_block(BlockType::ParamExpand);
             self.nested_param_expands += 1;
             self.index += 2;
-           return (State::ParamName, Span::ParamExpandStart);
+            return (State::ParamName, Span::ParamExpandStart);
         }
 
         // The beginning of a command subtitution.
@@ -234,14 +240,18 @@ impl ContextParser {
             self.enter_block(BlockType::CmdSubst);
             self.nested_cmd_substs += 1;
             self.index += 2;
-           return (State::EnvOrArgv0, Span::CmdSubstStart);
+            return (State::EnvOrArgv0, Span::CmdSubstStart);
         }
 
         // A parameter expansion without braces.
         if s.starts_with('$') {
-            let name: String = s.chars().skip(1).take_while(|ch| is_varname_char(*ch)).collect();
+            let name: String = s
+                .chars()
+                .skip(1)
+                .take_while(|ch| is_varname_char(*ch))
+                .collect();
             self.index += 1 + name.len();
-           return (State::Word, Span::Param(name));
+            return (State::Word, Span::Param(name));
         }
 
         // A parameter name.
@@ -265,7 +275,7 @@ impl ContextParser {
 
         // Quoted strings.
         match s.chars().nth(0) {
-            Some(ch @ '"') | Some(ch @ '\'') =>  {
+            Some(ch @ '"') | Some(ch @ '\'') => {
                 let quote_type = if ch == '"' {
                     QuoteType::Double
                 } else {
@@ -286,7 +296,6 @@ impl ContextParser {
                         return (State::Word, Span::QuoteStart(quote_type));
                     }
                 }
-
             }
             _ => (),
         }
@@ -342,12 +351,10 @@ impl ContextParser {
                 (State::EnvOrArgv0, Span::Keyword(KeywordType::Fi))
             }
             "then" => (State::EnvOrArgv0, Span::Keyword(KeywordType::Then)),
-            _ => {
-                match self.state {
-                    State::EnvOrArgv0 => (State::Word, Span::Argv0(buf)),
-                    _ => (State::Word, Span::Literal(buf)),
-                }
-            }
+            _ => match self.state {
+                State::EnvOrArgv0 => (State::Word, Span::Argv0(buf)),
+                _ => (State::Word, Span::Literal(buf)),
+            },
         }
     }
 
@@ -392,7 +399,9 @@ impl ContextParser {
                                 words.push(current_word);
                                 current_word = String::new();
                             } else {
-                                let s: String = self.input.chars()
+                                let s: String = self
+                                    .input
+                                    .chars()
                                     .skip(prev_index)
                                     .take(self.index - prev_index)
                                     .collect();
@@ -456,7 +465,7 @@ pub fn parse(input: &str, cursor: usize) -> InputContext {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pretty_assertions::{assert_eq};
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn short() {
@@ -470,9 +479,7 @@ mod tests {
                 current_literal: None,
                 input,
                 cursor,
-                words: vec![
-                    "".to_owned()
-                ],
+                words: vec!["".to_owned()],
                 current_word: 0,
                 current_span: None,
             }
@@ -522,11 +529,7 @@ mod tests {
                 cursor,
                 nested: vec![],
                 current_literal: None,
-                words: vec![
-                    "git".to_owned(),
-                    "co".to_owned(),
-                    "".to_owned(),
-                ],
+                words: vec!["git".to_owned(), "co".to_owned(), "".to_owned(),],
                 current_word: 2,
                 current_span: None,
             }
@@ -550,10 +553,7 @@ mod tests {
                 cursor,
                 nested: vec![],
                 current_literal: Some(0..3),
-                words: vec![
-                    "echo".to_owned(),
-                    "\"Hello \\\"\"$world\\\"".to_owned(),
-                ],
+                words: vec!["echo".to_owned(), "\"Hello \\\"\"$world\\\"".to_owned(),],
                 current_word: 0,
                 current_span: Some(0),
             }
@@ -584,11 +584,7 @@ mod tests {
                 cursor,
                 nested: vec![],
                 current_literal: None,
-                words: vec![
-                    "echo".to_owned(),
-                    "Hello".to_owned(),
-                    "${var:=".to_owned(),
-                ],
+                words: vec!["echo".to_owned(), "Hello".to_owned(), "${var:=".to_owned(),],
                 current_word: 0,
                 current_span: None
             }
@@ -623,11 +619,7 @@ mod tests {
                 cursor,
                 nested: vec![],
                 current_literal: Some(13..16),
-                words: vec![
-                    "echo".to_owned(),
-                    "say".to_owned(),
-                    "yes".to_owned(),
-                ],
+                words: vec!["echo".to_owned(), "say".to_owned(), "yes".to_owned(),],
                 current_word: 0,
                 current_span: Some(7),
             }
@@ -657,10 +649,7 @@ mod tests {
                 cursor,
                 nested: vec![BlockType::ParamExpand, BlockType::CmdSubst],
                 current_literal: None,
-                words: vec![
-                    "echo".to_owned(),
-                    "".to_owned()
-                ],
+                words: vec!["echo".to_owned(), "".to_owned()],
                 current_word: 1,
                 current_span: None,
             }
@@ -689,9 +678,7 @@ mod tests {
                 cursor,
                 nested: vec![BlockType::If],
                 current_literal: Some(3..5),
-                words: vec![
-                    "yes".to_owned(),
-                ],
+                words: vec!["yes".to_owned(),],
                 current_word: 0,
                 current_span: Some(2),
             }
@@ -702,8 +689,8 @@ mod tests {
 #[cfg(test)]
 mod benchmarks {
     extern crate test;
-    use test::Bencher;
     use super::*;
+    use test::Bencher;
 
     #[bench]
     fn simple_oneliner_parsring_bench(b: &mut Bencher) {
@@ -715,7 +702,10 @@ mod benchmarks {
     #[bench]
     fn complex_oneliner_parsring_bench(b: &mut Bencher) {
         b.iter(|| {
-            parse("ls -avh $(echo hello) \"string ${ls:=bar $(cowsay) } boo\" yay", 0);
+            parse(
+                "ls -avh $(echo hello) \"string ${ls:=bar $(cowsay) } boo\" yay",
+                0,
+            );
         })
     }
 }

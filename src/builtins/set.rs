@@ -1,7 +1,7 @@
 use crate::builtins::InternalCommandContext;
-use crate::exec::ExitStatus;
-use structopt::StructOpt;
+use crate::process::ExitStatus;
 use std::io::Write;
+use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "set", about = "Set command.")]
@@ -20,11 +20,11 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
 
     match Opt::from_iter_safe(ctx.argv) {
         Ok(opts) => {
-            ctx.isolate.errexit = opts.errexit;
-            ctx.isolate.nounset = opts.nounset;
-            ctx.isolate.noexec = opts.noexec;
+            ctx.shell.errexit = opts.errexit;
+            ctx.shell.nounset = opts.nounset;
+            ctx.shell.noexec = opts.noexec;
             ExitStatus::ExitedWith(0)
-        },
+        }
         Err(err) => {
             writeln!(ctx.stderr, "nsh: set: {}", err).ok();
             ExitStatus::ExitedWith(1)

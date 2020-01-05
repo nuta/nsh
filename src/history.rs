@@ -3,11 +3,11 @@
 //! by `History` struct. We don't simply save the whole history as a JSON array since appending
 //! to a *large* history array would be very slow.
 //!
-use std::path::{Path, PathBuf};
-use std::fs::{File, OpenOptions};
-use std::io::{BufReader, BufRead, Write};
-use std::sync::Mutex;
 use crate::fuzzy::FuzzyVec;
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 lazy_static! {
     /// Command history.
@@ -21,8 +21,7 @@ pub fn search_history(query: &str) -> Vec<String> {
 
 /// Returns true if the `cmd' should NOT be saved in a file.
 fn history_filter(cmd: &str) -> bool {
-    cmd.starts_with(' ')
-    || cmd.starts_with('\t')
+    cmd.starts_with(' ') || cmd.starts_with('\t')
 }
 
 /// Appends a history to the history file.
@@ -43,12 +42,17 @@ pub fn append_history(cmd: &str) {
     let history_path = resolve_and_create_history_file();
     if let Ok(mut file) = OpenOptions::new().append(true).open(history_path) {
         if !history_filter(cmd) {
-            let dir = std::env::current_dir().unwrap().to_str().unwrap().to_owned();
+            let dir = std::env::current_dir()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_owned();
             let time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("failed to get the UNIX timestamp")
                 .as_secs() as usize;
-            file.write(format!("{}\t{}\t{}\n", time, dir, cmd).as_bytes()).ok();
+            file.write(format!("{}\t{}\t{}\n", time, dir, cmd).as_bytes())
+                .ok();
         }
     }
 
@@ -80,11 +84,14 @@ fn load_history() {
                     (Some(cmd), _) => {
                         let mut hist = HISTORY.lock().unwrap();
                         hist.append(cmd.to_string());
-                    },
+                    }
                     (None, false) => {
-                        eprintln!("nsh: warning: failed to parse ~/.nsh_history: at line {}", i + 1);
+                        eprintln!(
+                            "nsh: warning: failed to parse ~/.nsh_history: at line {}",
+                            i + 1
+                        );
                         warned = true;
-                    },
+                    }
                     (_, _) => (),
                 }
             }
@@ -119,7 +126,7 @@ impl HistorySelector {
 
     /// Selects the previous history entry. Save the current user (not yet executed)
     /// input if needed.
-    pub fn prev(&mut self,  user_input: &str) {
+    pub fn prev(&mut self, user_input: &str) {
         if self.offset == 0 {
             // Entering the history selection. Save the current state.state.
             self.user_input = user_input.to_string();

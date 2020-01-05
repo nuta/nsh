@@ -1,5 +1,5 @@
-use glob::glob;
 use failure::Error;
+use glob::glob;
 
 #[derive(Debug, Fail)]
 #[fail(display = "no matches")]
@@ -19,14 +19,12 @@ pub enum LiteralOrGlob {
 /// two different meanings: path glob and match in `case`.
 #[derive(Debug)]
 pub struct PatternWord {
-    fragments: Vec<LiteralOrGlob>
+    fragments: Vec<LiteralOrGlob>,
 }
 
 impl PatternWord {
     pub fn new(fragments: Vec<LiteralOrGlob>) -> PatternWord {
-        PatternWord {
-            fragments
-        }
+        PatternWord { fragments }
     }
 
     pub fn fragments(&self) -> &[LiteralOrGlob] {
@@ -49,12 +47,10 @@ impl PatternWord {
 
     //// Expand patterns as a file path globbing.
     pub fn expand_glob(self) -> Result<Vec<String>> {
-        let includes_glob = self.fragments.iter().any(|frag| {
-            match frag {
-                LiteralOrGlob::AnyString => true,
-                LiteralOrGlob::AnyChar => true,
-                _ => false,
-            }
+        let includes_glob = self.fragments.iter().any(|frag| match frag {
+            LiteralOrGlob::AnyString => true,
+            LiteralOrGlob::AnyChar => true,
+            _ => false,
         });
 
         let mut expanded_words = Vec::new();
@@ -63,17 +59,14 @@ impl PatternWord {
             for frag in self.fragments {
                 match frag {
                     LiteralOrGlob::Literal(lit) => {
-                        pattern += lit
-                            .replace("*", "[*]")
-                            .replace("?", "[?]")
-                            .as_str();
-                    },
+                        pattern += lit.replace("*", "[*]").replace("?", "[?]").as_str();
+                    }
                     LiteralOrGlob::AnyChar => {
                         pattern.push('?');
-                    },
+                    }
                     LiteralOrGlob::AnyString => {
                         pattern.push('*');
-                    },
+                    }
                 }
             }
 
@@ -82,7 +75,7 @@ impl PatternWord {
                 match entry {
                     Ok(path) => {
                         paths.push(path.to_str().unwrap().to_string());
-                    },
+                    }
                     Err(e) => error!("glob error: {:?}", e),
                 }
             }
@@ -151,7 +144,12 @@ pub struct MatchResult {
 /// A regex engine based on @nadrane's work: https://nickdrane.com/build-your-own-regex/
 /// Returns the index of the matched part or None.
 fn regex_match(pattern: &[RegexSpan], text: &str, index: usize) -> Option<usize> {
-    trace!("regex: match: pattern = {:?}, text='{}', index = {}", pattern, text, index);
+    trace!(
+        "regex: match: pattern = {:?}, text='{}', index = {}",
+        pattern,
+        text,
+        index
+    );
 
     match pattern.get(0) {
         Some(RegexSpan::AnyChar) | Some(RegexSpan::Literal(_)) => {
@@ -166,7 +164,7 @@ fn regex_match(pattern: &[RegexSpan], text: &str, index: usize) -> Option<usize>
             regex_match(
                 slice_or_empty(pattern, 1),
                 str_slice_or_empty(text, 1),
-                index + 1
+                index + 1,
             )
         }
         Some(RegexSpan::AnyString) => {
@@ -217,7 +215,10 @@ fn pattern_word_match(pattern: &PatternWord, text: &str) -> Option<MatchResult> 
     for start in 0..text.len() {
         trace!("regex: from = {}", start);
         if let Some(end) = regex_match(&spans, &text[start..], start) {
-            return Some(MatchResult { start, end: end.saturating_sub(1) });
+            return Some(MatchResult {
+                start,
+                end: end.saturating_sub(1),
+            });
         }
     }
 
@@ -239,9 +240,8 @@ pub fn replace_pattern(
     pattern: &PatternWord,
     text: &str,
     replacement: &str,
-    replace_all: bool
-) -> String
-{
+    replace_all: bool,
+) -> String {
     let mut remaining = text;
     let mut text = String::new();
     loop {
@@ -276,37 +276,23 @@ mod tests {
 
     #[test]
     fn literal_only() {
-        let pat = PatternWord{
-            fragments: vec![
-                LiteralOrGlob::Literal("abc".to_owned())
-            ]
+        let pat = PatternWord {
+            fragments: vec![LiteralOrGlob::Literal("abc".to_owned())],
         };
 
         assert_eq!(
             pattern_word_match(&pat, "abc"),
-            Some(MatchResult {
-                start: 0,
-                end: 2,
-            })
+            Some(MatchResult { start: 0, end: 2 })
         );
 
         assert_eq!(
-          pattern_word_match(&pat, "xxabcxx"),
-            Some(MatchResult {
-                start: 2,
-                end: 4,
-            })
+            pattern_word_match(&pat, "xxabcxx"),
+            Some(MatchResult { start: 2, end: 4 })
         );
 
-        assert_eq!(
-            pattern_word_match(&pat, ""),
-            None,
-        );
+        assert_eq!(pattern_word_match(&pat, ""), None,);
 
-        assert_eq!(
-            pattern_word_match(&pat, "xyz"),
-            None
-        );
+        assert_eq!(pattern_word_match(&pat, "xyz"), None);
 
         assert_eq!(
             replace_pattern(&pat, "_abc_abc_abc_", "X", false),
@@ -322,78 +308,50 @@ mod tests {
     #[test]
     fn wildcard() {
         // "?"
-        let pat = PatternWord{
-            fragments: vec![
-                LiteralOrGlob::AnyChar,
-            ]
+        let pat = PatternWord {
+            fragments: vec![LiteralOrGlob::AnyChar],
         };
 
-        assert_eq!(
-            pattern_word_match(&pat, ""),
-            None
-        );
+        assert_eq!(pattern_word_match(&pat, ""), None);
 
         assert_eq!(
             pattern_word_match(&pat, "@"),
-            Some(MatchResult {
-                start: 0,
-                end: 0,
-            })
+            Some(MatchResult { start: 0, end: 0 })
         );
 
-        assert_eq!(
-            replace_pattern(&pat, "aaa", "X", false),
-            "Xaa".to_owned()
-        );
+        assert_eq!(replace_pattern(&pat, "aaa", "X", false), "Xaa".to_owned());
 
-        assert_eq!(
-            replace_pattern(&pat, "aaa", "X", true),
-            "XXX".to_owned()
-        );
+        assert_eq!(replace_pattern(&pat, "aaa", "X", true), "XXX".to_owned());
 
         // "*"
-        let pat = PatternWord{
-            fragments: vec![
-                LiteralOrGlob::AnyString,
-            ]
+        let pat = PatternWord {
+            fragments: vec![LiteralOrGlob::AnyString],
         };
 
-        assert_eq!(
-            pattern_word_match(&pat, ""),
-            None,
-        );
+        assert_eq!(pattern_word_match(&pat, ""), None,);
 
         assert_eq!(
             pattern_word_match(&pat, "x"),
-            Some(MatchResult {
-                start: 0,
-                end: 0,
-            })
+            Some(MatchResult { start: 0, end: 0 })
         );
 
         assert_eq!(
             pattern_word_match(&pat, "xyz"),
-            Some(MatchResult {
-                start: 0,
-                end: 2,
-            })
+            Some(MatchResult { start: 0, end: 2 })
         );
 
         // "1?34"
-        let pat = PatternWord{
+        let pat = PatternWord {
             fragments: vec![
                 LiteralOrGlob::Literal("1".to_owned()),
                 LiteralOrGlob::AnyChar,
                 LiteralOrGlob::Literal("34".to_owned()),
-            ]
+            ],
         };
 
         assert_eq!(
             pattern_word_match(&pat, "abc1234"),
-            Some(MatchResult {
-                start: 3,
-                end: 6,
-            })
+            Some(MatchResult { start: 3, end: 6 })
         );
 
         assert_eq!(
@@ -407,27 +365,24 @@ mod tests {
         );
 
         // "1*4"
-        let pat = PatternWord{
+        let pat = PatternWord {
             fragments: vec![
                 LiteralOrGlob::Literal("1".to_owned()),
                 LiteralOrGlob::AnyString,
                 LiteralOrGlob::Literal("4".to_owned()),
-            ]
+            ],
         };
 
         assert_eq!(
             pattern_word_match(&pat, "##1234##"),
-            Some(MatchResult {
-                start: 2,
-                end: 5,
-            })
+            Some(MatchResult { start: 2, end: 5 })
         );
     }
 
     #[test]
     fn complex_pattern() {
         // "1?3*78*9"
-        let pat = PatternWord{
+        let pat = PatternWord {
             fragments: vec![
                 LiteralOrGlob::Literal("1".to_owned()),
                 LiteralOrGlob::AnyChar,
@@ -436,21 +391,15 @@ mod tests {
                 LiteralOrGlob::Literal("7".to_owned()),
                 LiteralOrGlob::Literal("8".to_owned()),
                 LiteralOrGlob::AnyString,
-                LiteralOrGlob::Literal("9".to_owned())
-            ]
+                LiteralOrGlob::Literal("9".to_owned()),
+            ],
         };
 
         assert_eq!(
             pattern_word_match(&pat, "__123456789__"),
-            Some(MatchResult {
-                start: 2,
-                end: 10,
-            })
+            Some(MatchResult { start: 2, end: 10 })
         );
 
-        assert_eq!(
-            pattern_word_match(&pat, "__12x3456789__"),
-            None
-        );
+        assert_eq!(pattern_word_match(&pat, "__12x3456789__"), None);
     }
 }

@@ -1,14 +1,14 @@
 use crate::completion::CompletionSelector;
-use crate::exec::Isolate;
-use crate::syntax_highlighting::highlight;
 use crate::context_parser::InputContext;
+use crate::shell::Shell;
+use crate::syntax_highlighting::highlight;
+use libc;
+use nix::unistd;
+use pest::iterators::{Pair, Pairs};
 use pest::Parser;
-use pest::iterators::{Pairs, Pair};
 use std::fmt::Write;
 use std::path::Path;
 use termion;
-use nix::unistd;
-use libc;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Prompt {
@@ -30,7 +30,7 @@ pub enum Color {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Condition {
-    InRepo
+    InRepo,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -46,7 +46,7 @@ pub enum Span {
         condition: Condition,
         then_part: Vec<Span>,
         else_part: Vec<Span>,
-    }
+    },
 }
 
 #[derive(Parser)]
@@ -81,9 +81,13 @@ fn visit_prompt(pair: Pair<Rule>) -> Prompt {
 
                 let then_part = visit_prompt(inner.next().unwrap()).spans;
                 let else_part = visit_prompt(inner.next().unwrap()).spans;
-                Span::If { condition, then_part, else_part }
-            },
-            _ => unreachable!()
+                Span::If {
+                    condition,
+                    then_part,
+                    else_part,
+                }
+            }
+            _ => unreachable!(),
         };
 
         spans.push(span);
@@ -111,7 +115,7 @@ fn get_current_username() -> String {
             &mut passwd,
             passwd_buf.as_mut_ptr(),
             passwd_buf.capacity(),
-            &mut result
+            &mut result,
         );
     }
 
@@ -129,7 +133,9 @@ fn get_current_username() -> String {
 fn get_hostname() -> String {
     let mut hostname_buf = [0u8; 128];
     let hostname_cstr = unistd::gethostname(&mut hostname_buf).expect("failed to get hostname");
-    let hostname = hostname_cstr.to_str().expect("Hostname is not valid utf-8 string");
+    let hostname = hostname_cstr
+        .to_str()
+        .expect("Hostname is not valid utf-8 string");
     hostname.to_owned()
 }
 
@@ -137,7 +143,10 @@ fn get_repo_branch(git_dir: &str) -> String {
     let rebase_i_file = Path::new(git_dir).join("rebase-merge/head-name");
     if rebase_i_file.exists() {
         // TODO: remove `refs/<type>/` prefixes.
-        return std::fs::read_to_string(rebase_i_file).unwrap().trim().to_owned();
+        return std::fs::read_to_string(rebase_i_file)
+            .unwrap()
+            .trim()
+            .to_owned();
     }
 
     let result = std::process::Command::new("git")
@@ -196,7 +205,7 @@ fn get_repo_action(git_dir: &str) -> Option<&'static str> {
     if git_dir.join("BISECT_LOG").exists() {
         return Some("bisect");
     }
-    
+
     None
 }
 
@@ -289,15 +298,21 @@ fn draw_prompt(prompt: &Prompt) -> (String, usize) {
                 let hostname = get_repo_info();
                 len += hostname.len();
                 buf.push_str(&hostname)
-            },
-            Span::If { condition, then_part, else_part } => {
+            }
+            Span::If {
+                condition,
+                then_part,
+                else_part,
+            } => {
                 let spans = if evaluate_condition(condition) {
                     then_part
                 } else {
                     else_part
                 };
 
-                let (result, result_len) = draw_prompt(&Prompt { spans: spans.to_vec() });
+                let (result, result_len) = draw_prompt(&Prompt {
+                    spans: spans.to_vec(),
+                });
                 len += result_len;
                 buf.push_str(&result)
             }
@@ -316,10 +331,18 @@ fn move_cursor_y(offset: i32, clear_line: bool) -> String {
     }
 
     match (offset > 0, clear_line) {
-        (true,  false) => format!("{}\r", "\n".repeat(offset.abs() as usize)),
-        (true,  true)  => format!("{}\r{}", "\n".repeat(offset.abs() as usize), termion::clear::CurrentLine),
+        (true, false) => format!("{}\r", "\n".repeat(offset.abs() as usize)),
+        (true, true) => format!(
+            "{}\r{}",
+            "\n".repeat(offset.abs() as usize),
+            termion::clear::CurrentLine
+        ),
         (false, false) => format!("{}\r", termion::cursor::Up(offset.abs() as u16)),
-        (false, true)  => format!("\r{}{}", termion::clear::CurrentLine, termion::cursor::Up(offset.abs() as u16)),
+        (false, true) => format!(
+            "\r{}{}",
+            termion::clear::CurrentLine,
+            termion::cursor::Up(offset.abs() as u16)
+        ),
     }
 }
 
@@ -377,16 +400,29 @@ impl PromptRenderer {
     /// this method is intended to be used just before printing the prompt.
     pub fn clear_screen(&mut self, stdout: &mut std::io::Stdout) {
         use std::io::Write;
-        write!(stdout, "{}{}", termion::clear::All, termion::cursor::Goto(1, 1)).ok();
+        write!(
+            stdout,
+            "{}{}",
+            termion::clear::All,
+            termion::cursor::Goto(1, 1)
+        )
+        .ok();
         self.last_rendered_lines = 0;
     }
 
     /// Renders the prompt, the user input, and completions (if supplied).
     /// TODO: needs refactoring
     /// TODO: handle terminal screen size changes
-    pub fn render(&mut self, isolate: &mut Isolate, ctx: &InputContext, user_cursor: usize, x_max: usize, completions: Option<&CompletionSelector>) -> String {
+    pub fn render(
+        &mut self,
+        shell: &mut Shell,
+        ctx: &InputContext,
+        user_cursor: usize,
+        x_max: usize,
+        completions: Option<&CompletionSelector>,
+    ) -> String {
         // Apply syntax highlighting.
-        let colored_user_input = highlight(ctx, isolate);
+        let colored_user_input = highlight(ctx, shell);
 
         // Render completions.
         let (completion_str, completion_lines) = if let Some(completions) = completions {
@@ -407,7 +443,8 @@ impl PromptRenderer {
             termion::style::Reset,
             replace_newline_with_clear(&completion_str),
             termion::style::Reset,
-        ).ok();
+        )
+        .ok();
 
         //
         //                                      cursor_x
@@ -437,7 +474,8 @@ impl PromptRenderer {
         let prompt_lines = self.prompt_str.chars().filter(|c| *c == '\n').count() as u16 + 1;
         let cursor_pos = self.prompt_last_line_len as u16 + user_cursor as u16;
         let cursor_y = cursor_pos / x_max as u16 + (prompt_lines - 1);
-        let user_input_lines = ((self.prompt_last_line_len as u16 + user_input_len as u16) / x_max as u16) + 1;
+        let user_input_lines =
+            ((self.prompt_last_line_len as u16 + user_input_len as u16) / x_max as u16) + 1;
         let rendered_lines = prompt_lines + (user_input_lines - 1) + completion_lines;
 
         // Move the cursor (y-axis).
@@ -458,11 +496,20 @@ impl PromptRenderer {
             write!(buf, "\r{}", termion::cursor::Right(cursor_x)).ok();
         }
 
-        trace!("cursor_y={} (last_y={}), cursor_y_offset={}, cursor_x={}",
-            cursor_y, self.last_cursor_y, cursor_y_offset, cursor_x);
-        trace!("rendered_lines={} (last={}), comp_lines={}, prompt_lines={}",
-            rendered_lines, self.last_rendered_lines, completion_lines,
-            prompt_lines);
+        trace!(
+            "cursor_y={} (last_y={}), cursor_y_offset={}, cursor_x={}",
+            cursor_y,
+            self.last_cursor_y,
+            cursor_y_offset,
+            cursor_x
+        );
+        trace!(
+            "rendered_lines={} (last={}), comp_lines={}, prompt_lines={}",
+            rendered_lines,
+            self.last_rendered_lines,
+            completion_lines,
+            prompt_lines
+        );
 
         self.last_cursor_x = cursor_x;
         self.last_cursor_y = cursor_y;
@@ -473,12 +520,12 @@ impl PromptRenderer {
 
     /// Renders completions.
     fn render_completions(&self, completions: &CompletionSelector) -> (String, u16) {
-        use termion::style::*;
-        use termion::clear::CurrentLine;;
+        use termion::clear::CurrentLine;
+        use termion::style::*;;
 
         let mut completion_str = String::new();
         let mut completion_lines = 0;
-            writeln!(completion_str).ok();
+        writeln!(completion_str).ok();
 
         let results = completions.entries();
         let iter = results
@@ -500,11 +547,17 @@ impl PromptRenderer {
                 completion_lines += 1;
             }
 
-            write!(completion_str, "{}{}{}{} {}/{} ",
-                CurrentLine, Reset, Invert, Bold,
+            write!(
+                completion_str,
+                "{}{}{}{} {}/{} ",
+                CurrentLine,
+                Reset,
+                Invert,
+                Bold,
                 completions.selected_index() + 1,
                 completions.len()
-            ).ok();
+            )
+            .ok();
         } else {
             write!(
                 completion_str,
@@ -527,7 +580,10 @@ impl PromptRenderer {
     fn render_clear(&self) -> String {
         let mut buf = String::new();
 
-        for _ in 0..(self.last_rendered_lines.saturating_sub(self.last_cursor_y + 1)) {
+        for _ in 0..(self
+            .last_rendered_lines
+            .saturating_sub(self.last_cursor_y + 1))
+        {
             write!(buf, "{}", move_cursor_y(1, false)).ok();
         }
 
@@ -590,23 +646,23 @@ fn test_prompt_parser() {
 
 #[cfg(test)]
 mod benchmarks {
-    use test::Bencher;
     use super::*;
     use crate::context_parser;
+    use test::Bencher;
 
     #[bench]
     fn simple_prompt_rendering(b: &mut Bencher) {
-        let mut isolate = Isolate::new();
+        let mut shell = Shell::new();
         let mut renderer = PromptRenderer::new("$ ");
         let ctx = context_parser::parse("ls -alhG ~", 0);
         b.iter(|| {
-            renderer.render(&mut isolate, &ctx, 0, 80, None);
+            renderer.render(&mut shell, &ctx, 0, 80, None);
         });
     }
 
     #[bench]
     fn complex_prompt_rendering(b: &mut Bencher) {
-        let mut isolate = Isolate::new();
+        let mut shell = Shell::new();
         let prompt =
             "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
         let mut renderer = PromptRenderer::new(prompt);
@@ -622,20 +678,20 @@ mod benchmarks {
         ]);
 
         b.iter(|| {
-            renderer.render(&mut isolate, &ctx, 10, 80, Some(&completions));
+            renderer.render(&mut shell, &ctx, 10, 80, Some(&completions));
         });
     }
 
     #[bench]
     fn complex_prompt_rendering_without_completions(b: &mut Bencher) {
-        let mut isolate = Isolate::new();
+        let mut shell = Shell::new();
         let prompt =
             "\\{cyan}\\{bold}\\{username}@\\{hostname}:\\{reset} \\{current_dir} $\\{reset} ";
         let mut renderer = PromptRenderer::new(prompt);
         let ctx = context_parser::parse("ls -alhG ~", 0);
 
         b.iter(|| {
-            renderer.render(&mut isolate, &ctx, 10, 80, None);
+            renderer.render(&mut shell, &ctx, 10, 80, None);
         });
     }
 }
