@@ -50,7 +50,7 @@ impl History {
         self.history.nth_last(nth)
     }
 
-    pub fn search(&self, query: &str) -> Vec<String> {
+    pub fn search(&self, query: &str) -> Vec<&str> {
         self.history.search(query)
     }
     

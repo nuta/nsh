@@ -271,7 +271,7 @@ fn history_search_mode(
                     Event::Key(Key::Char('\n')) => {
                         restore_main_screen(stdout);
                         if let Some(s) = entries.get(selected) {
-                            *user_input = UserInput::from_str(s.as_str());
+                            *user_input = UserInput::from_str(s);
                             return true;
                         } else {
                             // No history entries. Abort history mode.
@@ -283,7 +283,7 @@ fn history_search_mode(
                     Event::Key(Key::Char('\t')) => {
                         restore_main_screen(stdout);
                         if let Some(s) = entries.get(selected) {
-                            *user_input = UserInput::from_str(s.as_str());
+                            *user_input = UserInput::from_str(s);
                         } else {
                             // No history entries. Abort history mode.
                             *user_input = saved_user_input;

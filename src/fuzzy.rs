@@ -44,9 +44,9 @@ impl FuzzyVec {
         self.entries.push(entry);
     }
 
-    /// Searches entiries for `query` in *fuzzy* way and returns the result
+    /// Searches entiries for `query` in a fuzzy way and returns the result
     /// ordered by the similarity.
-    pub fn search(&self, query: &str) -> Vec<String> {
+    pub fn search(&self, query: &str) -> Vec<&str> {
         fuzzy_search(&self.entries, query)
     }
 }
@@ -56,10 +56,10 @@ impl FuzzyVec {
 ///
 /// TODO: Implement smart one.
 ///
-fn fuzzy_search(entries: &[String], query: &str) -> Vec<String> {
+fn fuzzy_search<'a>(entries: &'a [String], query: &str) -> Vec<&'a str> {
     if query.is_empty() {
         // Return the all entries.
-        return entries.to_vec();
+        return entries.iter().map(String::as_str).collect();
     }
 
     /// Check if entries contain the query characters with correct order.
@@ -81,7 +81,7 @@ fn fuzzy_search(entries: &[String], query: &str) -> Vec<String> {
     let mut filtered = entries
         .iter()
         .filter(|s| is_fuzzily_matched(s, query))
-        .cloned()
+        .map(String::as_str)
         .collect::<Vec<_>>();
     filtered.sort_by_cached_key(|entry| compute_score(entry, query));
     filtered
@@ -109,7 +109,7 @@ mod tests {
         // "cba" does not contain "bc" with correct order, so "cba" must be removed.
         assert_eq!(
             fuzzy_search(entries, query),
-            vec!["bca".to_owned(), "abc".to_owned()]
+            vec!["bca", "abc"]
         );
     }
 }

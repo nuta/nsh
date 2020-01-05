@@ -48,7 +48,7 @@ impl PathTable {
     }
 
     /// Generates command name completions filtered by `query`.
-    pub fn complete(&self, query: &str) -> Vec<String> {
+    pub fn complete(&self, query: &str) -> Vec<&str> {
         self.fuzzy.search(query)
     }
 }

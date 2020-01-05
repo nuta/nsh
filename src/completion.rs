@@ -142,7 +142,7 @@ impl CompletionSelector {
 
 /// `compgen(1)`.
 pub struct CompGen {
-    entries: Vec<String>,
+    entries: FuzzyVec,
     query: Option<String>,
     /// `-A command`
     include_commands: bool,
@@ -156,7 +156,7 @@ impl CompGen {
     #[inline]
     pub fn new() -> CompGen {
         CompGen {
-            entries: Vec::new(),
+            entries: FuzzyVec::new(),
             query: None,
             include_commands: false,
             include_files: false,
@@ -188,17 +188,17 @@ impl CompGen {
     /// -W
     #[inline]
     pub fn wordlist<'a>(&'a mut self, wordlist: &str, ifs: &str) -> &'a mut CompGen {
-        self.entries = wordlist
+        let entries = wordlist
             .split(|c| ifs.contains(c))
             .map(|elem| elem.to_owned())
             .collect();
-
+        self.entries(entries);
         self
     }
 
     #[inline]
     pub fn entries(&mut self, entries: Vec<String>) -> &mut CompGen {
-        self.entries = entries;
+        self.entries = FuzzyVec::from_vec(entries);
         self
     }
 
@@ -209,11 +209,9 @@ impl CompGen {
     }
 
     #[inline]
-    pub fn generate(self) -> Vec<String> {
-        match self.query {
-            Some(query) => FuzzyVec::from_vec(self.entries).search(&query),
-            None => self.entries,
-        }
+    pub fn generate(&self) -> Vec<&str> {
+        let query = self.query.as_ref().map(|s| s.as_str()).unwrap_or("");
+        self.entries.search(query)
     }
 }
 
@@ -336,17 +334,24 @@ pub fn path_completion(
     }
 
     compgen.generate()
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 pub fn cmd_completion(shell: &Shell, ctx: &InputContext) -> Vec<String> {
     match &ctx.current_literal {
         Some(range) => {
             let query = &ctx.input[range.clone()];
-            let mut entries = shell.path_table.complete(query);
+            let mut entries = shell.path_table.complete(query)
+                .iter().map(|s| s.to_string()).collect::<Vec<_>>();
             entries.extend(path_completion(ctx, true, false, true, false));
             entries
         }
-        None => shell.path_table.complete(""),
+        None => {
+            shell.path_table.complete("")
+                .iter().map(|s| s.to_string()).collect()
+        }
     }
 }
 
