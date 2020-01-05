@@ -483,31 +483,36 @@ pub fn complete(shell: &mut Shell, ctx: &InputContext) -> Vec<String> {
     };
 
     let current_span = ctx.current_span.map(|index| &ctx.spans[index]);
-    if let Some(context_parser::Span::Argv0(_)) = current_span {
-        // The cursor is at the first word, namely, the command.
-        cmd_completion(shell, ctx)
-    } else if let Some(compspec) = shell.get_compspec(cmd_name.as_str()) {
-        let compspec = compspec.clone();
-        let mut results = Vec::new();
-        if let Some(name) = compspec.func_name() {
-            results = call_completion_function(shell, &name, ctx);
+    match current_span {
+        None | Some(context_parser::Span::Argv0(_)) => {
+            // The cursor is at the first word, namely, the command.
+            cmd_completion(shell, ctx)
         }
+        _ => {
+            if let Some(compspec) = shell.get_compspec(cmd_name.as_str()) {
+                let compspec = compspec.clone();
+                let mut results = Vec::new();
+                if let Some(name) = compspec.func_name() {
+                    results = call_completion_function(shell, &name, ctx);
+                }
 
-        if results.is_empty() {
-            // No completion candidates. Try defaults.
-            results.extend(path_completion(
-                ctx,
-                compspec.filenames_if_empty(),
-                compspec.dirnames_if_empty(),
-                false,
-                true,
-            ));
+                if results.is_empty() {
+                    // No completion candidates. Try defaults.
+                    results.extend(path_completion(
+                        ctx,
+                        compspec.filenames_if_empty(),
+                        compspec.dirnames_if_empty(),
+                        false,
+                        true,
+                    ));
+                }
+
+                results
+            } else {
+                // Compspec if not defined for the command. Fall back to the path
+                // completion.
+                path_completion(ctx, true, true, false, true)
+            }
         }
-
-        results
-    } else {
-        // Compspec if not defined for the command. Fall back to the path
-        // completion.
-        path_completion(ctx, true, true, false, true)
     }
 }
