@@ -25,7 +25,6 @@ extern crate test;
 mod builtins;
 mod completion;
 mod context_parser;
-mod doctor;
 mod eval;
 mod expand;
 mod fuzzy;
@@ -158,19 +157,13 @@ fn shell_main(opt: Opt) {
     about = "A command-line shell that focuses on performance and productivity."
 )]
 struct Opt {
-    /// Check your terminal environment.
-    #[structopt(long = "doctor")]
-    doctor: bool,
-
-    /// Run the given string.
+    /// The command to be executed.
     #[structopt(short = "c")]
     command: Option<String>,
-
     /// Behave like a login shell.
     #[structopt(short = "l", long = "login")]
     login: bool,
-
-    /// Run the file.
+    /// The file to be executed.
     #[structopt(name = "FILE", parse(from_os_str))]
     file: Option<PathBuf>,
 }
@@ -178,11 +171,6 @@ struct Opt {
 fn main() {
     logger::init();
     let opt = Opt::from_args();
-
-    if opt.doctor {
-        doctor::main();
-        return;
-    }
 
     // Dump the panic reason and backtrace into the log file.
     std::panic::set_hook(Box::new(|info| {
