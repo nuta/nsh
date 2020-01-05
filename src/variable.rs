@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 /// A variable value.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     String(String),
     Array(Vec<String>),

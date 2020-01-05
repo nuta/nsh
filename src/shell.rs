@@ -1,7 +1,7 @@
 use crate::completion::CompSpec;
 use crate::eval::eval;
 use crate::parser;
-use crate::path::reload_paths;
+use crate::path::PathTable;
 use crate::process::{ExitStatus, Job, JobId, ProcessState};
 use crate::variable::{Frame, Value, Variable};
 use nix;
@@ -25,6 +25,8 @@ pub struct Shell {
     /// A saved terminal state.
     pub shell_termios: Option<Termios>,
 
+    /// `$PATH`
+    pub path_table: PathTable,
     /// `$?`
     last_status: i32,
     /// `$!`
@@ -70,6 +72,7 @@ impl Shell {
             script_name: "".to_owned(),
             interactive: false,
             shell_termios: None,
+            path_table: PathTable::new(),
             last_status: 0,
             exported: HashSet::new(),
             aliases: HashMap::new(),
@@ -176,14 +179,14 @@ impl Shell {
             &mut self.global
         };
 
+        frame.set(key, value.clone());
+
         if !is_local && key == "PATH" {
             // $PATH is being updated. Reload directories.
             if let Value::String(ref path) = value {
-                reload_paths(path);
+                self.path_table.scan(path);
             }
         }
-
-        frame.set(key, value);
     }
 
     pub fn remove(&mut self, key: &str) -> Option<Rc<Variable>> {

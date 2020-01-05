@@ -338,15 +338,15 @@ pub fn path_completion(
     compgen.generate()
 }
 
-pub fn cmd_completion(ctx: &InputContext) -> Vec<String> {
+pub fn cmd_completion(shell: &Shell, ctx: &InputContext) -> Vec<String> {
     match &ctx.current_literal {
         Some(range) => {
             let query = &ctx.input[range.clone()];
-            let mut entries = crate::path::complete(query);
+            let mut entries = shell.path_table.complete(query);
             entries.extend(path_completion(ctx, true, false, true, false));
             entries
         }
-        None => crate::path::complete(""),
+        None => shell.path_table.complete(""),
     }
 }
 
@@ -480,7 +480,7 @@ pub fn complete(shell: &mut Shell, ctx: &InputContext) -> Vec<String> {
     let current_span = ctx.current_span.map(|index| &ctx.spans[index]);
     if let Some(context_parser::Span::Argv0(_)) = current_span {
         // The cursor is at the first word, namely, the command.
-        cmd_completion(ctx)
+        cmd_completion(shell, ctx)
     } else if let Some(compspec) = shell.get_compspec(cmd_name.as_str()) {
         let compspec = compspec.clone();
         let mut results = Vec::new();

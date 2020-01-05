@@ -42,6 +42,7 @@ mod utils;
 mod variable;
 
 use crate::process::{check_background_jobs, ExitStatus};
+use crate::variable::Value;
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use std::path::PathBuf;
 use std::process::exit;
@@ -116,7 +117,7 @@ fn shell_main(opt: Opt) {
     shell.run_str(&nshrc);
 
     if shell.get("PATH").is_none() {
-        crate::path::reload_paths(DEFAULT_PATH);
+        shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
     }
 
     // Initialize subsystems.

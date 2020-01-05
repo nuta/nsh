@@ -2,7 +2,6 @@ use crate::builtins::{InternalCommandContext, InternalCommandError, INTERNAL_COM
 use crate::eval::*;
 use crate::expand::*;
 use crate::parser;
-use crate::path::lookup_external_command;
 use crate::shell::Shell;
 use crate::utils::FdFile;
 use crate::variable::Value;
@@ -390,8 +389,8 @@ pub fn run_external_command(
     let argv0 = if argv[0].starts_with('/') || argv[0].starts_with("./") {
         CString::new(argv[0].as_str())?
     } else {
-        match lookup_external_command(&argv[0]) {
-            Some(argv0) => CString::new(argv0)?,
+        match shell.path_table.lookup(&argv[0]) {
+            Some(path) => CString::new(path)?,
             None => {
                 eprintln!("nsh: command not found `{}'", argv[0]);
                 return Ok(ExitStatus::ExitedWith(1));

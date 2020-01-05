@@ -1,7 +1,7 @@
 use crate::builtins::INTERNAL_COMMANDS;
 use crate::context_parser::{CommandSepType, InputContext, KeywordType, QuoteType, Span};
-use crate::path::lookup_external_command;
 use crate::shell::Shell;
+use std::path::Path;
 
 pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
     use std::fmt::Write;
@@ -25,9 +25,11 @@ pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
 
         match span {
             Span::Argv0(cmd) => {
-                let command_exists = lookup_external_command(&cmd).is_some()
-                    || INTERNAL_COMMANDS.contains_key(cmd.as_str())
-                    || shell.lookup_alias(cmd.as_str()).is_some();
+                    let command_exists =
+                        (cmd.starts_with('/') && Path::new(cmd.as_str()).exists())
+                        || shell.path_table.contains(&cmd)
+                        || INTERNAL_COMMANDS.contains_key(cmd.as_str())
+                        || shell.lookup_alias(cmd.as_str()).is_some();
 
                 if command_exists {
                     write!(buf, "{}{}{}{}", Bold, argv0_color, cmd, Reset).ok();

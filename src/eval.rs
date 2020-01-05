@@ -473,11 +473,6 @@ pub fn eval_in_subshell(shell: &mut Shell, terms: &[parser::Term]) -> Result<(i3
 }
 
 fn spawn_subshell(shell: &mut Shell, terms: &[parser::Term], ctx: &Context) -> Result<Pid> {
-    // Since child process has its own isolated address space, `RELOAD_WORK.wait()`
-    // would block forever. Wait for the path loader before forking to make sure
-    // that `RELOAD_WORK.wait()` does not block.
-    crate::path::wait_for_path_loader();
-
     match fork().expect("failed to fork") {
         ForkResult::Parent { child } => Ok(child),
         ForkResult::Child => {
