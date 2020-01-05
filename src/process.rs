@@ -480,6 +480,11 @@ pub fn run_internal_command(
     mut stderr: RawFd,
     redirects: &[parser::Redirection],
 ) -> Result<ExitStatus> {
+    let func = match INTERNAL_COMMANDS.get(argv[0].as_str()) {
+        Some(func) => func,
+        _ => return Err(Error::from(InternalCommandError::NotFound)),
+    };
+    
     let mut opened_fds = Vec::new();
     for r in redirects {
         match r.target {
@@ -536,19 +541,13 @@ pub fn run_internal_command(
         }
     }
 
-    let mut ctx = InternalCommandContext {
+    let result = func(&mut InternalCommandContext {
         argv,
         shell,
         stdin: FdFile::new(stdin),
         stdout: FdFile::new(stdout),
         stderr: FdFile::new(stderr),
-    };
-
-    let cmd = argv[0].as_str();
-    let result = match INTERNAL_COMMANDS.get(cmd) {
-        Some(func) => func(&mut ctx),
-        _ => return Err(Error::from(InternalCommandError::NotFound)),
-    };
+    });
 
     // Close redirections.
     for fd in opened_fds {
