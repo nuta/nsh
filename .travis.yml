@@ -34,7 +34,6 @@ install:
 
 script:
   - cargo build --release
-  - cargo run --release -- --doctor
   - if [ "$TRAVIS_RUST_VERSION" == "nightly" ]; then cargo bench; fi
   - if [ "$TRAVIS_RUST_VERSION" == "nightly" ]; then cargo test --release; fi
   - ./run-tests.py --release
