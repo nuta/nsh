@@ -160,6 +160,9 @@ struct Opt {
     /// The command to be executed.
     #[structopt(short = "c")]
     command: Option<String>,
+    /// Print the version.
+    #[structopt(long = "version")]
+    version: bool,
     /// Behave like a login shell.
     #[structopt(short = "l", long = "login")]
     login: bool,
@@ -170,7 +173,6 @@ struct Opt {
 
 fn main() {
     logger::init();
-    let opt = Opt::from_args();
 
     // Dump the panic reason and backtrace into the log file.
     std::panic::set_hook(Box::new(|info| {
@@ -181,6 +183,12 @@ fn main() {
         eprintln!("{:#?}", backtrace::Backtrace::new());
         eprintln!("nsh: Something went wrong. Check out ~/.nsh.log and please file this bug on GitHub: https://github.com/nuta/nsh/issues")
     }));
+
+    let opt = Opt::from_args();
+    if opt.version {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        exit(0);
+    }
 
     shell_main(opt);
 }
