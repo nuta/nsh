@@ -5,7 +5,7 @@ nsh
 
 **Currently nsh is incomplete and not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/nuta/nsh/issues)!**
 
-A command-line shell that focuses on performance and productivity featuing:
+A command-line shell that focuses on performance and productivity featuring:
 - A not-yet-completed-but-aims-to-be **Bash compatible** interactive shell.
 - **Tab completions** and **syntax highlighting** like **[fish](http://fishshell.com/)**.
 - A builtin **interactive fuzzy completion filter** like **[fzf](https://github.com/junegunn/fzf)**.
