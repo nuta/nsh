@@ -91,22 +91,6 @@ fn interactive_mode(mut shell: crate::shell::Shell) -> ExitStatus {
     }
 }
 
-pub fn load_nshrc() -> String {
-    use std::io::Read;
-    let home_dir = dirs::home_dir().unwrap();
-    let nshrc_path = Path::new(&home_dir).join(".nshrc");
-    let mut nshrc = String::with_capacity(2048);
-    let mut file = match std::fs::File::open(nshrc_path) {
-        Ok(file) => file,
-        Err(_) => return String::new(),
-    };
-
-    file.read_to_string(&mut nshrc)
-        .expect("failed to load ~/.nshrc");
-
-    nshrc
-}
-
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 
 fn shell_main(opt: Opt) {
@@ -118,10 +102,11 @@ fn shell_main(opt: Opt) {
         File::create(&history_path).unwrap();
     }
 
-    // Load and execute nshrc.
     let mut shell = crate::shell::Shell::new(&history_path);
-    let nshrc = load_nshrc();
-    shell.run_str(&nshrc);
+
+    // Try executing ~/.nshrc
+    let home_dir = dirs::home_dir().unwrap();
+    shell.run_file(home_dir.join(".nshrc")).ok();
 
     if shell.get("PATH").is_none() {
         shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
@@ -133,7 +118,7 @@ fn shell_main(opt: Opt) {
         (Some(command), _) => shell.run_str(&command),
         (_, Some(file)) => {
             shell.set_script_name(file.to_str().unwrap());
-            shell.run_file(file)
+            shell.run_file(file).expect("failed to open the file")
         }
         (_, _) => {
             if !shell.interactive() {

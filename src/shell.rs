@@ -334,13 +334,11 @@ impl Shell {
     }
 
     /// Parses and runs a shell script file.
-    pub fn run_file(&mut self, script_file: PathBuf) -> ExitStatus {
-        let mut f = File::open(script_file).expect("failed to open a file");
+    pub fn run_file(&mut self, script_file: PathBuf) -> std::io::Result<ExitStatus> {
+        let mut f = File::open(script_file)?;
         let mut script = String::new();
-        f.read_to_string(&mut script)
-            .expect("failed to load a file");
-
-        self.run_str(script.as_str())
+        f.read_to_string(&mut script)?;
+        Ok(self.run_str(script.as_str()))
     }
 
     /// Parses and runs a script. Stdin/stdout/stderr are 0, 1, 2, respectively.
