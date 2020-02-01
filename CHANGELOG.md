@@ -1,9 +1,9 @@
 # Change Log
 
 ## v0.2.2 (Feb 1, 2020)
-- Support ^N and ^P key bindings in the prompt (by @agatan in #2).
-- Support ^N, ^P, ^B, and ^F key bindings in the history search (by @agatan in #4).
-- Load `$XDG_CONFIG_HOME/nsh/nshrc` in addition to `~/.nshrc` (suggested by @rapha8l in #5).
+- Support ^N and ^P key bindings in the prompt (by **[@agatan](https://github.com/agatan)** in **[#2](https://github.com/nuta/nsh/pull/2)**).
+- Support ^N, ^P, ^B, and ^F key bindings in the history search (by **[@agatan](https://github.com/agatan)** in **[#4](https://github.com/nuta/nsh/pull/4)**).
+- Load `$XDG_CONFIG_HOME/nsh/nshrc` in addition to `~/.nshrc` (suggested by **[@rapha8l](https://github.com/rapha8l)** in **[#5](https://github.com/nuta/nsh/issues/5)**).
 - Support --version and --norc option.
 - Fixed some bugs.
 
