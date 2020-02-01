@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "nsh"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "backtrace 0.3.43 (registry+https://github.com/rust-lang/crates.io-index)",
  "dirs 1.0.5 (registry+https://github.com/rust-lang/crates.io-index)",

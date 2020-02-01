@@ -1,5 +1,12 @@
 # Change Log
 
+## v0.2.2 (Feb 1, 2020)
+- Support ^N and ^P key bindings in the prompt (by @agatan in #2).
+- Support ^N, ^P, ^B, and ^F key bindings in the history search (by @agatan in #4).
+- Load `$XDG_CONFIG_HOME/nsh/nshrc` in addition to `~/.nshrc` (suggested by @rapha8l in #5).
+- Support --version and --norc option.
+- Fixed some bugs.
+
 ## v0.2.1
 -  Don't panic even if ~/.nshrc does not exist.
 
