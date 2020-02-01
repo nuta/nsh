@@ -22,7 +22,7 @@ $ cargo install nsh
 
 Configuration
 -------------
-Set the following variables in `~/.nshrc`:
+Set the following variables in `~/.nshrc` or `$XDG_CONFIG_HOME/nsh/nshrc`:
 
 - `$PATH`
 - `$PROMPT`: The prompt format. See [prompt.md](https://github.com/nuta/nsh/blob/master/docs/prompt.md) for details.
