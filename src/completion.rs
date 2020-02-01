@@ -484,8 +484,11 @@ pub fn complete(shell: &mut Shell, ctx: &InputContext) -> Vec<String> {
 
     let current_span = ctx.current_span.map(|index| &ctx.spans[index]);
     match current_span {
-        None | Some(context_parser::Span::Argv0(_)) => {
+        Some(context_parser::Span::Argv0(_)) => {
             // The cursor is at the first word, namely, the command.
+            cmd_completion(shell, ctx)
+        }
+        _ if ctx.words.len() <= 1 => {
             cmd_completion(shell, ctx)
         }
         _ => {
