@@ -63,7 +63,7 @@ def run_test(build, test):
 
     # Run the test.
     p = subprocess.Popen(
-        ["./target/{}/nsh".format(build), str(test)],
+        ["./target/{}/nsh".format(build), "--norc", str(test)],
         env={
             "RUST_BACKTRACE": "1",
             "RUST_LOG": "nsh=trace",

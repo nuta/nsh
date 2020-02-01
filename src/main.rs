@@ -104,15 +104,17 @@ fn shell_main(opt: Opt) {
 
     let mut shell = crate::shell::Shell::new(&history_path);
 
-    // Try executing ~/.nshrc
-    let home_dir = dirs::home_dir().unwrap();
-    shell.run_file(home_dir.join(".nshrc")).ok();
+    if !opt.norc {
+        // Try executing ~/.nshrc
+        let home_dir = dirs::home_dir().unwrap();
+        shell.run_file(home_dir.join(".nshrc")).ok();
 
-    // Try executing $XDG_CONFIG_HOME/nsh/nshrc
-    let config_dir = std::env::var("XDG_CONFIG_HOME")
-        .map(|dir| PathBuf::from(dir))
-        .unwrap_or_else(|_| home_dir.join(".config"));
-    shell.run_file(config_dir.join("nsh").join("nshrc")).ok();
+        // Try executing $XDG_CONFIG_HOME/nsh/nshrc
+        let config_dir = std::env::var("XDG_CONFIG_HOME")
+            .map(|dir| PathBuf::from(dir))
+            .unwrap_or_else(|_| home_dir.join(".config"));
+        shell.run_file(config_dir.join("nsh").join("nshrc")).ok();
+    }
 
     if shell.get("PATH").is_none() {
         shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
@@ -165,6 +167,9 @@ struct Opt {
     /// The file to be executed.
     #[structopt(name = "FILE", parse(from_os_str))]
     file: Option<PathBuf>,
+    /// Don't load nshrc.
+    #[structopt(long = "norc")]
+    norc: bool,
 }
 
 fn main() {
