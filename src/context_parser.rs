@@ -384,8 +384,7 @@ impl ContextParser {
                                         current_word_index = words.len();
                                     }
 
-                                    let end = self.index.saturating_sub(1);
-                                    current_literal = Some(prev_index..end);
+                                    current_literal = Some(prev_index..self.index);
                                     current_span = Some(spans.len());
                                 }
                             }
@@ -502,7 +501,7 @@ mod tests {
                 input,
                 cursor,
                 nested: vec![],
-                current_literal: Some(5..8),
+                current_literal: Some(5..9),
                 words: vec![
                     "ls".to_owned(),
                     "/tmp".to_owned(),
@@ -552,7 +551,7 @@ mod tests {
                 input,
                 cursor,
                 nested: vec![],
-                current_literal: Some(0..3),
+                current_literal: Some(0..4),
                 words: vec!["echo".to_owned(), "\"Hello \\\"\"$world\\\"".to_owned(),],
                 current_word: 0,
                 current_span: Some(0),
@@ -618,7 +617,7 @@ mod tests {
                 input,
                 cursor,
                 nested: vec![],
-                current_literal: Some(13..16),
+                current_literal: Some(13..17),
                 words: vec!["echo".to_owned(), "say".to_owned(), "yes".to_owned(),],
                 current_word: 0,
                 current_span: Some(7),
@@ -677,7 +676,7 @@ mod tests {
                 input,
                 cursor,
                 nested: vec![BlockType::If],
-                current_literal: Some(3..5),
+                current_literal: Some(3..6),
                 words: vec!["yes".to_owned(),],
                 current_word: 0,
                 current_span: Some(2),

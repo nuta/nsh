@@ -108,7 +108,7 @@ impl CompletionSelector {
         };
 
         let (prefix_end, suffix_start) = match &ctx.current_literal {
-            Some(current_literal) => (current_literal.start, current_literal.end + 1),
+            Some(current_literal) => (current_literal.start, current_literal.end),
             None => (ctx.cursor, ctx.cursor + 1),
         };
 
