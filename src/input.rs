@@ -452,6 +452,7 @@ pub fn input(shell: &mut Shell) -> Result<String, InputError> {
                         }
 
                         if let InputMode::Completion(_) = mode {
+                            let input_ctx = context_parser::parse(user_input.as_str(), user_cursor);
                             let new = CompletionSelector::new(complete(shell, &input_ctx));
                             mode = InputMode::Completion(new);
                         }
@@ -603,6 +604,7 @@ pub fn input(shell: &mut Shell) -> Result<String, InputError> {
                             user_cursor += 1;
 
                             if let InputMode::Completion(_) = mode {
+                                let input_ctx = context_parser::parse(user_input.as_str(), user_cursor);
                                 let new = CompletionSelector::new(complete(shell, &input_ctx));
                                 mode = InputMode::Completion(new);
                             }
