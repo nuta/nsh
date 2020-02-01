@@ -108,6 +108,12 @@ fn shell_main(opt: Opt) {
     let home_dir = dirs::home_dir().unwrap();
     shell.run_file(home_dir.join(".nshrc")).ok();
 
+    // Try executing $XDG_CONFIG_HOME/nsh/nshrc
+    let config_dir = std::env::var("XDG_CONFIG_HOME")
+        .map(|dir| PathBuf::from(dir))
+        .unwrap_or_else(|_| home_dir.join(".config"));
+    shell.run_file(config_dir.join("nsh").join("nshrc")).ok();
+
     if shell.get("PATH").is_none() {
         shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
     }
