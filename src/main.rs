@@ -37,7 +37,7 @@ mod pattern;
 mod process;
 mod prompt;
 mod shell;
-mod syntax_highlighting;
+mod highlight;
 mod utils;
 mod variable;
 

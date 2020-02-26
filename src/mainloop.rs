@@ -5,7 +5,7 @@ use crate::history::History;
 use crate::process::{check_background_jobs, ExitStatus};
 use crate::prompt::{draw_prompt, parse_prompt};
 use crate::shell::Shell;
-use crate::syntax_highlighting;
+use crate::highlight;
 use signal_hook::{self, iterator::Signals};
 use std::cmp::{max, min};
 use std::collections::VecDeque;
@@ -436,7 +436,7 @@ impl Mainloop {
 
         // Parse and highlight the input.
         let c = context_parser::parse(self.input.as_str(), self.input.cursor());
-        let h = syntax_highlighting::highlight(&c, &mut self.shell);
+        let h = highlight::highlight(&c, &mut self.shell);
         self.input_ctx = Some(c);
 
         // Print the highlighted input.
