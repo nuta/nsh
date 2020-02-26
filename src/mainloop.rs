@@ -136,7 +136,9 @@ impl Mainloop {
 
         // We're all set! Start processing events such as key inputs.
         loop {
-            self.handle_event(rx.recv().unwrap());
+            let ev = rx.recv().unwrap();
+            let started_at = std::time::SystemTime::now();
+            self.handle_event(ev);
 
             if let Some(status) = self.exited {
                 return status;
@@ -169,6 +171,9 @@ impl Mainloop {
 
                 self.do_complete = false;
             }
+
+            trace!("handle_event: took {}ms",
+                started_at.elapsed().unwrap().as_millis());
         }
     }
 
