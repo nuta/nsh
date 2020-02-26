@@ -22,15 +22,15 @@ extern crate pretty_assertions;
 #[cfg(test)]
 extern crate test;
 
+mod bash_server;
 mod builtins;
-mod completion;
 mod context_parser;
 mod eval;
 mod expand;
 mod fuzzy;
 mod history;
-mod input;
 mod logger;
+mod mainloop;
 mod parser;
 mod path;
 mod pattern;
@@ -41,7 +41,7 @@ mod syntax_highlighting;
 mod utils;
 mod variable;
 
-use crate::process::{check_background_jobs, ExitStatus};
+use crate::process::ExitStatus;
 use crate::variable::Value;
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use std::fs::File;
@@ -50,7 +50,7 @@ use std::process::exit;
 use structopt::StructOpt;
 use termion::is_tty;
 
-fn interactive_mode(mut shell: crate::shell::Shell) -> ExitStatus {
+fn interactive_mode(shell: shell::Shell) -> ExitStatus {
     // Ignore job-control-related signals in order not to stop the shell.
     // (refer https://www.gnu.org/software/libc/manual)
     // Don't ignore SIGCHLD! If you ignore it waitpid(2) returns ECHILD.
@@ -63,32 +63,7 @@ fn interactive_mode(mut shell: crate::shell::Shell) -> ExitStatus {
         sigaction(Signal::SIGTTOU, &action).expect("failed to sigaction");
     }
 
-    // Render the prompt and wait for an user input.
-    let mut line = match input::input(&mut shell) {
-        Ok(line) => {
-            println!();
-            line
-        }
-        Err(input::InputError::Eof) => {
-            return ExitStatus::ExitedWith(0);
-        }
-    };
-
-    loop {
-        shell.run_str(&line);
-        check_background_jobs(&mut shell);
-
-        // Read the next line.
-        line = match input::input(&mut shell) {
-            Ok(line) => {
-                println!();
-                line
-            }
-            Err(input::InputError::Eof) => {
-                return ExitStatus::ExitedWith(0);
-            }
-        };
-    }
+    mainloop::Mainloop::new(shell).run()
 }
 
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";

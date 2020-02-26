@@ -7,8 +7,6 @@ use std::io::Write;
 mod alias;
 mod bg;
 mod cd;
-mod compgen;
-mod complete;
 mod echo;
 mod eval;
 mod exit;
@@ -40,11 +38,11 @@ pub enum InternalCommandError {
     BadRedirection,
 }
 
+/// A super powerful hidden command for some cryptographers.
 /// https://xkcd.com/221/
 pub fn xkcd_rand_command(ctx: &mut InternalCommandContext) -> ExitStatus {
     writeln!(ctx.stdout, "4").ok();
     ctx.stdout.flush().ok();
-
     ExitStatus::ExitedWith(0)
 }
 
@@ -53,12 +51,7 @@ lazy_static! {
     // TODO: Construct this map in compile time.
     pub static ref INTERNAL_COMMANDS: BTreeMap<&'static str, InternalCommand> = {
         let mut commands: BTreeMap<&'static str, InternalCommand> = BTreeMap::new();
-        // A hidden command which is quite useful for some cryptographers.
-        commands.insert(
-            "get-xkcd-true-random-number",
-            xkcd_rand_command
-        );
-
+        commands.insert("xkcd-true-random-number", xkcd_rand_command);
         commands.insert("alias", crate::builtins::alias::command);
         commands.insert("echo", crate::builtins::echo::command);
         commands.insert("cd", crate::builtins::cd::command);
@@ -75,8 +68,6 @@ lazy_static! {
         commands.insert("unset", crate::builtins::unset::command);
         commands.insert("pushd", crate::builtins::pushd::command);
         commands.insert("popd", crate::builtins::popd::command);
-        commands.insert("complete", crate::builtins::complete::command);
-        commands.insert("compgen", crate::builtins::compgen::command);
         commands.insert("eval", crate::builtins::eval::command);
         commands
     };

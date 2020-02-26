@@ -18,6 +18,10 @@ impl PathTable {
         }
     }
 
+    pub fn fuzzy_vec(&self) -> &FuzzyVec {
+        &self.fuzzy
+    }
+
     /// Scans bin directories and caches all files in them. Call this method
     /// when you update `$PATH`!
     pub fn scan(&mut self, path: &str) {
@@ -45,10 +49,5 @@ impl PathTable {
     /// Returns the absolute path to the executable.
     pub fn lookup(&self, cmd: &str) -> Option<&str> {
         self.table.get(cmd).map(String::as_str)
-    }
-
-    /// Generates command name completions filtered by `query`.
-    pub fn complete(&self, query: &str) -> Vec<&str> {
-        self.fuzzy.search(query)
     }
 }

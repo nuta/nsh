@@ -1,6 +1,7 @@
 ///
 /// A ordered `Vec` which supports fuzzy search.
 ///
+#[derive(Clone)]
 pub struct FuzzyVec {
     /// The *unordered* array of a haystack.
     entries: Vec<String>,
@@ -14,15 +15,25 @@ impl FuzzyVec {
         }
     }
 
-    /// Creates a `FuzzyVec` from `entries`.
-    pub fn from_vec(entries: Vec<String>) -> FuzzyVec {
-        FuzzyVec { entries }
+    /// Creates a `FuzzyVec` with the given capacity.
+    pub fn with_capacity(cap: usize) -> FuzzyVec {
+        FuzzyVec {
+            entries: Vec::with_capacity(cap),
+        }
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<String> {
+        self.entries.iter()
     }
 
     /// Returns the number of entiries.
     #[inline]
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     // Clears the contents.

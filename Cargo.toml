@@ -39,6 +39,8 @@ pest = "2.1"
 pest_derive = "2.1"
 backtrace = "0.3"
 termion = "^1.5.1"
+signal-hook = "0"
+phf = { version = "0", features = ["macros"] }
 
 [dev-dependencies]
 pretty_assertions = "0"

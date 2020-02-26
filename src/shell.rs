@@ -1,4 +1,3 @@
-use crate::completion::CompSpec;
 use crate::eval::eval;
 use crate::history::History;
 use crate::parser;
@@ -61,8 +60,6 @@ pub struct Shell {
     pid_job_mapping: HashMap<Pid, Rc<Job>>,
     /// A stack of pathes maintained by pushd(1) / popd(1).
     cd_stack: Vec<String>,
-    /// Completion definitions.
-    compspecs: HashMap<String, CompSpec>,
 
     // TODO: Remove this field or make it private.
     pub last_fore_job: Option<Rc<Job>>,
@@ -92,7 +89,6 @@ impl Shell {
             cd_stack: Vec::new(),
             last_fore_job: None,
             last_back_job: None,
-            compspecs: HashMap::new(),
         }
     }
 
@@ -252,21 +248,15 @@ impl Shell {
         self.cd_stack.pop()
     }
 
-    #[inline]
-    pub fn get_compspec<'a>(&'a self, command: &str) -> Option<&'a CompSpec> {
-        self.compspecs.get(command)
-    }
-
-    #[inline]
-    pub fn set_compspec(&mut self, command: &str, compspec: CompSpec) {
-        self.compspecs.insert(command.to_owned(), compspec);
-    }
-
     pub fn get_var_as_i32(&self, name: &str) -> Option<i32> {
         self.get(name).and_then(|var| match var.value() {
             Some(Value::String(s)) => s.parse().ok(),
             _ => None,
         })
+    }
+
+    pub fn path_table(&self) -> &PathTable {
+        &self.path_table
     }
 
     pub fn history(&self) -> &History {

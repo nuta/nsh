@@ -111,25 +111,6 @@ pub fn evaluate_heredoc(shell: &mut Shell, heredoc: &HereDoc) -> Result<RawFd> {
     Ok(pipe_out)
 }
 
-#[inline]
-pub fn call_function_in_shell_context(
-    shell: &mut Shell,
-    name: &str,
-    args: &[String],
-    locals: Vec<(&str, Value)>,
-) -> Result<ExitStatus> {
-    let ctx = Context {
-        stdin: 0,
-        stdout: 1,
-        stderr: 2,
-        pgid: None,
-        background: false,
-        interactive: false,
-    };
-
-    call_function(shell, name, &ctx, args, locals)
-}
-
 fn call_function(
     shell: &mut Shell,
     name: &str,
