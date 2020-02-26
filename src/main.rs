@@ -66,6 +66,12 @@ fn interactive_mode(shell: shell::Shell) -> ExitStatus {
     mainloop::Mainloop::new(shell).run()
 }
 
+lazy_static! {
+    pub static ref STARTED_AT: std::time::SystemTime = {
+        std::time::SystemTime::now()
+    };
+}
+
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
 
 fn shell_main(opt: Opt) {
@@ -147,6 +153,7 @@ struct Opt {
 }
 
 fn main() {
+    lazy_static::initialize(&STARTED_AT);
     logger::init();
 
     // Dump the panic reason and backtrace into the log file.
