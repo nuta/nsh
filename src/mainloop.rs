@@ -529,7 +529,7 @@ impl Mainloop {
                 write!(
                     self.stdout,
                     "\r\n{} {} more {}",
-                    termion::style::Bold,
+                    termion::style::Invert,
                     remaining,
                     termion::style::Reset,
                 )
