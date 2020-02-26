@@ -298,11 +298,11 @@ impl Mainloop {
                 self.clear_completions();
                 self.input.truncate();
             }
-            TermEvent::Key(Key::Ctrl('f')) => {
+            TermEvent::Key(Key::Alt('f')) => {
                 self.clear_completions();
                 self.input.move_to_next_word();
             }
-            TermEvent::Key(Key::Ctrl('b')) => {
+            TermEvent::Key(Key::Alt('b')) => {
                 self.clear_completions();
                 self.input.move_to_prev_word();
             }
