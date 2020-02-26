@@ -26,7 +26,7 @@ pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
         match span {
             Span::Argv0(cmd) => {
                 let command_exists = (cmd.starts_with('/') && Path::new(cmd.as_str()).exists())
-                    || shell.path_table.contains(&cmd)
+                    || shell.path_table().contains(&cmd)
                     || INTERNAL_COMMANDS.contains_key(cmd.as_str())
                     || shell.lookup_alias(cmd.as_str()).is_some();
 

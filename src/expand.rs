@@ -48,8 +48,8 @@ pub fn expand_alias(shell: &Shell, argv: &[Word]) -> Vec<Word> {
         .unwrap_or_else(|| argv.to_owned())
 }
 
-/// Expands a parameter (`$foo` in e.g. `echo $foo`). It returns `Vec` since `op` can be
-/// an operation which expands an array. `None` value represents *null*.
+/// Expands a parameter (`$foo` in e.g. `echo $foo`). It returns `Vec` since
+/// `op` can be array expansion. `None` value represents *null*.
 pub fn expand_param(
     shell: &mut Shell,
     name: &str,
@@ -112,7 +112,8 @@ pub fn expand_param(
                     ) => {
                         let content = var.as_str().to_string();
                         let replaced =
-                            replace_pattern(shell, pattern, &content, replacement, *replace_all)?;
+                            replace_pattern(shell, pattern, &content,
+                                replacement, *replace_all)?;
                         return Ok(vec![Some(replaced)]);
                     }
                     (_, _) => {
@@ -123,7 +124,7 @@ pub fn expand_param(
         }
     }
 
-    // $<name> is not defined or null on GetOrDefault or GetOrDefaultAndAssign.
+    // The variable is not defined or is nulll
     // http://pubs.opengroup.org/onlinepubs/009695399/utilities/xcu_chap02.html#tag_02_06_02
     match op {
         ExpansionOp::Length => {
@@ -187,12 +188,10 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                     );
                     (vec![], !quoted)
                 } else {
-                    debug!("array_param: ${}[{}] == {:?}", name, index, shell.get(name));
                     let frag = shell
                         .get(name)
                         .map(|v| v.value_at(index as usize).to_string())
                         .unwrap_or_else(|| "".to_owned());
-                    debug!("frag = {}", frag);
                     (vec![LiteralOrGlob::Literal(frag)], !quoted)
                 }
             }
@@ -202,8 +201,7 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
             }
             Span::Tilde(user) => {
                 if user.is_some() {
-                    // TODO: e.g. ~mike, ~chandler/venus
-                    unimplemented!();
+                    eprintln!("nsh: warning: ~user is not yet supported");
                 }
 
                 let dir = dirs::home_dir().unwrap().to_str().unwrap().to_owned();
@@ -218,10 +216,9 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                 let output = std::str::from_utf8(&raw_stdout)
                     .map_err(|err| {
                         // TODO: support binary output
-                        eprintln!("binary (invalid utf-8) variable/expansion is not supported");
+                        eprintln!("nsh: binary in variable/expansion is not supported");
                         err
                     })?
-                    .to_string()
                     .trim_end_matches('\n')
                     .to_owned();
 
@@ -317,9 +314,11 @@ pub fn expand_words(shell: &mut Shell, words: &[Word]) -> Result<Vec<String>> {
     Ok(evaluated)
 }
 
-/// Expands and merges all pattern words into a single pattern
-/// word.
-pub fn expand_into_single_pattern_word(shell: &mut Shell, pattern: &Word) -> Result<PatternWord> {
+/// Expands and merges all pattern words into a single pattern word.
+pub fn expand_into_single_pattern_word(
+    shell: &mut Shell,
+    pattern: &Word
+) -> Result<PatternWord> {
     let mut frags = Vec::new();
     let ifs = ""; /* all whitespaces are treated as a literal */
     for word in expand_word_into_vec(shell, pattern, ifs)? {
@@ -340,7 +339,6 @@ pub fn replace_pattern(
 ) -> Result<String> {
     let pat = expand_into_single_pattern_word(shell, pattern)?;
     let dst = expand_word_into_string(shell, replacement)?;
-    // FIXME:
     Ok(crate::pattern::replace_pattern(
         &pat,
         text,

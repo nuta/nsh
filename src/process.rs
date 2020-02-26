@@ -391,7 +391,7 @@ pub fn run_external_command(
     let argv0 = if argv[0].starts_with('/') || argv[0].starts_with("./") {
         CString::new(argv[0].as_str())?
     } else {
-        match shell.path_table.lookup(&argv[0]) {
+        match shell.path_table().lookup(&argv[0]) {
             Some(path) => CString::new(path)?,
             None => {
                 eprintln!("nsh: command not found `{}'", argv[0]);

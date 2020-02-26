@@ -28,7 +28,7 @@ pub struct Shell {
     /// Command histroy.
     history: History,
     /// `$PATH`
-    pub path_table: PathTable,
+    path_table: PathTable,
     /// `$?`
     last_status: i32,
     /// `$!`

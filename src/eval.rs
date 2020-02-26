@@ -4,7 +4,7 @@ use crate::parser::{
     self, Assignment, Ast, BinaryExpr, CondExpr, Expr, HereDoc, Initializer, LocalDeclaration,
     RunIf, Word,
 };
-use crate::pattern::{match_pattern, match_pattern_all, NoMatchesError, PatternWord};
+use crate::pattern::{match_pattern, match_pattern_all, NoMatchesError};
 use crate::process::*;
 use crate::shell::Shell;
 use crate::variable::Value;
@@ -242,20 +242,6 @@ fn run_if_command(
     }
 
     Ok(ExitStatus::ExitedWith(0))
-}
-
-/// Expands and merges all pattern words into a single pattern
-/// word.
-fn expand_into_single_pattern_word(shell: &mut Shell, pattern: &Word) -> Result<PatternWord> {
-    let mut frags = Vec::new();
-    let ifs = ""; /* all whitespaces are treated as a literal */
-    for word in expand_word_into_vec(shell, pattern, ifs)? {
-        for frag in word.fragments() {
-            frags.push(frag.clone());
-        }
-    }
-
-    Ok(PatternWord::new(frags))
 }
 
 fn run_case_command(
