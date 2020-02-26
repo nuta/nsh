@@ -85,7 +85,7 @@ fn shell_main(opt: Opt) {
 
         // Try executing $XDG_CONFIG_HOME/nsh/nshrc
         let config_dir = std::env::var("XDG_CONFIG_HOME")
-            .map(|dir| PathBuf::from(dir))
+            .map(PathBuf::from)
             .unwrap_or_else(|_| home_dir.join(".config"));
         shell.run_file(config_dir.join("nsh").join("nshrc")).ok();
     }

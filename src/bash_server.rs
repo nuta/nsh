@@ -51,13 +51,13 @@ pub fn bash_server(tx_event: mpsc::Sender<Event>) -> mpsc::Sender<BashRequest> {
     tx
 }
 
-static COMP_DIRS: &'static [&'static str] = &[
+static COMP_DIRS: &[&str] = &[
     "/usr/local/etc/bash_completion.d",
     "/usr/etc/bash_completion.d",
     "/etc/bash_completion.d",
 ];
 
-static COMP_SUFFIXES: &'static [&'static str] =
+static COMP_SUFFIXES: &[&str] =
     &["-completion.bash", "-completion.sh", ".bash", ".sh", ""];
 
 static PRELOADED_COMPS: phf::Set<&'static str> = phf_set! {
@@ -136,7 +136,7 @@ fn run_bash(bash: &mut Option<Child>, words: Vec<String>, current_word: usize) -
     let mut bash = bash.take().unwrap();
 
     // Define $COMP_CWORD and $COMP_WORDS.
-    let stdin = bash.stdin.as_mut().unwrap();
+    let mut stdin = bash.stdin.take().unwrap();
     if let Some(comp_file) = comp_file {
         trace!("comp_file = {}", comp_file);
         writeln!(stdin, "source \"{}\"", escape(&comp_file)).ok();

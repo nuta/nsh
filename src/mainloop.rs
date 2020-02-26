@@ -833,11 +833,8 @@ fn scan_path(base_dir: PathBuf) -> (FuzzyVec, bool) {
             };
 
             let path = entry.path();
-            match path.to_str() {
-                Some(path) => {
-                    vec.append(path[(base_dir_str.len() + 1)..].to_string());
-                }
-                _ => {}
+            if let Some(path) = path.to_str() {
+                vec.append(path[(base_dir_str.len() + 1)..].to_string());
             }
 
             if path.is_dir() {
