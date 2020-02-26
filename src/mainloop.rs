@@ -1,21 +1,21 @@
-use std::io::{self, Write};
-use std::sync::mpsc;
-use std::cmp::{max, min};
-use std::path::PathBuf;
-use std::fs;
-use std::collections::VecDeque;
+use crate::bash_server::{bash_server, BashRequest};
+use crate::context_parser::{self, InputContext};
+use crate::fuzzy::FuzzyVec;
+use crate::history::History;
+use crate::process::{check_background_jobs, ExitStatus};
+use crate::prompt::{draw_prompt, parse_prompt};
+use crate::shell::Shell;
+use crate::syntax_highlighting;
 use signal_hook::{self, iterator::Signals};
+use std::cmp::{max, min};
+use std::collections::VecDeque;
+use std::fs;
+use std::io::{self, Write};
+use std::path::PathBuf;
+use std::sync::mpsc;
 use termion::event::{Event as TermEvent, Key};
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
-use crate::fuzzy::FuzzyVec;
-use crate::history::History;
-use crate::shell::{Shell};
-use crate::process::{check_background_jobs, ExitStatus};
-use crate::prompt::{parse_prompt, draw_prompt};
-use crate::context_parser::{self, InputContext};
-use crate::syntax_highlighting;
-use crate::bash_server::{bash_server, BashRequest};
 
 const DEFAULT_PROMPT: &str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
 
@@ -104,7 +104,9 @@ impl Mainloop {
             loop {
                 if let Some(ev) = stdin_events.next() {
                     match ev {
-                        Ok(ev) => { tx1.send(Event::Input(ev)).ok(); }
+                        Ok(ev) => {
+                            tx1.send(Event::Input(ev)).ok();
+                        }
                         Err(_) => { /* ignore errors */ }
                     }
                 }
@@ -119,10 +121,10 @@ impl Mainloop {
                 match signal {
                     signal_hook::SIGWINCH => {
                         tx2.send(Event::ScreenResized).ok();
-                    },
+                    }
                     _ => {
                         warn!("unhandled signal: {}", signal);
-                    },
+                    }
                 }
             }
 
@@ -142,7 +144,7 @@ impl Mainloop {
 
             if self.do_complete {
                 match self.input_ctx.take() {
-                    Some(mut ctx) if ctx.words.len() > 1 =>  {
+                    Some(mut ctx) if ctx.words.len() > 1 => {
                         // Resolve aliased command names.
                         if let Some(alias) = self.shell.lookup_alias(&ctx.words[0]) {
                             // The alias should be a single word.
@@ -151,10 +153,12 @@ impl Mainloop {
                             }
                         }
 
-                        tx_bash.send(BashRequest::Complete {
-                            words: ctx.words,
-                            current_word: ctx.current_word,
-                        }).ok();
+                        tx_bash
+                            .send(BashRequest::Complete {
+                                words: ctx.words,
+                                current_word: ctx.current_word,
+                            })
+                            .ok();
                     }
                     _ => {
                         // Command name completion.
@@ -207,7 +211,7 @@ impl Mainloop {
                     self.completions = comps;
                     self.comps_show_from = 0;
                     self.comp_selected = 0;
-                    self.print_user_input();    
+                    self.print_user_input();
                 }
             }
         }
@@ -222,29 +226,34 @@ impl Mainloop {
             TermEvent::Key(Key::Left) if self.completion_mode() => {
                 self.comp_selected = self.comp_selected.saturating_sub(1);
             }
-            TermEvent::Key(Key::Right) |
-            TermEvent::Key(Key::Char('\t')) if self.completion_mode() => {
-                self.comp_selected =
-                    min(self.comp_selected + 1, self.comps_filtered.len().saturating_sub(1));
+            TermEvent::Key(Key::Right) | TermEvent::Key(Key::Char('\t'))
+                if self.completion_mode() =>
+            {
+                self.comp_selected = min(
+                    self.comp_selected + 1,
+                    self.comps_filtered.len().saturating_sub(1),
+                );
             }
-            TermEvent::Key(Key::Up)
-            | TermEvent::Key(Key::Ctrl('p')) if self.completion_mode() => {
-                self.comp_selected =
-                    self.comp_selected.saturating_sub(self.comps_per_line);
+            TermEvent::Key(Key::Up) | TermEvent::Key(Key::Ctrl('p')) if self.completion_mode() => {
+                self.comp_selected = self.comp_selected.saturating_sub(self.comps_per_line);
             }
-            TermEvent::Key(Key::Down)
-            | TermEvent::Key(Key::Ctrl('n')) if self.completion_mode() => {
-                self.comp_selected =
-                    min(self.comp_selected + self.comps_per_line,
-                        self.comps_filtered.len().saturating_sub(1));
+            TermEvent::Key(Key::Down) | TermEvent::Key(Key::Ctrl('n'))
+                if self.completion_mode() =>
+            {
+                self.comp_selected = min(
+                    self.comp_selected + self.comps_per_line,
+                    self.comps_filtered.len().saturating_sub(1),
+                );
             }
-            TermEvent::Key(Key::Esc) | TermEvent::Key(Key::Char('q')) |
-            TermEvent::Key(Key::Ctrl('c')) if self.completion_mode() => {
+            TermEvent::Key(Key::Esc)
+            | TermEvent::Key(Key::Char('q'))
+            | TermEvent::Key(Key::Ctrl('c'))
+                if self.completion_mode() =>
+            {
                 self.clear_completions();
             }
             TermEvent::Key(Key::Char('\n')) if self.completion_mode() => {
-                let selected =
-                    self.comps_filtered.get(self.comp_selected).unwrap();
+                let selected = self.comps_filtered.get(self.comp_selected).unwrap();
                 let offset = self.input.replace_current_word(selected);
                 self.input.move_to(offset);
                 self.clear_completions();
@@ -264,14 +273,18 @@ impl Mainloop {
             }
             TermEvent::Key(Key::Ctrl('l')) => {
                 // Clear the screen.
-                write!(self.stdout, "{}{}",
+                write!(
+                    self.stdout,
+                    "{}{}",
                     termion::clear::All,
                     termion::cursor::Goto(1, 1)
-                ).ok();
+                )
+                .ok();
                 self.print_prompt();
             }
             TermEvent::Key(Key::Up) => {
-                self.history_selector.prev(self.shell.history(), self.input.as_str());
+                self.history_selector
+                    .prev(self.shell.history(), self.input.as_str());
                 let line = self.history_selector.current(self.shell.history());
                 self.input.reset(line);
             }
@@ -353,7 +366,8 @@ impl Mainloop {
         )
         .ok();
 
-        let prompt_fmt = &self.shell
+        let prompt_fmt = &self
+            .shell
             .get("PROMPT")
             .map(|var| var.as_str().to_owned())
             .unwrap_or_else(|| DEFAULT_PROMPT.to_owned());
@@ -378,21 +392,31 @@ impl Mainloop {
         // Clear the previous user input and completions.
         if self.clear_below > 0 {
             for _ in 0..self.clear_below {
-                write!(self.stdout, "{}{}",
+                write!(
+                    self.stdout,
+                    "{}{}",
                     termion::cursor::Down(1),
                     termion::clear::CurrentLine
-                ).ok();
+                )
+                .ok();
             }
 
-            write!(self.stdout, "{}",
-                termion::cursor::Up(self.clear_below as u16)).ok();
+            write!(
+                self.stdout,
+                "{}",
+                termion::cursor::Up(self.clear_below as u16)
+            )
+            .ok();
         }
 
         for _ in 0..self.clear_above {
-            write!(self.stdout, "{}{}",
+            write!(
+                self.stdout,
+                "{}{}",
                 termion::clear::CurrentLine,
                 termion::cursor::Up(1)
-            ).ok();
+            )
+            .ok();
         }
 
         // Parse and highlight the input.
@@ -401,11 +425,14 @@ impl Mainloop {
         self.input_ctx = Some(c);
 
         // Print the highlighted input.
-        write!(self.stdout, "\r{}{}{}",
+        write!(
+            self.stdout,
+            "\r{}{}{}",
             termion::cursor::Right(self.prompt_len as u16),
             termion::clear::AfterCursor,
             h.replace("\n", "\r\n")
-        ).ok();
+        )
+        .ok();
 
         // Handle the case when the cursor is at the end of a line.
         let current_x = self.prompt_len + self.input.len();
@@ -415,17 +442,19 @@ impl Mainloop {
 
         // Print a notification message.
         if let Some(notification) = &self.notification {
-            write!(self.stdout, "\r\n{}{}[!] {}{}{}",
+            write!(
+                self.stdout,
+                "\r\n{}{}[!] {}{}{}",
                 termion::color::Fg(termion::color::LightYellow),
                 termion::style::Bold,
                 notification,
                 termion::style::Reset,
                 termion::clear::AfterCursor,
-            ).ok();
+            )
+            .ok();
         }
 
-        let notification_height =
-            if self.notification.is_some() { 1 } else { 0 };
+        let notification_height = if self.notification.is_some() { 1 } else { 0 };
         let input_height = current_x / self.columns + notification_height;
 
         let mut comps_height = 0;
@@ -443,8 +472,7 @@ impl Mainloop {
             let comps_height_max = self.lines - input_height - 1;
             let num_comps_max = (comps_height_max - 1) * num_columns;
             if self.comp_selected < self.comps_show_from {
-                self.comps_show_from =
-                    (self.comp_selected / num_columns) * num_columns;
+                self.comps_show_from = (self.comp_selected / num_columns) * num_columns;
             }
 
             if self.comp_selected >= self.comps_show_from + num_comps_max {
@@ -453,9 +481,12 @@ impl Mainloop {
             }
 
             // Print completions.
-            let filtered: Vec<String> = self.completions
+            let filtered: Vec<String> = self
+                .completions
                 .search(self.input.current_word())
-                .iter().map(|s| s.to_string()).collect();
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
             self.comp_selected = min(self.comp_selected, filtered.len().saturating_sub(1));
             let mut remaining = filtered.len() - self.comps_show_from;
             let iter = filtered.iter().skip(self.comps_show_from);
@@ -471,17 +502,23 @@ impl Mainloop {
 
                 let margin = column_width - min(comp.len(), column_width);
                 if self.comps_show_from + i == self.comp_selected {
-                    write!(self.stdout, "{}{}{}{}",
+                    write!(
+                        self.stdout,
+                        "{}{}{}{}",
                         termion::style::Invert,
                         truncate(comp, self.columns),
                         termion::style::NoInvert,
                         termion::cursor::Right(margin as u16),
-                    ).ok();
+                    )
+                    .ok();
                 } else {
-                    write!(self.stdout, "{}{}",
+                    write!(
+                        self.stdout,
+                        "{}{}",
                         truncate(comp, self.columns),
                         termion::cursor::Right(margin as u16)
-                    ).ok();
+                    )
+                    .ok();
                 }
 
                 remaining -= 1;
@@ -489,11 +526,14 @@ impl Mainloop {
 
             if remaining > 0 {
                 comps_height += 2;
-                write!(self.stdout, "\r\n{} {} more {}",
+                write!(
+                    self.stdout,
+                    "\r\n{} {} more {}",
                     termion::style::Bold,
                     remaining,
                     termion::style::Reset,
-                ).ok();
+                )
+                .ok();
             }
 
             self.comps_filtered = filtered;
@@ -505,16 +545,12 @@ impl Mainloop {
         let cursor_x = (self.prompt_len + self.input.cursor()) % self.columns;
         let cursor_y_diff = (input_height - cursor_y) + comps_height;
         if cursor_y_diff > 0 {
-            write!(self.stdout, "{}",
-                termion::cursor::Up(cursor_y_diff as u16),
-            ).ok();
+            write!(self.stdout, "{}", termion::cursor::Up(cursor_y_diff as u16),).ok();
         }
 
         write!(self.stdout, "\r").ok();
         if cursor_x > 0 {
-            write!(self.stdout, "{}",
-                termion::cursor::Right(cursor_x as u16),
-            ).ok();
+            write!(self.stdout, "{}", termion::cursor::Right(cursor_x as u16),).ok();
         }
 
         write!(self.stdout, "{}", termion::cursor::Show).ok();
@@ -530,21 +566,31 @@ impl Mainloop {
 
             let comps_y_diff = self.clear_below - self.comps_height;
             if comps_y_diff > 0 {
-                write!(self.stdout, "{}",
-                    termion::cursor::Down(comps_y_diff as u16)).ok();
+                write!(
+                    self.stdout,
+                    "{}",
+                    termion::cursor::Down(comps_y_diff as u16)
+                )
+                .ok();
             }
 
             for _ in 0..self.comps_height {
-                write!(self.stdout, "{}{}",
+                write!(
+                    self.stdout,
+                    "{}{}",
                     termion::cursor::Down(1),
                     termion::clear::CurrentLine
-                ).ok();
+                )
+                .ok();
             }
 
-            write!(self.stdout, "{}{}",
+            write!(
+                self.stdout,
+                "{}{}",
                 termion::cursor::Up((comps_y_diff + self.comps_height) as u16),
                 termion::cursor::Show,
-            ).ok();
+            )
+            .ok();
 
             self.stdout.flush().ok();
         }
@@ -661,11 +707,15 @@ impl Mainloop {
         self.hist_display_len = self.lines - 2;
         self.hist_input_max = self.columns - prompt.len();
 
-            // Search history for user input.
+        // Search history for user input.
         // TODO: Don't copy entries.
-        self.hist_entries = 
-            self.shell.history().search(self.input.as_str())
-                .iter().map(|s| s.to_string()).collect();
+        self.hist_entries = self
+            .shell
+            .history()
+            .search(self.input.as_str())
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
         let max = min(self.hist_display_len, self.hist_entries.len());
         if self.hist_selected > max.saturating_sub(1) {
@@ -683,7 +733,8 @@ impl Mainloop {
             truncate(prompt, self.columns),
             termion::style::Reset,
             truncate(self.input.as_str(), self.hist_input_max),
-        ).ok();
+        )
+        .ok();
 
         // Render history_lines.
         for i in 0..self.lines.saturating_sub(2) {
@@ -697,13 +748,10 @@ impl Mainloop {
                         termion::style::Underline,
                         truncate_and_fill(entry, self.columns, ' '),
                         termion::style::Reset
-                    ).ok();
+                    )
+                    .ok();
                 } else {
-                    write!(
-                        self.stdout,
-                        "{}\r\n",
-                        truncate(entry, self.columns),
-                    ).ok();
+                    write!(self.stdout, "{}\r\n", truncate(entry, self.columns),).ok();
                 }
             } else {
                 write!(self.stdout, "\r\n").ok();
@@ -720,14 +768,14 @@ impl Mainloop {
             truncate(" Enter: Execute, Tab: Edit, ^C: Quit ", self.columns),
             termion::style::Reset,
             termion::cursor::Goto(1 + cursor_x as u16, 1),
-        ).ok();
+        )
+        .ok();
         self.stdout.flush().ok();
     }
 
     fn path_completion(&mut self) {
-        let (comps, aborted) =
-            scan_path(std::env::current_dir().unwrap());
-    
+        let (comps, aborted) = scan_path(std::env::current_dir().unwrap());
+
         if aborted {
             self.notify(format!("aborted scanning (too many files)"));
             info!("{:?}", comps.iter());
@@ -762,7 +810,7 @@ fn scan_path(base_dir: PathBuf) -> (FuzzyVec, bool) {
 
     let mut vec = FuzzyVec::new();
     let mut aborted = false;
-    
+
     // Breadth-first search under the given directory.
     let mut queue = VecDeque::new();
     queue.push_back(base_dir);
@@ -781,7 +829,7 @@ fn scan_path(base_dir: PathBuf) -> (FuzzyVec, bool) {
 
             let entry = match entry {
                 Ok(entry) => entry,
-                Err(_) => continue,    
+                Err(_) => continue,
             };
 
             let path = entry.path();
@@ -870,10 +918,16 @@ impl UserInput {
         }
 
         std::ops::Range {
-            start: self.indices.get(start)
-                .copied().unwrap_or_else(|| self.input.len()),
-            end: self.indices.get(end)
-                .copied().unwrap_or_else(|| self.input.len())
+            start: self
+                .indices
+                .get(start)
+                .copied()
+                .unwrap_or_else(|| self.input.len()),
+            end: self
+                .indices
+                .get(end)
+                .copied()
+                .unwrap_or_else(|| self.input.len()),
         }
     }
 
@@ -886,7 +940,7 @@ impl UserInput {
         let start = range.start;
         self.input.replace_range(range, replace_with);
         self.update_indices();
-        
+
         start + replace_with.len()
     }
 
@@ -1073,7 +1127,7 @@ mod tests {
     fn test_user_input() {
         let mut i = UserInput::new();
         assert_eq!(i.current_word_range(), (0..0));
-        
+
         // a
         //  ^
         i.insert('a');

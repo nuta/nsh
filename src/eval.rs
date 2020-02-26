@@ -743,28 +743,34 @@ pub fn eval(
 fn test_expr() {
     let mut shell = Shell::new(std::path::Path::new("/dev/null"));
     assert_eq!(
-        evaluate_expr(&mut shell, &&Expr::Mul(BinaryExpr {
-            lhs: Box::new(Expr::Literal(2)),
-            rhs: Box::new(Expr::Add(BinaryExpr {
-                lhs: Box::new(Expr::Literal(3)),
-                rhs: Box::new(Expr::Literal(7)),
-            })),
-        })),
+        evaluate_expr(
+            &mut shell,
+            &&Expr::Mul(BinaryExpr {
+                lhs: Box::new(Expr::Literal(2)),
+                rhs: Box::new(Expr::Add(BinaryExpr {
+                    lhs: Box::new(Expr::Literal(3)),
+                    rhs: Box::new(Expr::Literal(7)),
+                })),
+            })
+        ),
         2 * (3 + 7)
     );
 
     shell.set("x", Value::String(3.to_string()), false);
     assert_eq!(
-        evaluate_expr(&mut shell, &&Expr::Add(BinaryExpr {
-            lhs: Box::new(Expr::Literal(1)),
-            rhs: Box::new(Expr::Add(BinaryExpr {
-                lhs: Box::new(Expr::Mul(BinaryExpr {
-                    lhs: Box::new(Expr::Literal(2)),
-                    rhs: Box::new(Expr::Parameter { name: "x".into() }),
+        evaluate_expr(
+            &mut shell,
+            &&Expr::Add(BinaryExpr {
+                lhs: Box::new(Expr::Literal(1)),
+                rhs: Box::new(Expr::Add(BinaryExpr {
+                    lhs: Box::new(Expr::Mul(BinaryExpr {
+                        lhs: Box::new(Expr::Literal(2)),
+                        rhs: Box::new(Expr::Parameter { name: "x".into() }),
+                    })),
+                    rhs: Box::new(Expr::Literal(4)),
                 })),
-                rhs: Box::new(Expr::Literal(4)),
-            })),
-        })),
+            })
+        ),
         1 + 2 * 3 + 4
     );
 }

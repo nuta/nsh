@@ -277,7 +277,9 @@ pub fn wait_for_job(shell: &mut Shell, job: &Rc<Job>) -> ProcessState {
     }
 
     // Get the exit status of the last process.
-    let state = shell.get_process_state(*job.processes.iter().last().unwrap()).cloned();
+    let state = shell
+        .get_process_state(*job.processes.iter().last().unwrap())
+        .cloned();
 
     match state {
         Some(ProcessState::Completed(_)) => {
@@ -484,7 +486,7 @@ pub fn run_internal_command(
         Some(func) => func,
         _ => return Err(Error::from(InternalCommandError::NotFound)),
     };
-    
+
     let mut opened_fds = Vec::new();
     for r in redirects {
         match r.target {

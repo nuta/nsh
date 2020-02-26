@@ -41,11 +41,11 @@ impl History {
             history: FuzzyVec::new(),
         }
     }
-    
+
     pub fn len(&self) -> usize {
         self.history.len()
     }
-    
+
     pub fn nth_last(&self, nth: usize) -> Option<String> {
         self.history.nth_last(nth)
     }
@@ -53,34 +53,36 @@ impl History {
     pub fn search(&self, query: &str) -> Vec<&str> {
         self.history.search(query)
     }
-    
+
     /// Appends a history to the history file.
     pub fn append(&mut self, cmd: &str) {
         if cmd.is_empty() {
             return;
         }
-                
+
         // Ignore if `cmd` is same as the last command.
         if let Some(last) = self.history.nth_last(0) {
             if last.as_str() == cmd {
                 return;
             }
         }
-        
+
         if let Ok(mut file) = OpenOptions::new().append(true).open(&self.path) {
             if cmd.starts_with(' ') && !cmd.starts_with('\t') {
                 let dir = std::env::current_dir()
-                    .unwrap().to_str().unwrap().to_owned();
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .to_owned();
                 let time = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .expect("failed to get the UNIX timestamp")
                     .as_secs() as usize;
                 file.write(format!("{}\t{}\t{}\n", time, dir, cmd).as_bytes())
-                .ok();
+                    .ok();
             }
         }
-        
+
         self.history.append(cmd.to_string());
     }
 }
-

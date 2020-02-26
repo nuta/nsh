@@ -1,11 +1,11 @@
-use std::collections::HashSet;
-use std::io::Write;
-use std::process::{Command, Child, Stdio};
-use std::sync::mpsc;
-use std::time::SystemTime;
 use crate::fuzzy::FuzzyVec;
 use crate::mainloop::Event;
 use phf::phf_set;
+use std::collections::HashSet;
+use std::io::Write;
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
+use std::time::SystemTime;
 
 pub enum BashRequest {
     Complete {
@@ -25,7 +25,10 @@ pub fn bash_server(tx_event: mpsc::Sender<Event>) -> mpsc::Sender<BashRequest> {
 
             let req = rx.recv().unwrap();
             match req {
-                BashRequest::Complete { words, current_word } => {
+                BashRequest::Complete {
+                    words,
+                    current_word,
+                } => {
                     trace!("completion: query={:?}", words);
                     let started_at = SystemTime::now();
 
@@ -54,13 +57,8 @@ static COMP_DIRS: &'static [&'static str] = &[
     "/etc/bash_completion.d",
 ];
 
-static COMP_SUFFIXES: &'static [&'static str] = &[
-    "-completion.bash",
-    "-completion.sh",
-    ".bash",
-    ".sh",
-    "",
-];
+static COMP_SUFFIXES: &'static [&'static str] =
+    &["-completion.bash", "-completion.sh", ".bash", ".sh", ""];
 
 static PRELOADED_COMPS: phf::Set<&'static str> = phf_set! {
     "git",
@@ -99,9 +97,7 @@ fn look_for_comp_file(cmd_name: &str) -> Option<String> {
 }
 
 fn escape(s: &str) -> String {
-    s
-        .replace('\\', "\\\\")
-        .replace('$', "\\$")
+    s.replace('\\', "\\\\").replace('$', "\\$")
 }
 
 fn preload_bash() -> Child {
@@ -162,8 +158,12 @@ fn run_bash(bash: &mut Option<Child>, words: Vec<String>, current_word: usize) -
     writeln!(stdin, "_{} >/dev/null 2>&1", &cmd_name.replace('-', "_")).ok();
 
     // Print the results.
-    writeln!(stdin, "{}",
-        "for c in \"${COMPREPLY[@]}\"; do echo \"$c\"; done").ok();
+    writeln!(
+        stdin,
+        "{}",
+        "for c in \"${COMPREPLY[@]}\"; do echo \"$c\"; done"
+    )
+    .ok();
 
     // Flush the scripts and terminate the bash by EOF.
     drop(stdin);

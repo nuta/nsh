@@ -26,8 +26,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
                 }
             } else {
                 // Wait for all jobs.
-                let jobs: Vec<Rc<Job>> =
-                    ctx.shell.jobs().values().cloned().collect();
+                let jobs: Vec<Rc<Job>> = ctx.shell.jobs().values().cloned().collect();
                 for job in &jobs {
                     wait_for_job(ctx.shell, job);
                 }

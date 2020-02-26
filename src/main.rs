@@ -70,8 +70,7 @@ const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/l
 
 fn shell_main(opt: Opt) {
     // Create a history file if it does not exist.
-    let home_dir = dirs::home_dir()
-        .expect("failed to get the path to the home directory");
+    let home_dir = dirs::home_dir().expect("failed to get the path to the home directory");
     let history_path = Path::new(&home_dir).join(".nsh_history");
     if !history_path.exists() {
         File::create(&history_path).unwrap();

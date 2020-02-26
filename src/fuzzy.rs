@@ -123,20 +123,14 @@ mod tests {
             let entries = &["abc".to_owned(), "bca".to_owned(), "cba".to_owned()];
             let query = "bc";
             // "cba" does not contain "bc" with correct order, so "cba" must be removed.
-            assert_eq!(
-                fuzzy_search(entries, query),
-                vec!["bca", "abc"]
-            );
+            assert_eq!(fuzzy_search(entries, query), vec!["bca", "abc"]);
         }
 
         // Ensure that the exact match takes priority.
         {
             let entries = &["g++8".to_owned(), "g++9".to_owned(), "g++".to_owned()];
             let query = "g++";
-            assert_eq!(
-                fuzzy_search(entries, query),
-                vec!["g++", "g++8", "g++9"]
-            );
+            assert_eq!(fuzzy_search(entries, query), vec!["g++", "g++8", "g++9"]);
         }
     }
 }
