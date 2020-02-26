@@ -404,6 +404,7 @@ impl Mainloop {
         write!(self.stdout, "{}", termion::cursor::Hide).ok();
 
         // Clear the previous user input and completions.
+        // TODO: Don't clear the texts; overwrite instead to prevent flickering.
         if self.clear_below > 0 {
             for _ in 0..self.clear_below {
                 write!(
