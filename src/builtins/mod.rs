@@ -1,8 +1,8 @@
 use crate::process::ExitStatus;
 use crate::shell::Shell;
 use crate::utils::FdFile;
-use std::collections::BTreeMap;
 use std::io::Write;
+use phf::phf_map;
 
 mod alias;
 mod bg;
@@ -47,28 +47,23 @@ pub fn xkcd_rand_command(ctx: &mut InternalCommandContext) -> ExitStatus {
 }
 
 type InternalCommand = fn(&mut InternalCommandContext) -> ExitStatus;
-lazy_static! {
-    // TODO: Construct this map in compile time.
-    pub static ref INTERNAL_COMMANDS: BTreeMap<&'static str, InternalCommand> = {
-        let mut commands: BTreeMap<&'static str, InternalCommand> = BTreeMap::new();
-        commands.insert("xkcd-true-random-number", xkcd_rand_command);
-        commands.insert("alias", crate::builtins::alias::command);
-        commands.insert("echo", crate::builtins::echo::command);
-        commands.insert("cd", crate::builtins::cd::command);
-        commands.insert("source", crate::builtins::source::command);
-        commands.insert("exit", crate::builtins::exit::command);
-        commands.insert("export", crate::builtins::export::command);
-        commands.insert("set", crate::builtins::set::command);
-        commands.insert("fg", crate::builtins::fg::command);
-        commands.insert("bg", crate::builtins::bg::command);
-        commands.insert("wait", crate::builtins::wait::command);
-        commands.insert("jobs", crate::builtins::jobs::command);
-        commands.insert("shift", crate::builtins::shift::command);
-        commands.insert("read", crate::builtins::read::command);
-        commands.insert("unset", crate::builtins::unset::command);
-        commands.insert("pushd", crate::builtins::pushd::command);
-        commands.insert("popd", crate::builtins::popd::command);
-        commands.insert("eval", crate::builtins::eval::command);
-        commands
-    };
-}
+pub static INTERNAL_COMMANDS: phf::Map<&'static str, InternalCommand> = phf_map! {
+    "xkcd-true-random-number" => xkcd_rand_command,
+    "alias" => crate::builtins::alias::command,
+    "echo" => crate::builtins::echo::command,
+    "cd" => crate::builtins::cd::command,
+    "source" => crate::builtins::source::command,
+    "exit" => crate::builtins::exit::command,
+    "export" => crate::builtins::export::command,
+    "set" => crate::builtins::set::command,
+    "fg" => crate::builtins::fg::command,
+    "bg" => crate::builtins::bg::command,
+    "wait" => crate::builtins::wait::command,
+    "jobs" => crate::builtins::jobs::command,
+    "shift" => crate::builtins::shift::command,
+    "read" => crate::builtins::read::command,
+    "unset" => crate::builtins::unset::command,
+    "pushd" => crate::builtins::pushd::command,
+    "popd" => crate::builtins::popd::command,
+    "eval" => crate::builtins::eval::command,
+};
