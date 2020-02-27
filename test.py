@@ -116,7 +116,7 @@ def generate_test_files():
 
     for f in FILES:
         path = Path("test/files") / f
-        os.makedirs(path.parent, exist_ok=True)
+        os.makedirs(str(path.parent), exist_ok=True)
         path.write_text("dummy file for testing")
 
 def main():
