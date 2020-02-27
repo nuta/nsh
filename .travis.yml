@@ -30,7 +30,7 @@ before_install:
 
 install:
   - if [ "$TRAVIS_OS_NAME" == "osx" ]; then brew link --overwrite python; fi
-  - pip3 install -r tools/requirements.txt
+  - pip3 install -r requirements.txt
 
 script:
   - cargo build --release
