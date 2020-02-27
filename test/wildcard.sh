@@ -1,4 +1,4 @@
-cd test/playground
+cd test/files
 echo * | tr " " "\n" | sort
 echo */* | tr " " "\n" | sort
 echo */*/*.mp3 | tr " " "\n" | sort

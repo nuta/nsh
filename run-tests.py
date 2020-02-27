@@ -103,6 +103,22 @@ def run_test(build, test):
     cprint("ok", "green", attrs=["bold"])
     return True
 
+def generate_test_files():
+    FILES = [
+        "friends/songs/ross_can.mp3",
+        "friends/songs/smelly_cat.mp3",
+        "friends/the_one_with_the_lottery.txt",
+        "monty_python/cheese.txt",
+        "monty_python/parrot.txt",
+        "monty_python/spam_egg_spam_spam_bacon_and_span.txt",
+        "monty_python/spam_spam_spam_spam_spam_spam_baked_beans_spam_spam_spam_and_spam.txt",
+    ]
+
+    for f in FILES:
+        path = Path("test/files") / f
+        os.makedirs(path.parent, exist_ok=True)
+        path.write_text("dummy file for testing")
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--release", action="store_true")
@@ -120,6 +136,8 @@ def main():
     else:
         build = "debug"
         subprocess.run(["cargo", "build"], check=True)
+
+    generate_test_files()
 
     num_failed = 0
     for test in tests:
