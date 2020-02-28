@@ -6,11 +6,12 @@ nsh
 **Currently nsh is incomplete and not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/nuta/nsh/issues)!**
 
 A command-line shell that focuses on performance and productivity featuring:
-- A not-yet-completed-but-aims-to-be **Bash compatible** interactive shell.
-- **Tab completions** and **syntax highlighting** like **[fish](http://fishshell.com/)**.
-- A builtin **interactive fuzzy completion filter** like **[fzf](https://github.com/junegunn/fzf)**.
-- Builtin **zero configration** features.
-- **Written in Rust** :crab:
+
+- A POSIX-compliant interactive shell with some Bash extensions.
+- Tab completions and syntax highlighting.
+- A builtin interactive fuzzy completion filter like **[fzf](https://github.com/junegunn/fzf)**.
+- Builtin zero configration features.
+- Written in Rust :crab:
 
 ![screenshot](https://gist.githubusercontent.com/nuta/5747db6c43978d9aa1941ce321cc1741/raw/405b7a1156292fd0456010b657f299b1daa367ff/nsh.png)
 
@@ -52,16 +53,6 @@ Why create a new shell?
 Bash is the best for executing shell scripts but its interactive mode is not satisfactory. I am
 a zsh user for the last decade but I don't need *customizability* and got tired of making my zshrc
 faster. Fish is really neat but I prefer old-fashioned, traditional, and ergonomic shell syntax.
-
-Comparisons
------------
-| | **nsh**  | **[bash](https://www.gnu.org/software/bash)**  | **[zsh](http://www.zsh.org/)** | **[fish](http://fishshell.com/)** | **[PowerShell](https://github.com/PowerShell/PowerShell)** |
-| :-: | :-: | :-: | :-: | :-: | :-: |
-| **POSIX shell features**   | **Yes**              | **Yes**             | **Yes**                      | original syntax             | No             |
-| **Bash compatibility**     | partially supported           | **100% compatible** | **provides `emulate(1)`**    | requires Bass               | No             |
-| **Prompt UX**              | **(aims to be) awesome**           | minimum standard    | comfortable                  | **awesome**                 | comfortable    |
-| **Name**                   | not bad              | **noble**           | **cool**                     | **cute**                    | **super cool** |
-
 
 ----
 
