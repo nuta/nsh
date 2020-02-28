@@ -1,5 +1,11 @@
 # Change Log
 
+## v0.3.0 (Feb 28, 2020)
+- Rewrote UI
+- Add completion support using (external) Bash
+  - Currently, it automatically loads completions in `/etc/bash_completion.d`, etc.
+- Remove builtin completion system (`compgen` and `complete`)
+
 ## v0.2.2 (Feb 1, 2020)
 - Support ^N and ^P key bindings in the prompt (by **[@agatan](https://github.com/agatan)** in **[#2](https://github.com/nuta/nsh/pull/2)**).
 - Support ^N, ^P, ^B, and ^F key bindings in the history search (by **[@agatan](https://github.com/agatan)** in **[#4](https://github.com/nuta/nsh/pull/4)**).
