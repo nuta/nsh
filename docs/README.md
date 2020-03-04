@@ -21,6 +21,10 @@ Installation
 $ cargo install nsh
 ```
 
+Documentation
+-------------
+**[Documentation](https://seiya.me/nsh)**
+
 Why create a new shell?
 -----------------------
 Bash is the best for executing shell scripts but its interactive mode is not satisfactory. I am
