@@ -5,11 +5,11 @@
 36
 Cargo.lock
 Cargo.toml
-README.md
+test.py
 Cargo.lock
 Cargo.toml
-README.md
-Cargo.toml/Cargo.lock#README.md
+test.py
+Cargo.toml/Cargo.lock#test.py
 substs ------------------
 aBCd
 Xbcd

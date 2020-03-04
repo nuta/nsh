@@ -15,11 +15,11 @@ func1() {
 z=$(func1 7)
 echo $((z*z))
 
-words1="Cargo.toml Cargo.lock README.md"
+words1="Cargo.toml Cargo.lock test.py"
 ls $words1
 
 IFS="/#"
-words2="Cargo.toml/Cargo.lock#README.md"
+words2="Cargo.toml/Cargo.lock#test.py"
 ls $words2
 echo "$words2"
 IFS=" \t"
