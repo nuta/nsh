@@ -1,4 +1,7 @@
-# History File Format
+# History File (.nsh_history)
+Commands you execute are saved to `~/.nsh_history`.
+
+## File Format
 Each line represents the command and its context in the following format:
 
 ```

@@ -1,0 +1,14 @@
+[book]
+authors = ["Seiya Nuta"]
+language = "en"
+multilingual = false
+src = "docs"
+title = "nsh"
+
+[output.html]
+default-theme = "rust"
+git-repository-url = "https://github.com/nuta/nsh"
+
+[output.html.fold]
+enable = false
+level = 0
