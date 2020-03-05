@@ -42,5 +42,11 @@ termion = "^1.5.1"
 signal-hook = "0"
 phf = { version = "0", features = ["macros"] }
 
+# Use version 1.0.2 temporarily in order to prevent a compile error in
+# failure_derive. See https://github.com/nuta/nsh/issues/6
+#
+# FIXME: Remove this dependency once failure_derive releases a fixed version.
+quote = "1.0.2"
+
 [dev-dependencies]
 pretty_assertions = "0"
