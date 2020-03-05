@@ -1,5 +1,8 @@
 # Change Log
 
+## v0.3.2 (Mar 5, 2020)
+- Fixes the workaround introduced in v0.3.1.
+
 ## v0.3.1 (Mar 5, 2020)
 - Fix a compile error ([#6](https://github.com/nuta/nsh/issues/6)).
 
