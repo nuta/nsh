@@ -46,7 +46,7 @@ phf = { version = "0", features = ["macros"] }
 # failure_derive. See https://github.com/nuta/nsh/issues/6
 #
 # FIXME: Remove this dependency once failure_derive releases a fixed version.
-quote = "1.0.2"
+quote = "= 1.0.2"
 
 [dev-dependencies]
 pretty_assertions = "0"
