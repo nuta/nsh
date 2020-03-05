@@ -1,5 +1,8 @@
 # Change Log
 
+## v0.3.1 (Mar 5, 2020)
+- Fix a compile error ([#6](https://github.com/nuta/nsh/issues/6)).
+
 ## v0.3.0 (Feb 28, 2020)
 - Rewrote UI
 - Add completion support using (external) Bash
