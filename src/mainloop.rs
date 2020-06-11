@@ -8,7 +8,6 @@ use crate::shell::Shell;
 use crate::highlight;
 use signal_hook::{self, iterator::Signals};
 use std::cmp::{max, min};
-use std::collections::VecDeque;
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -206,17 +205,18 @@ impl Mainloop {
             }
             Event::NoCompletion => {
                 trace!("completion not found, using path finder instead");
-                self.path_completion();
+                let pattern = self.input_ctx
+                    .as_ref()
+                    .map(|ctx| ctx.words[ctx.current_word].as_str())
+                    .unwrap_or("");
+                let entries = path_completion(pattern);
+                self.update_completion_entries(entries);
             }
             Event::Completion(comps) => {
                 if comps.is_empty() {
-                    self.notify(format!("no completions: use path finder instead"));
-                    self.path_completion();
+                    self.notify(format!("no completions"));
                 } else {
-                    self.completions = comps;
-                    self.comps_show_from = 0;
-                    self.comp_selected = 0;
-                    self.print_user_input();
+                    self.update_completion_entries(comps);
                 }
             }
         }
@@ -258,10 +258,7 @@ impl Mainloop {
                 self.clear_completions();
             }
             TermEvent::Key(Key::Char('\n')) if self.completion_mode() => {
-                let selected = self.comps_filtered.get(self.comp_selected).unwrap();
-                let offset = self.input.replace_current_word(selected);
-                self.input.move_to(offset);
-                self.clear_completions();
+                self.select_completion();
             }
             TermEvent::Key(Key::Char('\n')) => {
                 self.run_command();
@@ -352,6 +349,7 @@ impl Mainloop {
         }
 
         if needs_redraw {
+            self.filter_completion_entries();
             self.print_user_input();
         }
     }
@@ -496,15 +494,8 @@ impl Mainloop {
             }
 
             // Print completions.
-            let filtered: Vec<String> = self
-                .completions
-                .search(self.input.current_word())
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-            self.comp_selected = min(self.comp_selected, filtered.len().saturating_sub(1));
-            let mut remaining = filtered.len() - self.comps_show_from;
-            let iter = filtered.iter().skip(self.comps_show_from);
+            let mut remaining = self.comps_filtered.len() - self.comps_show_from;
+            let iter = self.comps_filtered.iter().skip(self.comps_show_from);
             for (i, comp) in iter.enumerate() {
                 if i % num_columns == 0 {
                     if comps_height == comps_height_max - 1 {
@@ -551,7 +542,6 @@ impl Mainloop {
                 .ok();
             }
 
-            self.comps_filtered = filtered;
             self.comps_per_line = num_columns;
         }
 
@@ -573,6 +563,36 @@ impl Mainloop {
         self.clear_below = input_height - cursor_y + comps_height;
         self.comps_height = comps_height;
         self.stdout.flush().ok();
+    }
+
+    fn update_completion_entries(&mut self, entries: FuzzyVec) {
+        self.completions = entries;
+        self.comps_show_from = 0;
+        self.filter_completion_entries();
+
+        if self.comps_filtered.len() == 1 {
+            self.select_completion();
+        }
+        
+        self.print_user_input();
+    }
+
+    fn filter_completion_entries(&mut self) {
+        self.comps_filtered = self
+            .completions
+            .search(self.input.current_word())
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        self.comp_selected =
+            min(self.comp_selected, self.comps_filtered.len().saturating_sub(1));
+    }
+
+    fn select_completion(&mut self) {
+        let selected = self.comps_filtered.get(self.comp_selected).unwrap();
+        let offset = self.input.replace_current_word(selected);
+        self.input.move_to(offset);
+        self.clear_completions();
     }
 
     fn hide_completions(&mut self) {
@@ -787,20 +807,6 @@ impl Mainloop {
         .ok();
         self.stdout.flush().ok();
     }
-
-    fn path_completion(&mut self) {
-        let (comps, aborted) = scan_path(std::env::current_dir().unwrap());
-
-        if aborted {
-            self.notify(format!("aborted scanning (too many files)"));
-            info!("{:?}", comps.iter());
-        }
-
-        self.completions = comps;
-        self.comps_show_from = 0;
-        self.comp_selected = 0;
-        self.print_user_input();
-    }
 }
 
 #[inline]
@@ -817,48 +823,6 @@ fn truncate_and_fill(s: &str, len: usize, fill: char) -> String {
     }
 
     s
-}
-
-fn scan_path(base_dir: PathBuf) -> (FuzzyVec, bool) {
-    assert!(base_dir.is_absolute());
-    let base_dir_str = base_dir.to_str().unwrap().to_owned();
-
-    let mut vec = FuzzyVec::new();
-    let mut aborted = false;
-
-    // Breadth-first search under the given directory.
-    let mut queue = VecDeque::new();
-    queue.push_back(base_dir);
-    'outer: while let Some(dir) = queue.pop_front() {
-        let entries = match fs::read_dir(dir) {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
-
-        for entry in entries {
-            if vec.len() > 4000 {
-                // Too many files. Abort scanning.
-                aborted = true;
-                break 'outer;
-            }
-
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(_) => continue,
-            };
-
-            let path = entry.path();
-            if let Some(path) = path.to_str() {
-                vec.append(path[(base_dir_str.len() + 1)..].to_string());
-            }
-
-            if path.is_dir() {
-                queue.push_back(path);
-            }
-        }
-    }
-
-    (vec, aborted)
 }
 
 #[derive(Clone)]
@@ -1077,6 +1041,42 @@ impl UserInput {
         self.indices.clear();
         for index in self.input.char_indices() {
             self.indices.push(index.0);
+        }
+    }
+}
+
+fn path_completion(mut pattern: &str) -> FuzzyVec {
+    // "--prefix=/local/usr" -> "/local/usr"
+    if pattern.starts_with("-") && pattern.contains('=') {
+        pattern = &pattern[pattern.find('=').unwrap() + 1..];
+    }
+
+    let dir = if pattern.is_empty() {
+        std::env::current_dir().unwrap()
+    } else {
+        PathBuf::from(pattern)
+    };
+
+    info!("dir = {}", dir.display());
+    match fs::read_dir(&dir) {
+        Ok(files) => {
+            let mut entries = FuzzyVec::new();
+            for file in files {
+                let path = file.unwrap().path();
+                info!("file = {}", path.display());
+                let entry = if pattern.starts_with('/') {
+                    path.as_os_str()
+                } else {
+                    path.file_name().unwrap_or_else(|| path.as_os_str())
+                };
+
+                entries.append(entry.to_str().unwrap().to_owned());
+            }
+            entries
+        },
+        Err(err) => {
+            warn!("failed to readdir '{}': {}", dir.display(), err);
+            FuzzyVec::new()
         }
     }
 }
