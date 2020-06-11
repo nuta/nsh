@@ -144,6 +144,8 @@ impl Mainloop {
             }
 
             if self.do_complete {
+                // TODO: Don't wrap self.input_ctx with Option and use Span::Argv0
+                // for command name completion.
                 match self.input_ctx.take() {
                     Some(mut ctx) if ctx.words.len() > 1 => {
                         // Resolve aliased command names.
