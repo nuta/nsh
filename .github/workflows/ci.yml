@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install pip packages
+        run: pip3 install -r requirements.txt
+      - name: Build
+        run: cargo build --release
+      - name: Unit Test
+        run: cargo test
+      - name: Integration Test
+        run: ./test.py
