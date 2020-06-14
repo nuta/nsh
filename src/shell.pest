@@ -19,8 +19,15 @@ var_name_chars = _{
     "_" | ASCII_ALPHANUMERIC
 }
 
+/// --prefix=~/usr
+//  ^^^^^^^^
+assign_like_prefix_chars = _{
+    "-" | "_" | ASCII_ALPHANUMERIC
+}
+
 wsnl = _{ (WHITESPACE | COMMENT | newline)+ }
 var_name = ${ var_name_chars+ }
+assign_like_prefix_var_name = ${ assign_like_prefix_chars+ }
 username = ${ (!("/") ~ word_char)+ }
 special_var_name = _{ "?" | "$" | "!" | "*" | "@" | "#" | "-" | ASCII_DIGIT }
 
@@ -49,7 +56,8 @@ primary = _{ num | ("$"? ~ var_name) | param_ex_span |  ("(" ~ expr ~ ")") }
 //
 //  Word
 //
-word = ${ (tilde_span | span) ~ span* }
+word = ${ assign_like_prefix? ~ (tilde_span | span) ~ span* }
+assign_like_prefix = { assign_like_prefix_var_name ~ "=" }
 span = _{
     double_quoted_span
     | single_quoted_span

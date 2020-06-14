@@ -719,7 +719,8 @@ impl ShellParser {
         Command::Cond(expr)
     }
 
-    // word = ${ (tilde_span | span) ~ span* }
+    // word = ${ assign_like_prefix? ~ (tilde_span | span) ~ span* }
+    // assign_like_prefix = { assign_like_prefix_var_name ~ "=" }
     // span = _{
     //     double_quoted_span
     //     | single_quoted_span
@@ -810,6 +811,18 @@ impl ShellParser {
                 }
                 Rule::any_char_span => {
                     spans.push(Span::AnyChar { quoted: false });
+                }
+                // A word like "--prefix=~/usr". We expand `~` into Span::Tilde.
+                // This feature is not in the POSIX spec, but it's pretty useful
+                // and implemented in popular shells like bash and zsh.
+                Rule::assign_like_prefix => {
+                    let mut inner = span.into_inner();
+                    let var_name = inner.next().unwrap();
+                    // We don't have to handle escape sequences since it does
+                    // not contain bachslashes by definition (shell.pest).
+                    let mut s = var_name.as_str().to_owned();
+                    s.push('=');
+                    spans.push(Span::Literal(s));
                 }
                 _ => {
                     println!("unimpl: {:?}", span);
@@ -2882,6 +2895,35 @@ pub fn test_tilde() {
                                 Span::Literal("/usr".into()),
                             ]),
                             Word(vec![Span::Literal("a/~/b".into())]),
+                        ],
+                        redirects: vec![],
+                        assignments: vec![],
+                    }],
+                }],
+            }],
+        })
+    );
+}
+
+#[test]
+pub fn test_assign_like_prefix() {
+    assert_eq!(
+        parse("./configure --prefix=~/usr in\\valid=~"),
+        Ok(Ast {
+            terms: vec![Term {
+                code: "./configure --prefix=~/usr in\\valid=~".into(),
+                background: false,
+                pipelines: vec![Pipeline {
+                    run_if: RunIf::Always,
+                    commands: vec![Command::SimpleCommand {
+                        argv: vec![
+                            Word(vec![Span::Literal("./configure".into())]),
+                            Word(vec![
+                                Span::Literal("--prefix=".into()),
+                                Span::Tilde(None),
+                                Span::Literal("/usr".into()),
+                            ]),
+                            Word(vec![Span::Literal("invalid=~".into())]),
                         ],
                         redirects: vec![],
                         assignments: vec![],
