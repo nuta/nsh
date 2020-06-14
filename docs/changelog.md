@@ -1,5 +1,10 @@
 # Change Log
 
+## v0.3.4 (June 14, 2020)
+- `export`: Accept multiple assignments
+- Scan only the current directory in path completion.
+- Support tilde expansion in a assignment-like word (e.g. `--prefix=~/usr`).
+
 ## v0.3.3 (Mar 7, 2020)
 - Use failure 0.1.7 to fix a build error ([#6](https://github.com/nuta/nsh/issues/6)).
 
