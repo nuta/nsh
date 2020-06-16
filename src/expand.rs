@@ -30,6 +30,7 @@ pub fn expand_alias(shell: &Shell, argv: &[Word]) -> Vec<Word> {
         .map(|alias_str| {
             // Found the alias. Split the alias string by whitespace into words.
             let mut alias_words: Vec<Word> = alias_str
+                .trim()
                 .split(' ')
                 .map(|w| {
                     let span = Span::Literal(w.to_owned());
