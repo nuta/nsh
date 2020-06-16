@@ -1059,13 +1059,11 @@ fn path_completion(mut pattern: &str) -> FuzzyVec {
         PathBuf::from(pattern)
     };
 
-    info!("dir = {}", dir.display());
     match fs::read_dir(&dir) {
         Ok(files) => {
             let mut entries = FuzzyVec::new();
             for file in files {
                 let path = file.unwrap().path();
-                info!("file = {}", path.display());
                 let entry = if pattern.starts_with('/') {
                     path.as_os_str()
                 } else {
