@@ -443,6 +443,9 @@ impl ContextParser {
             }
         }
 
+        trace!("words={:?}, current_word={}, spans={:?}",
+               words, words[current_word_index], spans);
+
         InputContext {
             words,
             current_word: current_word_index,

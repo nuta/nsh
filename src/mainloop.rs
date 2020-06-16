@@ -146,7 +146,7 @@ impl Mainloop {
             if self.do_complete {
                 // TODO: Don't wrap self.input_ctx with Option and use Span::Argv0
                 // for command name completion.
-                match self.input_ctx.take() {
+                match self.input_ctx.clone() {
                     Some(mut ctx) if ctx.words.len() > 1 => {
                         // Resolve aliased command names.
                         if let Some(alias) = self.shell.lookup_alias(&ctx.words[0]) {
@@ -1048,10 +1048,17 @@ impl UserInput {
 }
 
 fn path_completion(mut pattern: &str) -> FuzzyVec {
-    // "--prefix=/local/usr" -> "/local/usr"
-    if pattern.starts_with("-") && pattern.contains('=') {
-        pattern = &pattern[pattern.find('=').unwrap() + 1..];
-    }
+    // "--prefix=/local/usr" -> ("--prefix=", "/local/usr")
+    let prefix = if pattern.starts_with("-") && pattern.contains('=') {
+        let offset = pattern.find('=').unwrap() + 1;
+        let prefix = &pattern[..offset];
+        pattern = &pattern[offset..];
+        prefix
+    } else {
+        ""
+    };
+
+    trace!("path_completion: pattern='{}'", pattern);
 
     let dir = if pattern.is_empty() {
         std::env::current_dir().unwrap()
@@ -1070,7 +1077,7 @@ fn path_completion(mut pattern: &str) -> FuzzyVec {
                     path.file_name().unwrap_or_else(|| path.as_os_str())
                 };
 
-                entries.append(entry.to_str().unwrap().to_owned());
+                entries.append(format!("{}{}", prefix, entry.to_str().unwrap()));
             }
             entries
         },
