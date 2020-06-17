@@ -236,10 +236,14 @@ impl Mainloop {
             TermEvent::Key(Key::Right) | TermEvent::Key(Key::Char('\t'))
                 if self.completion_mode() =>
             {
-                self.comp_selected = min(
-                    self.comp_selected + 1,
-                    self.comps_filtered.len().saturating_sub(1),
-                );
+                if self.comps_filtered.is_empty() {
+                    self.clear_completions();
+                } else {
+                    self.comp_selected = min(
+                        self.comp_selected + 1,
+                        self.comps_filtered.len().saturating_sub(1),
+                    );
+                }
             }
             TermEvent::Key(Key::Up) | TermEvent::Key(Key::Ctrl('p')) if self.completion_mode() => {
                 self.comp_selected = self.comp_selected.saturating_sub(self.comps_per_line);
@@ -1047,37 +1051,54 @@ impl UserInput {
     }
 }
 
-fn path_completion(mut pattern: &str) -> FuzzyVec {
+fn path_completion(word: &str) -> FuzzyVec {
     // "--prefix=/local/usr" -> ("--prefix=", "/local/usr")
-    let prefix = if pattern.starts_with("-") && pattern.contains('=') {
-        let offset = pattern.find('=').unwrap() + 1;
-        let prefix = &pattern[..offset];
-        pattern = &pattern[offset..];
-        prefix
+    let (pattern, prefix) = if word.starts_with("-") && word.contains('=') {
+        if let Some(offset) = word.find("=~") {
+            (&word[(offset + 1)..], &word[..(offset + 2)])
+        } else {
+            let offset = word.find('=').unwrap() + 1;
+            (&word[offset..], &word[..offset])
+        }
     } else {
-        ""
+        (word, "")
     };
 
-    trace!("path_completion: pattern='{}'", pattern);
-
-    let dir = if pattern.is_empty() {
-        std::env::current_dir().unwrap()
+    let home_dir = dirs::home_dir().unwrap();
+    let current_dir = std::env::current_dir().unwrap();
+    let mut dir = if pattern.is_empty() {
+        current_dir.to_path_buf()
+    } else if pattern.starts_with('~') {
+        home_dir.join(&pattern[1..].trim_start_matches('/'))
     } else {
         PathBuf::from(pattern)
     };
 
+    // "/usr/loca" -> "/usr"
+    dir = if dir.is_dir() {
+        dir
+    } else {
+        dir.pop();
+        if dir.to_str().unwrap().is_empty() {
+            current_dir.to_path_buf()
+        } else {
+            dir
+        }
+    };
+
+    trace!("path_completion: dir={}, pattern='{}'", dir.display(), pattern);
     match fs::read_dir(&dir) {
         Ok(files) => {
             let mut entries = FuzzyVec::new();
             for file in files {
                 let path = file.unwrap().path();
-                let entry = if pattern.starts_with('/') {
-                    path.as_os_str()
+                let (prefix2, relpath) = if pattern.starts_with('~') {
+                    ("/", path.strip_prefix(&home_dir).unwrap())
                 } else {
-                    path.file_name().unwrap_or_else(|| path.as_os_str())
+                    ("", path.strip_prefix(&current_dir).unwrap_or(&path))
                 };
 
-                entries.append(format!("{}{}", prefix, entry.to_str().unwrap()));
+                entries.append(format!("{}{}{}", prefix, prefix2, relpath.to_str().unwrap()));
             }
             entries
         },
