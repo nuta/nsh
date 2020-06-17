@@ -39,21 +39,24 @@ fn handle_escape_sequence(escaped_arg: &str) -> String {
 pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
     let mut no_newline = false;
     let mut escape = false;
+    let mut i = 0;
     let mut skip = 0;
-    if let Some(argv1) = ctx.argv.get(1) {
-        if argv1.starts_with('-') {
+    match ctx.argv.get(1).map(|s| s.as_str()) {
+        Some("-e") => { escape = true; },
+        Some("-n") => { no_newline = true; },
+        Some("-ne") | Some("-en") => {
+            escape = true;
+            no_newline = true;
+        },
+        Some(arg) => {
+            write!(ctx.stdout, "{}", arg).ok();
+            i += 1;
             skip = 1;
-            for ch in argv1.chars().skip(1) {
-                match ch {
-                    'e' => escape = true,
-                    'n' => no_newline = true,
-                    _ => (),
-                }
-            }
         }
+        None => {}
     }
 
-    for (i, escaped_arg) in ctx.argv.iter().skip(1 + skip).enumerate() {
+    for escaped_arg in ctx.argv.iter().skip(1 + skip) {
         let arg = if escape {
             handle_escape_sequence(escaped_arg)
         } else {
@@ -65,6 +68,8 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         } else {
             write!(ctx.stdout, "{}", arg).ok();
         }
+
+        i += 1;
     }
 
     if !no_newline {
