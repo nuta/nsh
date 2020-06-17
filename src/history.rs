@@ -1,5 +1,6 @@
 //! History management.
 use crate::fuzzy::FuzzyVec;
+use crate::theme::ThemeColor;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -50,7 +51,7 @@ impl History {
         self.history.nth_last(nth)
     }
 
-    pub fn search(&self, query: &str) -> Vec<&str> {
+    pub fn search(&self, query: &str) -> Vec<(Option<ThemeColor>, &str)> {
         self.history.search(query)
     }
 

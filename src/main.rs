@@ -40,6 +40,8 @@ mod shell;
 mod highlight;
 mod utils;
 mod variable;
+mod theme;
+mod dircolor;
 
 use crate::process::ExitStatus;
 use crate::variable::Value;
@@ -83,6 +85,11 @@ fn shell_main(opt: Opt) {
     }
 
     let mut shell = crate::shell::Shell::new(&history_path);
+
+    // Import environment variables.
+    for (key, value) in std::env::vars() {
+        shell.set(&key, Value::String(value.to_owned()), false);
+    }
 
     if !opt.norc {
         // Try executing ~/.nshrc

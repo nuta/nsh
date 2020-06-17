@@ -1,10 +1,12 @@
+use crate::theme::ThemeColor;
+
 ///
 /// A ordered `Vec` which supports fuzzy search.
 ///
 #[derive(Clone)]
 pub struct FuzzyVec {
     /// The *unordered* array of a haystack.
-    entries: Vec<String>,
+    entries: Vec<(Option<ThemeColor>, String)>,
 }
 
 impl FuzzyVec {
@@ -22,7 +24,7 @@ impl FuzzyVec {
         }
     }
 
-    pub fn iter(&self) -> std::slice::Iter<String> {
+    pub fn iter(&self) -> std::slice::Iter<(Option<ThemeColor>, String)> {
         self.entries.iter()
     }
 
@@ -47,17 +49,22 @@ impl FuzzyVec {
             return None;
         }
 
-        self.entries.get(self.entries.len() - nth - 1).cloned()
+        self.entries.get(self.entries.len() - nth - 1).map(|(_, s)| s.to_owned())
     }
 
     /// appends a entry.
     pub fn append(&mut self, entry: String) {
-        self.entries.push(entry);
+        self.entries.push((None, entry));
+    }
+
+    /// appends a entry with color.
+    pub fn append_with_color(&mut self, entry: String, color: ThemeColor) {
+        self.entries.push((Some(color), entry));
     }
 
     /// Searches entiries for `query` in a fuzzy way and returns the result
     /// ordered by the similarity.
-    pub fn search(&self, query: &str) -> Vec<&str> {
+    pub fn search(&self, query: &str) -> Vec<(Option<ThemeColor>, &str)> {
         fuzzy_search(&self.entries, query)
     }
 }
@@ -67,10 +74,13 @@ impl FuzzyVec {
 ///
 /// TODO: Implement smart one.
 ///
-fn fuzzy_search<'a>(entries: &'a [String], query: &str) -> Vec<&'a str> {
+fn fuzzy_search<'a>(
+    entries: &'a [(Option<ThemeColor>, String)],
+    query: &str
+) -> Vec<(Option<ThemeColor>, &'a str)> {
     if query.is_empty() {
         // Return the all entries.
-        return entries.iter().map(String::as_str).collect();
+        return entries.iter().map(|(c, s)| (*c, s.as_str())).collect();
     }
 
     /// Check if entries contain the query characters with correct order.
@@ -91,10 +101,10 @@ fn fuzzy_search<'a>(entries: &'a [String], query: &str) -> Vec<&'a str> {
     // Filter entries by the query.
     let mut filtered = entries
         .iter()
-        .filter(|s| is_fuzzily_matched(s, query))
-        .map(String::as_str)
+        .filter(|(_, s)| is_fuzzily_matched(s, query))
+        .map(|(c, s)| (*c, s.as_str()))
         .collect::<Vec<_>>();
-    filtered.sort_by_cached_key(|entry| compute_score(entry, query));
+    filtered.sort_by_cached_key(|entry| compute_score(entry.1, query));
     filtered
 }
 
@@ -120,17 +130,38 @@ mod tests {
     #[test]
     fn test_fuzzy_search() {
         {
-            let entries = &["abc".to_owned(), "bca".to_owned(), "cba".to_owned()];
+            let entries = &[
+                (None, "abc".to_owned()),
+                (None, "bca".to_owned()),
+                (None, "cba".to_owned()),
+            ];
             let query = "bc";
             // "cba" does not contain "bc" with correct order, so "cba" must be removed.
-            assert_eq!(fuzzy_search(entries, query), vec!["bca", "abc"]);
+            assert_eq!(
+                fuzzy_search(entries, query),
+                vec![
+                    (None, "bca"),
+                    (None, "abc")
+                ]
+            );
         }
 
         // Ensure that the exact match takes priority.
         {
-            let entries = &["g++8".to_owned(), "g++9".to_owned(), "g++".to_owned()];
+            let entries = &[
+                (None, "g++8".to_owned()),
+                (None, "g++9".to_owned()),
+                (None, "g++".to_owned()),
+            ];
             let query = "g++";
-            assert_eq!(fuzzy_search(entries, query), vec!["g++", "g++8", "g++9"]);
+            assert_eq!(
+                fuzzy_search(entries, query),
+                vec![
+                    (None, "g++"),
+                    (None, "g++8"),
+                    (None, "g++9"),
+                ]
+            );
         }
     }
 }

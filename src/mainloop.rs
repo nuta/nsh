@@ -1,16 +1,18 @@
 use crate::bash_server::{bash_server, BashRequest};
 use crate::context_parser::{self, InputContext};
 use crate::fuzzy::FuzzyVec;
+use crate::theme::ThemeColor;
 use crate::history::History;
 use crate::process::{check_background_jobs, ExitStatus};
 use crate::prompt::{draw_prompt, parse_prompt};
 use crate::shell::Shell;
 use crate::highlight;
+use crate::dircolor::DirColor;
 use signal_hook::{self, iterator::Signals};
 use std::cmp::{max, min};
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use termion::event::{Event as TermEvent, Key};
 use termion::input::TermRead;
@@ -37,7 +39,7 @@ pub struct Mainloop {
     input_ctx: Option<InputContext>,
     do_complete: bool,
     completions: FuzzyVec,
-    comps_filtered: Vec<String>,
+    comps_filtered: Vec<(Option<ThemeColor>, String)>,
     comps_height: usize,
     comps_per_line: usize,
     comps_show_from: usize,
@@ -46,15 +48,14 @@ pub struct Mainloop {
     columns: usize,
     /// The height of the screen.
     lines: usize,
-
     history_mode: bool,
     hist_selected: usize,
     hist_display_len: usize,
     hist_input_max: usize,
     hist_entries: Vec<String>,
     saved_user_input: UserInput,
-
     notification: Option<String>,
+    dircolor: DirColor,
 }
 
 impl Mainloop {
@@ -85,6 +86,7 @@ impl Mainloop {
             hist_entries: Vec::new(),
             saved_user_input: UserInput::new(),
             notification: None,
+            dircolor: DirColor::new(),
         }
     }
 
@@ -93,9 +95,13 @@ impl Mainloop {
         self.columns = screen_size.0 as usize;
         self.lines = screen_size.1 as usize;
         self.print_prompt();
-        let (tx, rx) = mpsc::channel();
 
+        if let Some(var) = self.shell.get("LS_COLORS") {
+            self.dircolor.load(var.as_str());
+        }
+        
         // Read inputs.
+        let (tx, rx) = mpsc::channel();
         let tx1 = tx.clone();
         std::thread::spawn(move || {
             let stdin = io::stdin();
@@ -480,7 +486,7 @@ impl Mainloop {
         if self.completion_mode() {
             // Determine the number of columns and its width of completions.
             let mut longest = 0;
-            for comp in self.completions.iter() {
+            for (_, comp) in self.completions.iter() {
                 longest = max(longest, comp.len());
             }
 
@@ -502,7 +508,7 @@ impl Mainloop {
             // Print completions.
             let mut remaining = self.comps_filtered.len() - self.comps_show_from;
             let iter = self.comps_filtered.iter().skip(self.comps_show_from);
-            for (i, comp) in iter.enumerate() {
+            for (i, (color, comp)) in iter.enumerate() {
                 if i % num_columns == 0 {
                     if comps_height == comps_height_max - 1 {
                         break;
@@ -524,10 +530,26 @@ impl Mainloop {
                     )
                     .ok();
                 } else {
+                    match color {
+                        Some(ThemeColor::DirColor) => {
+                            let path = match parse_assign_like_argument(comp) {
+                                Some((_, pattern)) => pattern,
+                                None => comp,
+                            };
+
+                            self.dircolor.write(
+                                &mut self.stdout,
+                                Path::new(path)
+                            ).ok();
+                        }
+                        _ => {}
+                    }
+
                     write!(
                         self.stdout,
-                        "{}{}",
+                        "{}{}{}",
                         truncate(comp, self.columns),
+                        termion::style::Reset,
                         termion::cursor::Right(margin as u16)
                     )
                     .ok();
@@ -588,7 +610,7 @@ impl Mainloop {
             .completions
             .search(self.input.current_word())
             .iter()
-            .map(|s| s.to_string())
+            .map(|(c, s)| (*c, s.to_string()))
             .collect();
         self.comp_selected =
             min(self.comp_selected, self.comps_filtered.len().saturating_sub(1));
@@ -596,7 +618,7 @@ impl Mainloop {
 
     fn select_completion(&mut self) {
         let selected = self.comps_filtered.get(self.comp_selected).unwrap();
-        let offset = self.input.replace_current_word(selected);
+        let offset = self.input.replace_current_word(&selected.1);
         self.input.move_to(offset);
         self.clear_completions();
     }
@@ -755,7 +777,7 @@ impl Mainloop {
             .history()
             .search(self.input.as_str())
             .iter()
-            .map(|s| s.to_string())
+            .map(|(_, s)| s.to_string())
             .collect();
 
         let max = min(self.hist_display_len, self.hist_entries.len());
@@ -1051,18 +1073,23 @@ impl UserInput {
     }
 }
 
-fn path_completion(word: &str) -> FuzzyVec {
-    // "--prefix=/local/usr" -> ("--prefix=", "/local/usr")
-    let (pattern, prefix) = if word.starts_with("-") && word.contains('=') {
-        if let Some(offset) = word.find("=~") {
-            (&word[(offset + 1)..], &word[..(offset + 2)])
+/// Parses "--prefix=/local/usr" into ("--prefix=", "/local/usr").
+fn parse_assign_like_argument(arg: &str) -> Option<(&str, &str)> {
+    if arg.contains('=') {
+        if let Some(offset) = arg.find("=~") {
+            Some((&arg[..(offset + 2)], &arg[(offset + 1)..]))
         } else {
-            let offset = word.find('=').unwrap() + 1;
-            (&word[offset..], &word[..offset])
+            let offset = arg.find('=').unwrap() + 1;
+            Some((&arg[..offset], &arg[offset..]))
         }
     } else {
-        (word, "")
-    };
+        None
+    }
+}
+
+fn path_completion(word: &str) -> FuzzyVec {
+    let (prefix, pattern) =
+        parse_assign_like_argument(word).unwrap_or((word, ""));
 
     let home_dir = dirs::home_dir().unwrap();
     let current_dir = std::env::current_dir().unwrap();
@@ -1098,7 +1125,9 @@ fn path_completion(word: &str) -> FuzzyVec {
                     ("", path.strip_prefix(&current_dir).unwrap_or(&path))
                 };
 
-                entries.append(format!("{}{}{}", prefix, prefix2, relpath.to_str().unwrap()));
+                let comp =
+                    format!("{}{}{}", prefix, prefix2, relpath.to_str().unwrap());
+                entries.append_with_color(comp, ThemeColor::DirColor);
             }
             entries
         },
