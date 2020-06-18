@@ -2,6 +2,7 @@
 //! this returns an syntax array (rather than syntax tree) which makes it easy to
 //! implement context-aware stuffs such as completion and syntax highlighting.
 use std::collections::VecDeque;
+use std::ops::Range;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum BlockType {
@@ -105,7 +106,7 @@ pub struct InputContext {
     // Primarily used by completion to extract and replace the current word
     // string. It is `None` if the cursor is not at a literal-like `Span` such
     // as `Span::Param`, CmdSubstStart, etc.
-    pub current_literal: Option<std::ops::Range<usize>>,
+    pub current_literal: Option<Range<usize>>,
     // The index of the word where the cursor is at in `words` (`$COMP_CWORD`).
     pub current_word: usize,
     // The index of the span where the cursor is at in `words`.
@@ -333,6 +334,11 @@ impl ContextParser {
                 (Some(ch), _) => {
                     buf.push(ch);
                     self.index += 1;
+                    if ch == '=' {
+                        // An assign-like argument like `--prefix=/usr` is
+                        // spilitted into `--prefix=` and `/usr`.
+                        break;
+                    }
                 }
                 (None, _) => {
                     break;
@@ -443,6 +449,19 @@ impl ContextParser {
             }
         }
 
+        // If the cursor is at end of input, add a empty span for completion.
+        if self.cursor == self.input.len() {
+            match spans.last() {
+                Some(Span::Literal(s)) | Some(Span::Argv0(s))
+                    if !s.ends_with('=') => {}
+                _ => {
+                    spans.push(Span::Literal("".to_owned()));
+                    current_literal = Some(self.cursor..self.cursor);
+                    current_span = Some(spans.len() - 1);
+                }
+            }
+        }
+
         trace!("words={:?}, current_word={}, spans={:?}",
                words, words[current_word_index], spans);
 
@@ -476,14 +495,34 @@ mod tests {
         assert_eq!(
             parse(&input, cursor),
             InputContext {
-                spans: vec![],
+                spans: vec![
+                    Span::Literal("".to_owned()),
+                ],
                 nested: vec![],
-                current_literal: None,
+                current_literal: Some(0..0),
                 input,
                 cursor,
                 words: vec!["".to_owned()],
                 current_word: 0,
-                current_span: None,
+                current_span: Some(0),
+            }
+        );
+
+        let input = "git".to_owned();
+        let cursor = 3;
+        assert_eq!(
+            parse(&input, cursor),
+            InputContext {
+                spans: vec![
+                    Span::Argv0("git".to_owned()),
+                ],
+                nested: vec![],
+                current_literal: Some(0..3),
+                input,
+                cursor,
+                words: vec!["git".to_owned()],
+                current_word: 0,
+                current_span: Some(0),
             }
         );
 
@@ -517,7 +556,7 @@ mod tests {
         );
 
         let input = "git co ".to_owned();
-        let cursor = 7; /* after `o` */
+        let cursor = 6; /* after `o` */
         assert_eq!(
             parse(&input, cursor),
             InputContext {
@@ -530,10 +569,10 @@ mod tests {
                 input,
                 cursor,
                 nested: vec![],
-                current_literal: None,
-                words: vec!["git".to_owned(), "co".to_owned(), "".to_owned(),],
-                current_word: 2,
-                current_span: None,
+                current_literal: Some(4..6),
+                words: vec!["git".to_owned(), "co".to_owned()],
+                current_word: 1,
+                current_span: Some(2),
             }
         );
 
@@ -646,14 +685,15 @@ mod tests {
                     Span::CmdSubstStart,
                     Span::Argv0("echo".to_owned()),
                     Span::Space(" ".to_owned()),
+                    Span::Literal("".to_owned()),
                 ],
                 input,
                 cursor,
                 nested: vec![BlockType::ParamExpand, BlockType::CmdSubst],
-                current_literal: None,
+                current_literal: Some(25..25),
                 words: vec!["echo".to_owned(), "".to_owned()],
                 current_word: 1,
-                current_span: None,
+                current_span: Some(10),
             }
         );
 
@@ -683,6 +723,57 @@ mod tests {
                 words: vec!["yes".to_owned(),],
                 current_word: 0,
                 current_span: Some(2),
+            }
+        );
+    }
+
+    #[test]
+    fn assign_like_argument() {
+        let input = "./configure --prefix=".to_owned();
+        let cursor = input.len();
+        assert_eq!(
+            parse(&input, cursor),
+            InputContext {
+                spans: vec![
+                    Span::Argv0("./configure".to_owned()),
+                    Span::Space(" ".to_owned()),
+                    Span::Literal("--prefix=".to_owned()),
+                    Span::Literal("".to_owned()),
+                ],
+                input,
+                cursor,
+                nested: vec![],
+                current_literal: Some(21..21),
+                words: vec![
+                    "./configure".to_owned(),
+                    "--prefix=".to_owned(),
+                ],
+                current_word: 1,
+                current_span: Some(3),
+            }
+        );
+
+        let input = "./configure --prefix=~/dev".to_owned();
+        let cursor = input.len();
+        assert_eq!(
+            parse(&input, cursor),
+            InputContext {
+                spans: vec![
+                    Span::Argv0("./configure".to_owned()),
+                    Span::Space(" ".to_owned()),
+                    Span::Literal("--prefix=".to_owned()),
+                    Span::Literal("~/dev".to_owned()),
+                ],
+                input,
+                cursor,
+                nested: vec![],
+                current_literal: Some(21..26),
+                words: vec![
+                    "./configure".to_owned(),
+                    "--prefix=~/dev".to_owned(),
+                ],
+                current_word: 1,
+                current_span: Some(3),
             }
         );
     }
