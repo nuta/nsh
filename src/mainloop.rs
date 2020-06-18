@@ -214,10 +214,7 @@ impl Mainloop {
             }
             Event::NoCompletion => {
                 trace!("completion not found, using path finder instead");
-                let pattern = self.input_ctx
-                    .as_ref()
-                    .map(|ctx| ctx.words[ctx.current_word].as_str())
-                    .unwrap_or("");
+                let pattern = self.current_span_text().unwrap_or("");
                 let entries = path_completion(pattern);
                 self.update_completion_entries(entries);
             }
@@ -602,25 +599,25 @@ impl Mainloop {
     }
 
     fn filter_completion_entries(&mut self) {
-        match self.current_span() {
-            Some(context_parser::Span::Literal(query)) => {
-                self.comps_filtered = self
-                    .completions
-                    .search(query)
-                    .iter()
-                    .map(|(c, s)| (*c, s.to_string()))
-                    .collect();
-                self.comp_selected =
-                    min(self.comp_selected, self.comps_filtered.len().saturating_sub(1));
-            }
-            _ => {}
-        }
+        self.comps_filtered = self
+            .completions
+            .search(self.current_span_text().unwrap_or(""))
+            .iter()
+            .map(|(c, s)| (*c, s.to_string()))
+            .collect();
+        self.comp_selected =
+            min(self.comp_selected, self.comps_filtered.len().saturating_sub(1));
     }
 
-    fn current_span(&self) -> Option<&context_parser::Span> {
+    fn current_span_text(&self) -> Option<&str> {
         if let Some(input_ctx) = &self.input_ctx {
             if let Some(current_span_index) = input_ctx.current_span {
-                return Some(&input_ctx.spans[current_span_index]);
+                match &input_ctx.spans[current_span_index] {
+                    context_parser::Span::Literal(literal) => {
+                        return Some(literal);
+                    }
+                    _ => {}
+                };
             }
         }
 
@@ -638,8 +635,7 @@ impl Mainloop {
     fn select_completion(&mut self) {
         if let Some(current_span) = self.current_literal() {
             let selected = self.comps_filtered.get(self.comp_selected).unwrap();
-            let offset = self.input.replace_range(current_span, &selected.1);
-            self.input.move_to(offset);
+            self.input.replace_range(current_span, &selected.1);
             self.clear_completions();
         }
     }
@@ -924,14 +920,11 @@ impl UserInput {
         self.indices.clear();
     }
 
-    pub fn replace_range(&mut self, range: Range<usize>, replace_with: &str) -> usize {
+    pub fn replace_range(&mut self, range: Range<usize>, replace_with: &str) {
         let cursor = range.start + replace_with.len();
         self.input.replace_range(range, replace_with);
-        cursor
-    }
-
-    pub fn move_to(&mut self, offset: usize) {
-        self.cursor = offset;
+        self.indices.clear();
+        self.cursor = cursor;
     }
 
     pub fn move_by(&mut self, offset: isize) {
