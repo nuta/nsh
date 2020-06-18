@@ -52,6 +52,7 @@ pub fn bash_server(tx_event: mpsc::Sender<Event>) -> mpsc::Sender<BashRequest> {
 }
 
 static COMP_DIRS: &[&str] = &[
+    "/usr/share/bash-completion/completions",
     "/usr/local/etc/bash_completion.d",
     "/usr/etc/bash_completion.d",
     "/etc/bash_completion.d",
