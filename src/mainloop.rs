@@ -14,6 +14,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use std::ops::Range;
 use termion::event::{Event as TermEvent, Key};
 use termion::input::TermRead;
 use termion::raw::{IntoRawMode, RawTerminal};
@@ -532,14 +533,9 @@ impl Mainloop {
                 } else {
                     match color {
                         Some(ThemeColor::DirColor) => {
-                            let path = match parse_assign_like_argument(comp) {
-                                Some((_, pattern)) => pattern,
-                                None => comp,
-                            };
-
                             self.dircolor.write(
                                 &mut self.stdout,
-                                Path::new(path)
+                                Path::new(comp)
                             ).ok();
                         }
                         _ => {}
@@ -606,21 +602,46 @@ impl Mainloop {
     }
 
     fn filter_completion_entries(&mut self) {
-        self.comps_filtered = self
-            .completions
-            .search(self.input.current_word())
-            .iter()
-            .map(|(c, s)| (*c, s.to_string()))
-            .collect();
-        self.comp_selected =
-            min(self.comp_selected, self.comps_filtered.len().saturating_sub(1));
+        match self.current_span() {
+            Some(context_parser::Span::Literal(query)) => {
+                self.comps_filtered = self
+                    .completions
+                    .search(query)
+                    .iter()
+                    .map(|(c, s)| (*c, s.to_string()))
+                    .collect();
+                self.comp_selected =
+                    min(self.comp_selected, self.comps_filtered.len().saturating_sub(1));
+            }
+            _ => {}
+        }
+    }
+
+    fn current_span(&self) -> Option<&context_parser::Span> {
+        if let Some(input_ctx) = &self.input_ctx {
+            if let Some(current_span_index) = input_ctx.current_span {
+                return Some(&input_ctx.spans[current_span_index]);
+            }
+        }
+
+        None
+    }
+
+    fn current_literal(&self) -> Option<Range<usize>> {
+        if let Some(input_ctx) = &self.input_ctx {
+            return input_ctx.current_literal.clone();
+        }
+
+        None
     }
 
     fn select_completion(&mut self) {
-        let selected = self.comps_filtered.get(self.comp_selected).unwrap();
-        let offset = self.input.replace_current_word(&selected.1);
-        self.input.move_to(offset);
-        self.clear_completions();
+        if let Some(current_span) = self.current_literal() {
+            let selected = self.comps_filtered.get(self.comp_selected).unwrap();
+            let offset = self.input.replace_range(current_span, &selected.1);
+            self.input.move_to(offset);
+            self.clear_completions();
+        }
     }
 
     fn hide_completions(&mut self) {
@@ -903,49 +924,10 @@ impl UserInput {
         self.indices.clear();
     }
 
-    fn current_word_range(&self) -> std::ops::Range<usize> {
-        if self.is_empty() {
-            return std::ops::Range { start: 0, end: 0 };
-        }
-
-        let mut start = self.cursor;
-        while start > 0 && self.nth(start - 1).unwrap() != ' ' {
-            start -= 1;
-        }
-
-        let mut end = start;
-        while let Some(ch) = self.nth(end) {
-            if ch == ' ' {
-                break;
-            }
-            end += 1;
-        }
-
-        std::ops::Range {
-            start: self
-                .indices
-                .get(start)
-                .copied()
-                .unwrap_or_else(|| self.input.len()),
-            end: self
-                .indices
-                .get(end)
-                .copied()
-                .unwrap_or_else(|| self.input.len()),
-        }
-    }
-
-    pub fn current_word(&self) -> &str {
-        &self.input[self.current_word_range()]
-    }
-
-    pub fn replace_current_word(&mut self, replace_with: &str) -> usize {
-        let range = self.current_word_range();
-        let start = range.start;
+    pub fn replace_range(&mut self, range: Range<usize>, replace_with: &str) -> usize {
+        let cursor = range.start + replace_with.len();
         self.input.replace_range(range, replace_with);
-        self.update_indices();
-
-        start + replace_with.len()
+        cursor
     }
 
     pub fn move_to(&mut self, offset: usize) {
@@ -1073,24 +1055,7 @@ impl UserInput {
     }
 }
 
-/// Parses "--prefix=/local/usr" into ("--prefix=", "/local/usr").
-fn parse_assign_like_argument(arg: &str) -> Option<(&str, &str)> {
-    if arg.contains('=') {
-        if let Some(offset) = arg.find("=~") {
-            Some((&arg[..(offset + 2)], &arg[(offset + 1)..]))
-        } else {
-            let offset = arg.find('=').unwrap() + 1;
-            Some((&arg[..offset], &arg[offset..]))
-        }
-    } else {
-        None
-    }
-}
-
-fn path_completion(word: &str) -> FuzzyVec {
-    let (prefix, pattern) =
-        parse_assign_like_argument(word).unwrap_or((word, ""));
-
+fn path_completion(pattern: &str) -> FuzzyVec {
     let home_dir = dirs::home_dir().unwrap();
     let current_dir = std::env::current_dir().unwrap();
     let mut dir = if pattern.is_empty() {
@@ -1119,14 +1084,14 @@ fn path_completion(word: &str) -> FuzzyVec {
             let mut entries = FuzzyVec::new();
             for file in files {
                 let path = file.unwrap().path();
-                let (prefix2, relpath) = if pattern.starts_with('~') {
-                    ("/", path.strip_prefix(&home_dir).unwrap())
+                let (prefix, relpath) = if pattern.starts_with('~') {
+                    ("~/", path.strip_prefix(&home_dir).unwrap())
                 } else {
                     ("", path.strip_prefix(&current_dir).unwrap_or(&path))
                 };
 
                 let comp =
-                    format!("{}{}{}", prefix, prefix2, relpath.to_str().unwrap());
+                    format!("{}{}", prefix, relpath.to_str().unwrap());
                 entries.append_with_color(comp, ThemeColor::DirColor);
             }
             entries
@@ -1185,42 +1150,5 @@ impl HistorySelector {
         if self.offset > 0 {
             self.offset -= 1;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_user_input() {
-        let mut i = UserInput::new();
-        assert_eq!(i.current_word_range(), (0..0));
-
-        // a
-        //  ^
-        i.insert('a');
-        assert_eq!(i.current_word_range(), (0..1));
-
-        // ab
-        //   ^
-        i.insert('b');
-        assert_eq!(i.current_word_range(), (0..2));
-
-        // ab_
-        //    ^
-        i.insert(' ');
-        assert_eq!(i.current_word_range(), (3..3));
-
-        // ab_c
-        //    ^
-        i.insert('c');
-        i.move_by(-1);
-        assert_eq!(i.current_word_range(), (3..4));
-
-        // ab_c
-        //   ^
-        i.move_by(-1);
-        assert_eq!(i.current_word_range(), (0..2));
     }
 }

@@ -333,6 +333,11 @@ impl ContextParser {
                 (Some(ch), _) => {
                     buf.push(ch);
                     self.index += 1;
+                    if ch == '=' {
+                        // An assign-like argument like `--prefix=/usr` is
+                        // spilitted into `--prefix=` and `/usr`.
+                        break;
+                    }
                 }
                 (None, _) => {
                     break;
@@ -683,6 +688,33 @@ mod tests {
                 words: vec!["yes".to_owned(),],
                 current_word: 0,
                 current_span: Some(2),
+            }
+        );
+    }
+
+    #[test]
+    fn assign_like_argument() {
+        let input = "./configure --prefix=~/dev".to_owned();
+        let cursor = input.len();
+        assert_eq!(
+            parse(&input, cursor),
+            InputContext {
+                spans: vec![
+                    Span::Argv0("./configure".to_owned()),
+                    Span::Space(" ".to_owned()),
+                    Span::Literal("--prefix=".to_owned()),
+                    Span::Literal("~/dev".to_owned()),
+                ],
+                input,
+                cursor,
+                nested: vec![],
+                current_literal: Some(21..26),
+                words: vec![
+                    "./configure".to_owned(),
+                    "--prefix=~/dev".to_owned(),
+                ],
+                current_word: 1,
+                current_span: Some(3),
             }
         );
     }
