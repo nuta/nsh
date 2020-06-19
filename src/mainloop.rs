@@ -37,7 +37,7 @@ pub struct Mainloop {
     input: UserInput,
     clear_above: usize,
     clear_below: usize,
-    input_ctx: Option<InputContext>,
+    input_ctx: InputContext,
     do_complete: bool,
     completions: FuzzyVec,
     comps_filtered: Vec<(Option<ThemeColor>, String)>,
@@ -68,7 +68,7 @@ impl Mainloop {
             input: UserInput::new(),
             clear_above: 0,
             clear_below: 0,
-            input_ctx: None,
+            input_ctx: context_parser::parse("", 0),
             do_complete: false,
             completions: FuzzyVec::new(),
             comps_filtered: Vec::new(),
@@ -100,7 +100,7 @@ impl Mainloop {
         if let Some(var) = self.shell.get("LS_COLORS") {
             self.dircolor.load(var.as_str());
         }
-        
+
         // Read inputs.
         let (tx, rx) = mpsc::channel();
         let tx1 = tx.clone();
@@ -151,30 +151,34 @@ impl Mainloop {
             }
 
             if self.do_complete {
-                // TODO: Don't wrap self.input_ctx with Option and use Span::Argv0
-                // for command name completion.
-                match self.input_ctx.clone() {
-                    Some(mut ctx) if ctx.words.len() > 1 => {
-                        // Resolve aliased command names.
-                        if let Some(alias) = self.shell.lookup_alias(&ctx.words[0]) {
-                            // The alias should be a single word.
-                            if !alias.contains(' ') {
-                                ctx.words[0] = alias;
-                            }
-                        }
+                let is_argv0 = if let Some(current_span) = self.input_ctx.current_span {
+                    match &self.input_ctx.spans[current_span] {
+                        context_parser::Span::Argv0(_) => true,
+                        _ => false,
+                    }
+                } else {
+                    false
+                };
 
-                        tx_bash
-                            .send(BashRequest::Complete {
-                                words: ctx.words,
-                                current_word: ctx.current_word,
-                            })
-                            .ok();
+                if is_argv0 {
+                    // Command name completion.
+                    let comps = self.shell.path_table().fuzzy_vec().clone();
+                    tx.send(Event::Completion(comps)).ok();
+                } else {
+                    // Resolve aliased command names.
+                    if let Some(alias) = self.shell.lookup_alias(&self.input_ctx.words[0]) {
+                        // The alias should be a single word.
+                        if !alias.contains(' ') {
+                            self.input_ctx.words[0] = alias;
+                        }
                     }
-                    _ => {
-                        // Command name completion.
-                        let comps = self.shell.path_table().fuzzy_vec().clone();
-                        tx.send(Event::Completion(comps)).ok();
-                    }
+
+                    tx_bash
+                        .send(BashRequest::Complete {
+                            words: self.input_ctx.words.clone(),
+                            current_word: self.input_ctx.current_word,
+                        })
+                        .ok();
                 }
 
                 self.do_complete = false;
@@ -359,6 +363,8 @@ impl Mainloop {
         }
 
         if needs_redraw {
+            self.input_ctx
+                = context_parser::parse(self.input.as_str(), self.input.cursor());
             self.filter_completion_entries();
             self.print_user_input();
         }
@@ -442,12 +448,8 @@ impl Mainloop {
             .ok();
         }
 
-        // Parse and highlight the input.
-        let c = context_parser::parse(self.input.as_str(), self.input.cursor());
-        let h = highlight::highlight(&c, &mut self.shell);
-        self.input_ctx = Some(c);
-
         // Print the highlighted input.
+        let h = highlight::highlight(&self.input_ctx, &mut self.shell);
         write!(
             self.stdout,
             "\r{}{}{}",
@@ -555,7 +557,8 @@ impl Mainloop {
                 comps_height += 2;
                 write!(
                     self.stdout,
-                    "\r\n{} {} more {}",
+                    "{}\r\n{} {} more {}",
+                    termion::clear::AfterCursor,
                     termion::style::Invert,
                     remaining,
                     termion::style::Reset,
@@ -594,7 +597,7 @@ impl Mainloop {
         if self.comps_filtered.len() == 1 {
             self.select_completion();
         }
-        
+
         self.print_user_input();
     }
 
@@ -610,33 +613,23 @@ impl Mainloop {
     }
 
     fn current_span_text(&self) -> Option<&str> {
-        if let Some(input_ctx) = &self.input_ctx {
-            if let Some(current_span_index) = input_ctx.current_span {
-                match &input_ctx.spans[current_span_index] {
-                    context_parser::Span::Literal(literal)
-                    | context_parser::Span::Argv0(literal) => {
-                        return Some(literal);
-                    }
-                    _ => {}
-                };
-            }
-        }
-
-        None
-    }
-
-    fn current_literal(&self) -> Option<Range<usize>> {
-        if let Some(input_ctx) = &self.input_ctx {
-            return input_ctx.current_literal.clone();
+        if let Some(current_span_index) = self.input_ctx.current_span {
+            match &self.input_ctx.spans[current_span_index] {
+                context_parser::Span::Literal(literal)
+                | context_parser::Span::Argv0(literal) => {
+                    return Some(literal);
+                }
+                _ => {}
+            };
         }
 
         None
     }
 
     fn select_completion(&mut self) {
-        if let Some(current_span) = self.current_literal() {
+        if let Some(current_span) = &self.input_ctx.current_literal {
             let selected = self.comps_filtered.get(self.comp_selected).unwrap();
-            self.input.replace_range(current_span, &selected.1);
+            self.input.replace_range(current_span.clone(), &selected.1);
             self.clear_completions();
         }
     }
