@@ -455,7 +455,11 @@ impl ContextParser {
                 Some(Span::Literal(s)) | Some(Span::Argv0(s))
                     if !s.ends_with('=') => {}
                 _ => {
-                    spans.push(Span::Literal("".to_owned()));
+                    if self.cursor == 0 {
+                        spans.push(Span::Argv0("".to_owned()));
+                    } else {
+                        spans.push(Span::Literal("".to_owned()));
+                    }
                     current_literal = Some(self.cursor..self.cursor);
                     current_span = Some(spans.len() - 1);
                 }
@@ -496,7 +500,7 @@ mod tests {
             parse(&input, cursor),
             InputContext {
                 spans: vec![
-                    Span::Literal("".to_owned()),
+                    Span::Argv0("".to_owned()),
                 ],
                 nested: vec![],
                 current_literal: Some(0..0),
