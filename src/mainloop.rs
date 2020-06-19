@@ -2,7 +2,7 @@ use crate::bash_server::{bash_server, BashRequest};
 use crate::context_parser::{self, InputContext};
 use crate::fuzzy::FuzzyVec;
 use crate::theme::ThemeColor;
-use crate::history::History;
+use crate::history::HistorySelector;
 use crate::process::{check_background_jobs, ExitStatus};
 use crate::prompt::{draw_prompt, parse_prompt};
 use crate::shell::Shell;
@@ -1093,56 +1093,6 @@ fn path_completion(pattern: &str) -> FuzzyVec {
         Err(err) => {
             warn!("failed to readdir '{}': {}", dir.display(), err);
             FuzzyVec::new()
-        }
-    }
-}
-
-struct HistorySelector {
-    offset: usize,
-    input: String,
-}
-
-impl HistorySelector {
-    pub fn new() -> HistorySelector {
-        HistorySelector {
-            offset: 0,
-            input: String::new(),
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.offset = 0;
-    }
-
-    /// Returns None if `self.offset` is 0 otherwise `self.offset - 1`th entry.
-    pub fn current(&self, history: &History) -> String {
-        if self.offset == 0 {
-            //  Reached to the end of histories. Restore the saved state.
-            self.input.clone()
-        } else {
-            history.nth_last(self.offset - 1).unwrap()
-        }
-    }
-
-    /// Selects the previous history entry. Save the current user (not yet executed)
-    /// input if needed.
-    pub fn prev(&mut self, history: &History, input: &str) {
-        if self.offset == 0 {
-            // Entering the history selection. Save the current state.state.
-            self.input = input.to_string();
-        }
-
-        let hist_len = history.len();
-        self.offset += 1;
-        if self.offset >= hist_len {
-            self.offset = hist_len;
-        }
-    }
-
-    /// Select the next history entry.
-    pub fn next(&mut self) {
-        if self.offset > 0 {
-            self.offset -= 1;
         }
     }
 }
