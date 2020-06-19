@@ -485,7 +485,7 @@ impl Mainloop {
             // Determine the number of columns and its width of completions.
             let mut longest = 0;
             for (_, comp) in self.completions.iter() {
-                longest = max(longest, comp.len());
+                longest = max(longest, comp.len() + 1);
             }
 
             let num_columns = max(1, self.columns / longest);
