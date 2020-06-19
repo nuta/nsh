@@ -1088,6 +1088,7 @@ fn path_completion(pattern: &str) -> FuzzyVec {
                     format!("{}{}", prefix, relpath.to_str().unwrap());
                 entries.append_with_color(comp, ThemeColor::DirColor);
             }
+            entries.sort();
             entries
         },
         Err(err) => {

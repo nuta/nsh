@@ -67,6 +67,11 @@ impl FuzzyVec {
     pub fn search(&self, query: &str) -> Vec<(Option<ThemeColor>, &str)> {
         fuzzy_search(&self.entries, query)
     }
+
+    /// Sorts the entries by string values.
+    pub fn sort(&mut self) {
+        self.entries.sort_by(|(_, a), (_, b)| a.cmp(b));
+    }
 }
 
 /// Searches `entiries` for `query` in *fuzzy* way and returns the result
