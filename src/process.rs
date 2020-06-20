@@ -288,7 +288,7 @@ pub fn wait_for_job(shell: &mut Shell, job: &Rc<Job>) -> ProcessState {
             state.unwrap()
         }
         Some(ProcessState::Stopped(_)) => {
-            eprintln!("[{}] Stopped: {}", job.id, job.cmd);
+            print_err!("[{}] Stopped: {}", job.id, job.cmd);
             state.unwrap()
         }
         _ => unreachable!(),
@@ -394,7 +394,7 @@ pub fn run_external_command(
         match shell.path_table().lookup(&argv[0]) {
             Some(path) => CString::new(path)?,
             None => {
-                eprintln!("nsh: command not found `{}'", argv[0]);
+                print_err!("command not found `{}'", argv[0]);
                 return Ok(ExitStatus::ExitedWith(1));
             }
         }
@@ -460,7 +460,7 @@ pub fn run_external_command(
                 match value {
                     Value::String(s) => std::env::set_var(&assignment.name, s),
                     Value::Array(_) => {
-                        eprintln!("nsh: Array assignments in a command is not supported.");
+                        print_err!("Array assignments in a command is not supported.");
                         std::process::exit(1);
                     }
                     Value::Function(_) => (),
@@ -472,12 +472,12 @@ pub fn run_external_command(
                     unreachable!();
                 }
                 Err(nix::Error::Sys(nix::errno::Errno::EACCES)) => {
-                    eprintln!("nsh: Failed to exec {:?} (EACCESS). chmod(1) may help.",
+                    print_err!("Failed to exec {:?} (EACCESS). chmod(1) may help.",
                         argv0);
                     std::process::exit(1);
                 }
                 Err(err) => {
-                    eprintln!("nsh: Failed to exec {:?} ({})", argv0, err);
+                    print_err!("Failed to exec {:?} ({})", argv0, err);
                     std::process::exit(1);
                 }
             }

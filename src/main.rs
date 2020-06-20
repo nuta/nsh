@@ -22,6 +22,8 @@ extern crate pretty_assertions;
 #[cfg(test)]
 extern crate test;
 
+#[macro_use]
+mod macros;
 mod bash_server;
 mod builtins;
 mod context_parser;
@@ -117,7 +119,7 @@ fn shell_main(opt: Opt) {
         }
         (_, _) => {
             if !shell.interactive() {
-                eprintln!("nsh: warning: stdout is not a tty");
+                print_err!("warning: stdout is not a tty");
                 exit(0);
             }
 
@@ -128,7 +130,7 @@ fn shell_main(opt: Opt) {
     match status {
         ExitStatus::ExitedWith(status) => exit(status),
         ExitStatus::Running(_) => {
-            eprintln!("nsh: warning: some jobs are running in background");
+            print_err!("warning: some jobs are running in background");
             exit(0);
         }
         ExitStatus::NoExec => exit(0),
@@ -168,9 +170,9 @@ fn main() {
         error!("{}", info);
         error!("{:#?}", backtrace::Backtrace::new());
 
-        eprintln!("{}", info);
-        eprintln!("{:#?}", backtrace::Backtrace::new());
-        eprintln!("nsh: Something went wrong. Check out ~/.nsh.log and please file this bug on GitHub: https://github.com/nuta/nsh/issues")
+        print_err!("{}", info);
+        print_err!("{:#?}", backtrace::Backtrace::new());
+        print_err!("Something went wrong. Check out ~/.nsh.log and please file this bug on GitHub: https://github.com/nuta/nsh/issues")
     }));
 
     let opt = Opt::from_args();

@@ -402,7 +402,7 @@ impl Mainloop {
         let (prompt_str, prompt_len) = match parse_prompt(prompt_fmt) {
             Ok(fmt) => draw_prompt(&fmt),
             Err(err) => {
-                eprintln!("nsh: failed to parse $PROMPT: {}", err);
+                print_err!("failed to parse $PROMPT: {}", err);
                 ("$ ".to_owned(), 2)
             }
         };

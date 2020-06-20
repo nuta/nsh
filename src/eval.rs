@@ -188,7 +188,7 @@ fn run_local_command(
     declarations: &[parser::LocalDeclaration],
 ) -> Result<ExitStatus> {
     if shell.in_global_frame() {
-        eprintln!("nsh: local variable can only be used in a function");
+        print_err!("local variable can only be used in a function");
         Ok(ExitStatus::ExitedWith(1))
     } else {
         for decl in declarations {
@@ -539,7 +539,7 @@ fn run_pipeline(
                     .downcast_ref::<NoMatchesError>()
                     .is_some()
                 {
-                    eprintln!("nsh: error: no matches");
+                    print_err!("error: no matches");
                     last_result = Some(ExitStatus::ExitedWith(1));
                     break;
                 }

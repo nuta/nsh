@@ -130,7 +130,7 @@ pub fn expand_param(
     match op {
         ExpansionOp::Length => {
             if shell.nounset {
-                eprintln!("nsh: undefined variable `{}'", name);
+                print_err!("undefined variable `{}'", name);
                 std::process::exit(1);
             }
 
@@ -138,7 +138,7 @@ pub fn expand_param(
         }
         ExpansionOp::GetOrEmpty => {
             if shell.nounset {
-                eprintln!("nsh: undefined variable `{}'", name);
+                print_err!("undefined variable `{}'", name);
                 std::process::exit(1);
             }
 
@@ -202,7 +202,7 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
             }
             Span::Tilde(user) => {
                 if user.is_some() {
-                    eprintln!("nsh: warning: ~user is not yet supported");
+                    print_err!("warning: ~user is not yet supported");
                 }
 
                 let dir = dirs::home_dir().unwrap().to_str().unwrap().to_owned();
@@ -217,7 +217,7 @@ pub fn expand_word_into_vec(shell: &mut Shell, word: &Word, ifs: &str) -> Result
                 let output = std::str::from_utf8(&raw_stdout)
                     .map_err(|err| {
                         // TODO: support binary output
-                        eprintln!("nsh: binary in variable/expansion is not supported");
+                        print_err!("binary in variable/expansion is not supported");
                         err
                     })?
                     .trim_end_matches('\n')

@@ -25,7 +25,7 @@ impl History {
                             history.append(cmd.to_string());
                         }
                         (None, false) => {
-                            eprintln!(
+                            print_err!(
                                 "nsh: warning: failed to parse ~/.nsh_history: at line {}",
                                 i + 1
                             );

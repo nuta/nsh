@@ -355,7 +355,7 @@ impl Shell {
                 ExitStatus::ExitedWith(0)
             }
             Err(parser::ParseError::Fatal(err)) => {
-                eprintln!("nsh: parse error: {}", err);
+                print_err!("parse error: {}", err);
                 ExitStatus::ExitedWith(-1)
             }
         }
