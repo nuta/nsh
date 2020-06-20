@@ -197,9 +197,9 @@ impl Mainloop {
         self.completions.clear();
     }
 
-    fn notify(&mut self, msg: String) {
+    fn notify(&mut self, msg: &str) {
         trace!("notify: {}", msg);
-        self.notification = Some(msg);
+        self.notification = Some(msg.to_owned());
     }
 
     fn handle_event(&mut self, ev: Event) {
@@ -220,11 +220,14 @@ impl Mainloop {
                 trace!("completion not found, using path finder instead");
                 let pattern = self.current_span_text().unwrap_or("");
                 let entries = path_completion(pattern);
+                if entries.is_empty() {
+                    self.notify("completion: no files");
+                }
                 self.update_completion_entries(entries);
             }
             Event::Completion(comps) => {
                 if comps.is_empty() {
-                    self.notify(format!("no completions"));
+                    self.notify("no completions");
                 } else {
                     self.update_completion_entries(comps);
                 }
