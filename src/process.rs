@@ -467,8 +467,20 @@ pub fn run_external_command(
                 }
             }
 
-            execv(&argv0, &args).expect("failed to exec");
-            unreachable!();
+            match execv(&argv0, &args) {
+                Ok(_) => {
+                    unreachable!();
+                }
+                Err(nix::Error::Sys(nix::errno::Errno::EACCES)) => {
+                    eprintln!("nsh: Failed to exec {:?} (EACCESS). chmod(1) may help.",
+                        argv0);
+                    std::process::exit(1);
+                }
+                Err(err) => {
+                    eprintln!("nsh: Failed to exec {:?} ({})", argv0, err);
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }
