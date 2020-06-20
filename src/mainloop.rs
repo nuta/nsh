@@ -363,8 +363,7 @@ impl Mainloop {
         }
 
         if needs_redraw {
-            self.input_ctx
-                = context_parser::parse(self.input.as_str(), self.input.cursor());
+            self.reparse_input_ctx();
             self.filter_completion_entries();
             self.print_user_input();
         }
@@ -589,6 +588,11 @@ impl Mainloop {
         self.stdout.flush().ok();
     }
 
+    fn reparse_input_ctx(&mut self) {
+        self.input_ctx
+            = context_parser::parse(self.input.as_str(), self.input.cursor());
+    }
+
     fn update_completion_entries(&mut self, entries: FuzzyVec) {
         self.completions = entries;
         self.comps_show_from = 0;
@@ -596,6 +600,7 @@ impl Mainloop {
 
         if self.comps_filtered.len() == 1 {
             self.select_completion();
+            self.reparse_input_ctx();
         }
 
         self.print_user_input();
