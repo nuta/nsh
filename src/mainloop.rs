@@ -162,7 +162,13 @@ impl Mainloop {
 
                 if is_argv0 {
                     // Command name completion.
-                    let comps = self.shell.path_table().fuzzy_vec().clone();
+                    let argv0 = self.current_span_text().unwrap();
+                    let comps = if argv0.starts_with('/')
+                        || argv0.starts_with('.') || argv0.starts_with('~') {
+                        path_completion(argv0)
+                    } else {
+                        self.shell.path_table().fuzzy_vec().clone()
+                    };
                     tx.send(Event::Completion(comps)).ok();
                 } else {
                     // Resolve aliased command names.
