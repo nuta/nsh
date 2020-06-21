@@ -644,6 +644,10 @@ impl Mainloop {
         if let Some(current_span) = &self.input_ctx.current_literal {
             let selected = self.comps_filtered.get(self.comp_selected).unwrap();
             self.input.replace_range(current_span.clone(), &selected.1);
+            if self.input.cursor() == self.input.len() {
+                self.input.insert(' ');
+            }
+
             self.clear_completions();
         }
     }
