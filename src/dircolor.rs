@@ -23,11 +23,15 @@ impl DirColor {
         for part in dircolors.trim().split(':') {
             let mut columns = part.splitn(2, '=');
             match (columns.next(), columns.next()) {
-                (Some(key), Some(mut value)) => {
-                    let bold = value.starts_with("01;");
-                    value = value.strip_prefix("01;").unwrap_or(value);
-                    value = value.strip_prefix("05;").unwrap_or(value);
-                    if let Some(color) = value.split(';').next() {
+                (Some(key), Some(value)) => {
+                    let mut cols = value.split(';');
+                    let (bold, color) = match cols.next() {
+                        Some("01") => (true, cols.next()),
+                        Some("05") => (false, cols.next()),
+                        col @ _ => (false, col),
+                    };
+
+                    if let Some(color) = color {
                         let entry = DirColorEntry {
                             color: color.to_owned(),
                             bold,
