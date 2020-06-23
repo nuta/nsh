@@ -467,6 +467,7 @@ pub fn run_external_command(
                 }
             }
 
+            let args: Vec<&std::ffi::CStr> = args.iter().map(|s| s.as_c_str()).collect();
             match execv(&argv0, &args) {
                 Ok(_) => {
                     unreachable!();
