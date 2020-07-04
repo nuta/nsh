@@ -26,6 +26,7 @@ jobs:
       - uses: actions-rs/toolchain@v1
         with:
           toolchain: nightly
+          override: true
       - name: Install pip packages
         run: pip3 install -r requirements.txt
       - name: Build
