@@ -17,7 +17,6 @@ use std::sync::mpsc;
 use std::ops::Range;
 use termion::event::{Event as TermEvent, Key};
 use termion::input::TermRead;
-use termion::raw::{IntoRawMode, RawTerminal};
 
 const DEFAULT_PROMPT: &str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
 
@@ -28,8 +27,66 @@ pub enum Event {
     NoCompletion,
 }
 
+#[cfg(not(test))]
+use termion::raw::{IntoRawMode, RawTerminal};
+#[cfg(not(test))]
+struct Stdout(RawTerminal<std::io::Stdout>);
+
+#[cfg(not(test))]
+impl Stdout {
+    pub fn new() -> Stdout {
+        Stdout(io::stdout().into_raw_mode().unwrap())
+    }
+
+    pub fn suspend_raw_mode(&mut self) {
+        self.0.suspend_raw_mode().ok();
+    }
+
+    pub fn activate_raw_mode(&mut self) {
+        self.0.activate_raw_mode().ok();
+    }
+}
+
+#[cfg(not(test))]
+impl Write for Stdout {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.0.flush()
+    }
+}
+
+#[cfg(test)]
+struct Stdout();
+
+#[cfg(test)]
+impl Stdout {
+    pub fn new() -> Stdout {
+        Stdout()
+    }
+
+    pub fn suspend_raw_mode(&mut self) {
+    }
+
+    pub fn activate_raw_mode(&mut self) {
+    }
+}
+
+#[cfg(test)]
+impl Write for Stdout {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct Mainloop {
-    stdout: RawTerminal<std::io::Stdout>,
+    stdout: Stdout,
     shell: Shell,
     history_selector: HistorySelector,
     exited: Option<ExitStatus>,
@@ -62,7 +119,7 @@ pub struct Mainloop {
 impl Mainloop {
     pub fn new(shell: Shell) -> Mainloop {
         Mainloop {
-            stdout: io::stdout().into_raw_mode().unwrap(),
+            stdout: Stdout::new(),
             shell,
             history_selector: HistorySelector::new(),
             input: UserInput::new(),
@@ -391,6 +448,11 @@ impl Mainloop {
     }
 
     fn print_prompt(&mut self) {
+        if cfg!(test) {
+            // Do nothing in tests.
+            return;
+        }
+
         // Just like PROMPT_SP in zsh, in case the command didn't printed a newline
         // at the end of the output, print '$' and a carriage return to preserve the
         // content (e.g. foo of `echo -n foo`).
@@ -712,9 +774,9 @@ impl Mainloop {
         write!(self.stdout, "\r\n").ok();
         self.stdout.flush().ok();
 
-        self.stdout.suspend_raw_mode().ok();
+        self.stdout.suspend_raw_mode();
         self.shell.run_str(&self.input.as_str());
-        self.stdout.activate_raw_mode().ok();
+        self.stdout.activate_raw_mode();
         check_background_jobs(&mut self.shell);
 
         self.shell.history_mut().append(self.input.as_str());
@@ -1135,29 +1197,137 @@ mod tests {
         Mainloop::new(shell)
     }
 
+    macro_rules! key_event {
+        ($key:expr) => {
+            Event::Input(TermEvent::Key($key))
+        };
+    }
+
+    macro_rules! comps_event {
+        () => { Event::Completion(FuzzyVec::new()) };
+        ($($x:expr,)*) => (Event::Completion(FuzzyVec::from_vec(vec![$($x), +])))
+    }
+
+    #[test]
+    fn move_by_word() {
+        let mut m = create_mainloop();
+        m.input_str("abc x 123");
+        assert_eq!(m.input.cursor(), 9);
+        m.input_event(key_event!(Key::Alt('b')));
+        assert_eq!(m.input.cursor(), 6);
+        m.input_event(key_event!(Key::Alt('b')));
+        assert_eq!(m.input.cursor(), 4);
+        m.input_event(key_event!(Key::Alt('b')));
+        assert_eq!(m.input.cursor(), 0);
+        m.input_event(key_event!(Key::Alt('b')));
+        assert_eq!(m.input.cursor(), 0);
+        m.input_event(key_event!(Key::Alt('f')));
+        assert_eq!(m.input.cursor(), 4);
+        m.input_event(key_event!(Key::Alt('f')));
+        assert_eq!(m.input.cursor(), 6);
+        m.input_event(key_event!(Key::Alt('f')));
+        assert_eq!(m.input.cursor(), 9);
+    }
+
+    #[test]
+    fn remove_until_word_start() {
+        let mut m = create_mainloop();
+        m.input_str("abc x  123@");
+        m.input_event(key_event!(Key::Left));
+        assert_eq!(m.input.as_str(), "abc x  123@");
+        m.input_event(key_event!(Key::Ctrl('w')));
+        assert_eq!(m.input.as_str(), "abc x  @");
+        m.input_event(key_event!(Key::Ctrl('w')));
+        assert_eq!(m.input.as_str(), "abc @");
+        m.input_event(key_event!(Key::Ctrl('w')));
+        assert_eq!(m.input.as_str(), "@");
+        m.input_event(key_event!(Key::Ctrl('w')));
+        assert_eq!(m.input.as_str(), "@");
+    }
+
+    #[test]
+    fn ctrl_c_to_clear_input() {
+        let mut m = create_mainloop();
+        m.input_str("abcd");
+        m.input_event(key_event!(Key::Ctrl('c')));
+        assert_eq!(m.input.as_str(), "");
+    }
+
+    #[test]
+    fn no_completions() {
+        let mut m = create_mainloop();
+        m.input_str("ls ");
+        m.input_event(Event::NoCompletion);
+        assert_eq!(m.input.as_str(), "ls ");
+    }
+
     #[test]
     fn select_completion_at_the_end_of_input() {
         let mut m = create_mainloop();
         m.input_str("ls -l \t");
-        m.input_event(Event::Completion(FuzzyVec::from_vec(vec![
+        m.input_event(comps_event![
             "README.md",
             "Makefile",
             "src",
-        ])));
+        ]);
         m.input_str("\n"); // Select README.md in the completion
         assert_eq!(m.input.as_str(), "ls -l README.md");
+    }
+
+    #[test]
+    fn automatically_select_single_completion() {
+        let mut m = create_mainloop();
+        m.input_str("ls -l Sc\t");
+        m.input_event(comps_event![
+            "Makefile",
+            "SConstruct",
+        ]);
+        assert_eq!(m.input.as_str(), "ls -l SConstruct");
+    }
+
+    #[test]
+    fn move_cursor_in_completion() {
+        let mut m = create_mainloop();
+        m.input_str("ls -l \t");
+        m.input_event(comps_event![
+            "README.md",
+            "Makefile",
+            "src",
+        ]);
+        m.input_event(key_event!(Key::Right)); // Move the cursor to Makefile
+        m.input_str("\n"); // Select Makefile in the completion
+        assert_eq!(m.input.as_str(), "ls -l Makefile");
     }
 
     #[test]
     fn select_completion_in_current_word() {
         let mut m = create_mainloop();
         m.input_str("ls \t.lo");
-        m.input_event(Event::Completion(FuzzyVec::from_vec(vec![
+        m.input_event(comps_event![
             "Cargo.toml",
             "Cargo.lock",
             "yarn.lock",
-        ])));
+        ]);
         m.input_str("\n"); // Select Cargo.lock in the completion
         assert_eq!(m.input.as_str(), "ls Cargo.lock");
+    }
+
+    #[test]
+    fn completion_updates() {
+        let mut m = create_mainloop();
+        m.input_str("ls \t");
+        m.input_event(comps_event![
+            "Cargo.toml",
+            "Cargo.lock",
+            "yarn.lock",
+        ]);
+        m.input_event(key_event!(Key::Right)); // Move the cursor to Cargo.lock
+        m.input_event(key_event!(Key::Right)); // Move the cursor to yarn.lock
+        m.input_event(comps_event![
+            "package.json",
+            "node_modules",
+        ]);
+        m.input_str("\n"); // Select node_modules in the completion
+        assert_eq!(m.input.as_str(), "ls node_modules");
     }
 }
