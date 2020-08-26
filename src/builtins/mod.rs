@@ -21,6 +21,7 @@ mod shift;
 mod source;
 mod unset;
 mod wait;
+mod rehash;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],
@@ -66,4 +67,5 @@ pub static INTERNAL_COMMANDS: phf::Map<&'static str, InternalCommand> = phf_map!
     "pushd" => crate::builtins::pushd::command,
     "popd" => crate::builtins::popd::command,
     "eval" => crate::builtins::eval::command,
+    "rehash" => crate::builtins::rehash::command,
 };

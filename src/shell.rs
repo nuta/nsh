@@ -259,6 +259,10 @@ impl Shell {
         &self.path_table
     }
 
+    pub fn path_table_mut(&mut self) -> &mut PathTable {
+        &mut self.path_table
+    }
+
     pub fn history(&self) -> &History {
         &self.history
     }

@@ -24,6 +24,8 @@ echo $foo
 unset foo
 echo $foo
 
+rehash
+
 echo exit
 exit 0
 echo unreachable
