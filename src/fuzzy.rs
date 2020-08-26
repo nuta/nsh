@@ -17,6 +17,15 @@ impl FuzzyVec {
         }
     }
 
+    /// Creates a `FuzzyVec` from a slice.
+    pub fn from_vec<T: Into<String>>(vec: Vec<T>) -> FuzzyVec {
+        let mut res = FuzzyVec::new();
+        for elem in vec {
+            res.append(elem.into());
+        }
+        res
+    }
+
     /// Creates a `FuzzyVec` with the given capacity.
     pub fn with_capacity(cap: usize) -> FuzzyVec {
         FuzzyVec {

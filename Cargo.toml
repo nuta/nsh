@@ -44,3 +44,4 @@ phf = { version = "0", features = ["macros"] }
 
 [dev-dependencies]
 pretty_assertions = "0"
+tempfile = "3"

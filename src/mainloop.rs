@@ -378,6 +378,18 @@ impl Mainloop {
         }
     }
 
+    #[cfg(test)]
+    fn input_str(&mut self, string: &str) {
+        for k in string.chars() {
+            self.handle_key_event(&TermEvent::Key(Key::Char(k)));
+        }
+    }
+
+    #[cfg(test)]
+    fn input_event(&mut self, ev: Event) {
+        self.handle_event(ev);
+    }
+
     fn print_prompt(&mut self) {
         // Just like PROMPT_SP in zsh, in case the command didn't printed a newline
         // at the end of the output, print '$' and a carriage return to preserve the
@@ -422,6 +434,11 @@ impl Mainloop {
     }
 
     fn print_user_input(&mut self) {
+        if cfg!(test) {
+            // Do nothing in tests.
+            return;
+        }
+
         // Hide the cursor to prevent annoying flickering.
         write!(self.stdout, "{}", termion::cursor::Hide).ok();
 
@@ -642,10 +659,8 @@ impl Mainloop {
 
     fn select_completion(&mut self) {
         if let Some(current_span) = &self.input_ctx.current_literal {
-            let selected = self.comps_filtered.get(self.comp_selected).unwrap();
-            self.input.replace_range(current_span.clone(), &selected.1);
-            if self.input.cursor() == self.input.len() {
-                self.input.insert(' ');
+            if let Some(selected) = self.comps_filtered.get(self.comp_selected) {
+                self.input.replace_range(current_span.clone(), &selected.1);
             }
 
             self.clear_completions();
@@ -705,6 +720,7 @@ impl Mainloop {
         self.shell.history_mut().append(self.input.as_str());
         self.print_prompt();
         self.input.clear();
+        self.reparse_input_ctx(); // Clear self.input_ctx.
         self.history_selector.reset();
         self.clear_above = 0;
         self.clear_below = 0;
@@ -1106,5 +1122,42 @@ fn path_completion(pattern: &str) -> FuzzyVec {
             warn!("failed to readdir '{}': {}", dir.display(), err);
             FuzzyVec::new()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::NamedTempFile;
+    use super::*;
+
+    fn create_mainloop() -> Mainloop {
+        let shell = Shell::new(NamedTempFile::new().unwrap().path());
+        Mainloop::new(shell)
+    }
+
+    #[test]
+    fn select_completion_at_the_end_of_input() {
+        let mut m = create_mainloop();
+        m.input_str("ls -l \t");
+        m.input_event(Event::Completion(FuzzyVec::from_vec(vec![
+            "README.md",
+            "Makefile",
+            "src",
+        ])));
+        m.input_str("\n"); // Select README.md in the completion
+        assert_eq!(m.input.as_str(), "ls -l README.md");
+    }
+
+    #[test]
+    fn select_completion_in_current_word() {
+        let mut m = create_mainloop();
+        m.input_str("ls \t.lo");
+        m.input_event(Event::Completion(FuzzyVec::from_vec(vec![
+            "Cargo.toml",
+            "Cargo.lock",
+            "yarn.lock",
+        ])));
+        m.input_str("\n"); // Select Cargo.lock in the completion
+        assert_eq!(m.input.as_str(), "ls Cargo.lock");
     }
 }
