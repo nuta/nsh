@@ -39,7 +39,7 @@ impl History {
 
         History {
             path: history_file.to_owned(),
-            history: FuzzyVec::new(),
+            history,
         }
     }
 
@@ -69,19 +69,16 @@ impl History {
         }
 
         if let Ok(mut file) = OpenOptions::new().append(true).open(&self.path) {
-            if cmd.starts_with(' ') && !cmd.starts_with('\t') {
-                let dir = std::env::current_dir()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_owned();
-                let time = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .expect("failed to get the UNIX timestamp")
-                    .as_secs() as usize;
-                file.write(format!("{}\t{}\t{}\n", time, dir, cmd).as_bytes())
-                    .ok();
-            }
+            let dir = std::env::current_dir()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_owned();
+            let time = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("failed to get the UNIX timestamp")
+                .as_secs() as usize;
+            file.write(format!("{}\t{}\t{}\n", time, dir, cmd).as_bytes()).ok();
         }
 
         self.history.append(cmd.to_string());

@@ -863,6 +863,7 @@ impl Mainloop {
         if leave_history_mode {
             self.history_mode = false;
             self.restore_main_screen();
+            self.reparse_input_ctx();
             self.print_user_input();
         } else {
             self.redraw_history_search();
