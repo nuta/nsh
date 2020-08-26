@@ -1,6 +1,6 @@
 [package]
 name = "nsh"
-version = "0.3.4"
+version = "0.3.5"
 authors = ["Seiya Nuta <nuta@seiya.me>"]
 edition = "2018"
 description = "A command-line shell written in Rust that focuses on performance and productivity."

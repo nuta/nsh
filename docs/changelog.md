@@ -1,5 +1,8 @@
 # Change Log
 
+## v0.3.5 (Aug 26, 2020)
+- Minor improvements and bug fixes.
+
 ## v0.3.4 (June 14, 2020)
 - `export`: Accept multiple assignments
 - Scan only the current directory in path completion.
