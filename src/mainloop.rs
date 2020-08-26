@@ -111,6 +111,7 @@ pub struct Mainloop {
     hist_display_len: usize,
     hist_input_max: usize,
     hist_entries: Vec<String>,
+    hist_filter_by_cwd: bool,
     saved_user_input: UserInput,
     notification: Option<String>,
     dircolor: DirColor,
@@ -142,6 +143,7 @@ impl Mainloop {
             hist_display_len: 0,
             hist_input_max: 0,
             hist_entries: Vec::new(),
+            hist_filter_by_cwd: false,
             saved_user_input: UserInput::new(),
             notification: None,
             dircolor: DirColor::new(),
@@ -412,6 +414,13 @@ impl Mainloop {
             TermEvent::Key(Key::Ctrl('r')) if !self.completion_mode() => {
                 needs_redraw = false;
                 self.history_mode = true;
+                self.hist_filter_by_cwd = false;
+                self.redraw_history_search();
+            }
+            TermEvent::Key(Key::Ctrl('h')) if !self.completion_mode() => {
+                needs_redraw = false;
+                self.history_mode = true;
+                self.hist_filter_by_cwd = true;
                 self.redraw_history_search();
             }
             TermEvent::Key(Key::Left) => {
@@ -871,7 +880,11 @@ impl Mainloop {
     }
 
     fn redraw_history_search(&mut self) {
-        let prompt = "history> ";
+        let prompt = if self.hist_filter_by_cwd {
+            "history (cwd)> "
+        } else {
+            "history> "
+        };
         self.saved_user_input = self.input.clone();
 
         // TODO: Remove these fields from self.
@@ -883,7 +896,7 @@ impl Mainloop {
         self.hist_entries = self
             .shell
             .history()
-            .search(self.input.as_str())
+            .search(self.input.as_str(), self.hist_filter_by_cwd)
             .iter()
             .map(|(_, s)| s.to_string())
             .collect();

@@ -4,34 +4,39 @@ use crate::theme::ThemeColor;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::collections::HashMap;
 
 /// Command history.
 pub struct History {
     path: PathBuf,
     history: FuzzyVec,
+    path2cwd: HashMap<String, PathBuf>,
 }
 
 impl History {
     pub fn new(history_file: &Path) -> History {
         // Loads the history file.
         let mut warned = false;
+        let mut path2cwd = HashMap::new();
         let mut history = FuzzyVec::new();
         if let Ok(file) = File::open(history_file) {
             for (i, line) in BufReader::new(file).lines().enumerate() {
                 if let Ok(line) = line {
+                    let cwd = line.split('\t').nth(1);
                     let cmd = line.split('\t').nth(2);
-                    match (cmd, warned) {
-                        (Some(cmd), _) => {
+                    match (cwd, cmd, warned) {
+                        (Some(cwd), Some(cmd), _) => {
+                            path2cwd.insert(cmd.to_string(), PathBuf::from(cwd));
                             history.append(cmd.to_string());
                         }
-                        (None, false) => {
+                        (_, _, false) => {
                             print_err!(
                                 "nsh: warning: failed to parse ~/.nsh_history: at line {}",
                                 i + 1
                             );
                             warned = true;
                         }
-                        (_, _) => (),
+                        (_, _, _) => (),
                     }
                 }
             }
@@ -40,6 +45,7 @@ impl History {
         History {
             path: history_file.to_owned(),
             history,
+            path2cwd,
         }
     }
 
@@ -51,8 +57,23 @@ impl History {
         self.history.nth_last(nth)
     }
 
-    pub fn search(&self, query: &str) -> Vec<(Option<ThemeColor>, &str)> {
-        self.history.search(query)
+    pub fn search(&self, query: &str, filter_by_cwd: bool) -> Vec<(Option<ThemeColor>, &str)> {
+        if filter_by_cwd {
+                let cwd = std::env::current_dir().unwrap();
+                self.history.search(query)
+                    .iter()
+                    .filter(|(_, cmd)| {
+                        match self.path2cwd.get(*cmd) {
+                            Some(path) if *path == cwd => true,
+                            Some(path) => {info!("path='{}' {}", path.display(), cwd.display()); false}
+                            _ => false,
+                        }
+                    })
+                    .cloned()
+                    .collect()
+        } else {
+            self.history.search(query)
+        }
     }
 
     /// Appends a history to the history file.
@@ -68,20 +89,18 @@ impl History {
             }
         }
 
+        let cwd = std::env::current_dir().unwrap();
         if let Ok(mut file) = OpenOptions::new().append(true).open(&self.path) {
-            let dir = std::env::current_dir()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .to_owned();
             let time = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("failed to get the UNIX timestamp")
                 .as_secs() as usize;
+            let dir = cwd.to_str().unwrap().to_owned();
             file.write(format!("{}\t{}\t{}\n", time, dir, cmd).as_bytes()).ok();
         }
 
         self.history.append(cmd.to_string());
+        self.path2cwd.insert(cmd.to_string(), cwd.to_owned());
     }
 }
 
