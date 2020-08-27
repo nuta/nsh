@@ -115,6 +115,7 @@ pub struct Mainloop {
     saved_user_input: UserInput,
     notification: Option<String>,
     dircolor: DirColor,
+    input_stack: Vec<String>,
 }
 
 impl Mainloop {
@@ -147,6 +148,7 @@ impl Mainloop {
             saved_user_input: UserInput::new(),
             notification: None,
             dircolor: DirColor::new(),
+            input_stack: Vec::new(),
         }
     }
 
@@ -252,6 +254,11 @@ impl Mainloop {
             trace!("handle_event: took {}ms",
                 started_at.elapsed().unwrap().as_millis());
         }
+    }
+
+    fn push_buffer_stack(&mut self) {
+        self.input_stack.push(self.input.as_str().to_owned());
+        self.input.clear();
     }
 
     fn completion_mode(&self) -> bool {
@@ -394,6 +401,9 @@ impl Mainloop {
             TermEvent::Key(Key::Ctrl('k')) => {
                 self.clear_completions();
                 self.input.truncate();
+            }
+            TermEvent::Key(Key::Alt('q')) => {
+                self.push_buffer_stack();
             }
             TermEvent::Key(Key::Alt('f')) => {
                 self.clear_completions();
@@ -789,12 +799,18 @@ impl Mainloop {
         check_background_jobs(&mut self.shell);
 
         self.shell.history_mut().append(self.input.as_str());
-        self.print_prompt();
         self.input.clear();
-        self.reparse_input_ctx(); // Clear self.input_ctx.
         self.history_selector.reset();
         self.clear_above = 0;
         self.clear_below = 0;
+        
+        if let Some(input) = self.input_stack.pop() {
+            self.input.insert_str(&input);
+        }
+
+        self.reparse_input_ctx();
+        self.print_prompt();
+        self.print_user_input();
     }
 
     fn restore_main_screen(&mut self) {
@@ -1088,6 +1104,12 @@ impl UserInput {
         self.input.insert(self.byte_index(), ch);
         self.update_indices();
         self.cursor += 1;
+    }
+
+    pub fn insert_str(&mut self, string: &str) {
+        self.input.insert_str(self.byte_index(), string);
+        self.update_indices();
+        self.cursor += string.chars().count();
     }
 
     pub fn backspace(&mut self) {
