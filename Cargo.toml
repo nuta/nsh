@@ -29,6 +29,7 @@ overflow-checks = false
 [dependencies]
 lazy_static = "1"
 log = { version = "^0", features = ["max_level_trace", "release_max_level_warn"] }
+fern = { version = "0", features = ["colored"] }
 nix = "0"
 libc = "0"
 dirs = "1"

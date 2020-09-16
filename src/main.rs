@@ -31,7 +31,6 @@ mod eval;
 mod expand;
 mod fuzzy;
 mod history;
-mod logger;
 mod mainloop;
 mod parser;
 mod path;
@@ -161,9 +160,30 @@ struct Opt {
     norc: bool,
 }
 
+fn init_logger() {
+    use fern::colors::{Color, ColoredLevelConfig};
+
+    let log_colors = ColoredLevelConfig::new()
+        .info(Color::Green);
+    let log_file = fern::log_file(dirs::home_dir().unwrap().join(".nsh.log"))
+        .expect("failed to open ~/.nsh.log");
+    fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "\x1b[1m[{}\t]\x1b[0m \x1b[36m{}\x1b[0m: {}",
+                log_colors.color(record.level()),
+                record.file().unwrap_or_else(|| record.target()),
+                message,
+            ))
+        })
+        .chain(log_file)
+        .apply()
+        .expect("failed to initialize the logger");
+}
+
 fn main() {
     lazy_static::initialize(&STARTED_AT);
-    logger::init();
+    init_logger();
 
     // Dump the panic reason and backtrace into the log file.
     std::panic::set_hook(Box::new(|info| {
