@@ -39,6 +39,7 @@ pest = "2"
 pest_derive = "2"
 backtrace = "0"
 termion = "^1"
+crossterm = "0"
 signal-hook = "0"
 phf = { version = "0", features = ["macros"] }
 

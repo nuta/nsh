@@ -15,8 +15,11 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::ops::Range;
-use termion::event::{Event as TermEvent, Key};
-use termion::input::TermRead;
+use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent};
+use crossterm::event::KeyModifiers;
+const NONE: KeyModifiers = KeyModifiers::NONE;
+const CTRL: KeyModifiers = KeyModifiers::CONTROL;
+const ALT: KeyModifiers = KeyModifiers::ALT;
 
 const DEFAULT_PROMPT: &str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
 
@@ -166,16 +169,9 @@ impl Mainloop {
         let (tx, rx) = mpsc::channel();
         let tx1 = tx.clone();
         std::thread::spawn(move || {
-            let stdin = io::stdin();
-            let mut stdin_events = stdin.events();
             loop {
-                if let Some(ev) = stdin_events.next() {
-                    match ev {
-                        Ok(ev) => {
-                            tx1.send(Event::Input(ev)).ok();
-                        }
-                        Err(_) => { /* ignore errors */ }
-                    }
+                if let Ok(ev) = crossterm::event::read() {
+                    tx1.send(Event::Input(ev)).ok();
                 }
             }
         });
@@ -276,11 +272,17 @@ impl Mainloop {
 
     fn handle_event(&mut self, ev: Event) {
         match ev {
-            Event::Input(key) if self.history_mode => {
-                self.handle_key_event_in_history_mode(&key);
+            Event::Input(input) if self.history_mode => {
+                match input {
+                    TermEvent::Key(key) => self.handle_key_event_in_history_mode(&key),
+                    _ => {},
+                }
             }
-            Event::Input(key) => {
-                self.handle_key_event(&key);
+            Event::Input(input) => {
+                match input {
+                    TermEvent::Key(key) => self.handle_key_event(&key),
+                    _ => {},
+                }
             }
             Event::ScreenResized => {
                 trace!("screen resize");
@@ -307,16 +309,16 @@ impl Mainloop {
         }
     }
 
-    fn handle_key_event(&mut self, ev: &TermEvent) {
+    fn handle_key_event(&mut self, ev: &KeyEvent) {
         trace!("key={:?}", ev);
         self.notification = None;
 
         let mut needs_redraw = true;
-        match ev {
-            TermEvent::Key(Key::Left) if self.completion_mode() => {
+        match (ev.code, ev.modifiers) {
+            (KeyCode::Left, NONE) if self.completion_mode() => {
                 self.comp_selected = self.comp_selected.saturating_sub(1);
             }
-            TermEvent::Key(Key::Right) | TermEvent::Key(Key::Char('\t'))
+            (KeyCode::Right, NONE) | (KeyCode::Tab, NONE)
                 if self.completion_mode() =>
             {
                 if self.comps_filtered.is_empty() {
@@ -328,10 +330,10 @@ impl Mainloop {
                     );
                 }
             }
-            TermEvent::Key(Key::Up) | TermEvent::Key(Key::Ctrl('p')) if self.completion_mode() => {
+            (KeyCode::Up, NONE) | (KeyCode::Char('p'), CTRL) if self.completion_mode() => {
                 self.comp_selected = self.comp_selected.saturating_sub(self.comps_per_line);
             }
-            TermEvent::Key(Key::Down) | TermEvent::Key(Key::Ctrl('n'))
+            (KeyCode::Down, NONE) | (KeyCode::Char('n'), CTRL)
                 if self.completion_mode() =>
             {
                 self.comp_selected = min(
@@ -339,30 +341,30 @@ impl Mainloop {
                     self.comps_filtered.len().saturating_sub(1),
                 );
             }
-            TermEvent::Key(Key::Esc)
-            | TermEvent::Key(Key::Char('q'))
-            | TermEvent::Key(Key::Ctrl('c'))
+            (KeyCode::Esc, NONE)
+            | (KeyCode::Char('q'), NONE)
+            | (KeyCode::Char('c'), CTRL)
                 if self.completion_mode() =>
             {
                 self.clear_completions();
             }
-            TermEvent::Key(Key::Char('\n')) if self.completion_mode() => {
+            (KeyCode::Enter, NONE) if self.completion_mode() => {
                 self.select_completion();
             }
-            TermEvent::Key(Key::Char('\n')) => {
+            (KeyCode::Enter, NONE) => {
                 self.run_command();
                 needs_redraw = false;
             }
-            TermEvent::Key(Key::Char('\t')) => {
+            (KeyCode::Tab, NONE) => {
                 self.do_complete = true;
             }
-            TermEvent::Key(Key::Ctrl('c')) => {
+            (KeyCode::Char('c'), CTRL) => {
                 // Clear the input.
                 write!(self.stdout, "\r\n").ok();
                 self.print_prompt();
                 self.input.clear();
             }
-            TermEvent::Key(Key::Ctrl('l')) => {
+            (KeyCode::Char('l'), CTRL) => {
                 // Clear the screen.
                 write!(
                     self.stdout,
@@ -373,74 +375,74 @@ impl Mainloop {
                 .ok();
                 self.print_prompt();
             }
-            TermEvent::Key(Key::Up) => {
+            (KeyCode::Up, NONE) => {
                 self.history_selector
                     .prev(self.shell.history(), self.input.as_str());
                 let line = self.history_selector.current(self.shell.history());
                 self.input.reset(line);
             }
-            TermEvent::Key(Key::Down) => {
+            (KeyCode::Down, NONE) => {
                 self.history_selector.next();
                 let line = self.history_selector.current(self.shell.history());
                 self.input.reset(line);
             }
-            TermEvent::Key(Key::Backspace) => {
+            (KeyCode::Backspace, NONE) => {
                 self.input.backspace();
             }
-            TermEvent::Key(Key::Ctrl('d')) => {
+            (KeyCode::Char('d'), CTRL) => {
                 if self.input.is_empty() {
                     self.exited = Some(ExitStatus::ExitedWith(0));
                 } else {
                     self.input.delete();
                 }
             }
-            TermEvent::Key(Key::Ctrl('w')) => {
+            (KeyCode::Char('w'), CTRL) => {
                 self.clear_completions();
                 self.input.remove_until_word_start();
             }
-            TermEvent::Key(Key::Ctrl('k')) => {
+            (KeyCode::Char('k'), CTRL) => {
                 self.clear_completions();
                 self.input.truncate();
             }
-            TermEvent::Key(Key::Alt('q')) => {
+            (KeyCode::Char('q'), ALT) => {
                 self.push_buffer_stack();
             }
-            TermEvent::Key(Key::Alt('f')) => {
+            (KeyCode::Char('f'), ALT) => {
                 self.clear_completions();
                 self.input.move_to_next_word();
             }
-            TermEvent::Key(Key::Alt('b')) => {
+            (KeyCode::Char('b'), ALT) => {
                 self.clear_completions();
                 self.input.move_to_prev_word();
             }
-            TermEvent::Key(Key::Ctrl('a')) => {
+            (KeyCode::Char('a'), CTRL) => {
                 self.clear_completions();
                 self.input.move_to_begin();
             }
-            TermEvent::Key(Key::Ctrl('e')) => {
+            (KeyCode::Char('e'), CTRL) => {
                 self.clear_completions();
                 self.input.move_to_end();
             }
-            TermEvent::Key(Key::Ctrl('r')) if !self.completion_mode() => {
+            (KeyCode::Char('r'), CTRL) if !self.completion_mode() => {
                 needs_redraw = false;
                 self.history_mode = true;
                 self.hist_filter_by_cwd = false;
                 self.redraw_history_search();
             }
-            TermEvent::Key(Key::Ctrl('h')) if !self.completion_mode() => {
+            (KeyCode::Char('h'), CTRL) if !self.completion_mode() => {
                 needs_redraw = false;
                 self.history_mode = true;
                 self.hist_filter_by_cwd = true;
                 self.redraw_history_search();
             }
-            TermEvent::Key(Key::Left) => {
+            (KeyCode::Left, NONE) => {
                 self.input.move_by(-1);
             }
-            TermEvent::Key(Key::Right) => {
+            (KeyCode::Right, NONE) => {
                 self.input.move_by(1);
             }
-            TermEvent::Key(Key::Char(ch)) => {
-                self.input.insert(*ch);
+            (KeyCode::Char(ch), NONE) => {
+                self.input.insert(ch);
             }
             _ => {
                 warn!("unsupported key event: {:?}", ev);
@@ -456,8 +458,14 @@ impl Mainloop {
 
     #[cfg(test)]
     fn input_str(&mut self, string: &str) {
-        for k in string.chars() {
-            self.handle_key_event(&TermEvent::Key(Key::Char(k)));
+        for ch in string.chars() {
+            let code = match ch {
+                '\n' => KeyCode::Enter,
+                '\t' => KeyCode::Tab,
+                _ => KeyCode::Char(ch),
+            };
+
+            self.handle_key_event(&KeyEvent::new(code, NONE));
         }
     }
 
@@ -818,11 +826,11 @@ impl Mainloop {
         self.stdout.flush().ok();
     }
 
-    fn handle_key_event_in_history_mode(&mut self, ev: &TermEvent) {
+    fn handle_key_event_in_history_mode(&mut self, ev: &KeyEvent) {
         let mut leave_history_mode = false;
-        match ev {
+        match (ev.code, ev.modifiers) {
             // Execute the selected command.
-            TermEvent::Key(Key::Char('\n')) => {
+            (KeyCode::Enter, NONE) => {
                 if let Some(s) = self.hist_entries.get(self.hist_selected) {
                     self.input.reset(s.to_owned());
                 } else {
@@ -833,7 +841,7 @@ impl Mainloop {
                 leave_history_mode = true;
             }
             // Fill user input by the selected command and continue editing.
-            TermEvent::Key(Key::Char('\t')) => {
+            (KeyCode::Tab, NONE) => {
                 if let Some(s) = self.hist_entries.get(self.hist_selected) {
                     self.input.reset(s.to_owned());
                 } else {
@@ -844,43 +852,43 @@ impl Mainloop {
                 leave_history_mode = true;
             }
             // Move the user input cursor to left.
-            TermEvent::Key(Key::Left) | TermEvent::Key(Key::Ctrl('b')) => {
+            (KeyCode::Left, NONE) | (KeyCode::Char('b'), CTRL) => {
                 self.input.move_by(-1);
             }
             // Move the user input cursor to right.
-            TermEvent::Key(Key::Right) | TermEvent::Key(Key::Ctrl('f')) => {
+            (KeyCode::Right, NONE) | (KeyCode::Char('f'), CTRL) => {
                 self.input.move_by(1);
             }
             // Select the previous history.
-            TermEvent::Key(Key::Up) | TermEvent::Key(Key::Ctrl('p')) => {
+            (KeyCode::Up, NONE) | (KeyCode::Char('p'), CTRL) => {
                 self.hist_selected = self.hist_selected.saturating_sub(1);
             }
             // Select the next history.
-            TermEvent::Key(Key::Down) | TermEvent::Key(Key::Ctrl('n')) => {
+            (KeyCode::Down, NONE) | (KeyCode::Char('n'), CTRL) => {
                 self.hist_selected += 1;
                 let max = min(self.hist_display_len as usize, self.hist_entries.len());
                 if self.hist_selected > max.saturating_sub(1) {
                     self.hist_selected = max.saturating_sub(1);
                 }
             }
-            TermEvent::Key(Key::Backspace) => {
+            (KeyCode::Backspace, NONE) => {
                 self.input.backspace();
             }
-            TermEvent::Key(Key::Ctrl('d')) => {
+            (KeyCode::Char('d'), CTRL) => {
                 self.input.delete();
             }
             // Abort history mode.
-            TermEvent::Key(Key::Ctrl('c')) => {
+            (KeyCode::Char('c'), CTRL) => {
                 self.input = self.saved_user_input.clone();
                 leave_history_mode = true;
             }
             // An any key input.
-            TermEvent::Key(Key::Char(ch)) => {
+            (KeyCode::Char(ch), NONE) => {
                 if self.input.len() < self.hist_input_max as usize {
-                    self.input.insert(*ch);
+                    self.input.insert(ch);
                 }
             }
-            ev => {
+            _ => {
                 trace!("ignored event: {:?}", ev);
             }
         }
@@ -1227,6 +1235,10 @@ fn path_completion(pattern: &str) -> FuzzyVec {
 mod tests {
     use tempfile::NamedTempFile;
     use super::*;
+    use crossterm::event::KeyModifiers;
+    const NONE: KeyModifiers = KeyModifiers::NONE;
+    const CTRL: KeyModifiers = KeyModifiers::CONTROL;
+    const ALT: KeyModifiers = KeyModifiers::ALT;
 
     fn create_mainloop() -> Mainloop {
         let shell = Shell::new(NamedTempFile::new().unwrap().path());
@@ -1234,8 +1246,8 @@ mod tests {
     }
 
     macro_rules! key_event {
-        ($key:expr) => {
-            Event::Input(TermEvent::Key($key))
+        ($key:expr, $modifiers:expr) => {
+            Event::Input(TermEvent::Key(KeyEvent::new($key, $modifiers)))
         };
     }
 
@@ -1249,19 +1261,19 @@ mod tests {
         let mut m = create_mainloop();
         m.input_str("abc x 123");
         assert_eq!(m.input.cursor(), 9);
-        m.input_event(key_event!(Key::Alt('b')));
+        m.input_event(key_event!(KeyCode::Char('b'), ALT));
         assert_eq!(m.input.cursor(), 6);
-        m.input_event(key_event!(Key::Alt('b')));
+        m.input_event(key_event!(KeyCode::Char('b'), ALT));
         assert_eq!(m.input.cursor(), 4);
-        m.input_event(key_event!(Key::Alt('b')));
+        m.input_event(key_event!(KeyCode::Char('b'), ALT));
         assert_eq!(m.input.cursor(), 0);
-        m.input_event(key_event!(Key::Alt('b')));
+        m.input_event(key_event!(KeyCode::Char('b'), ALT));
         assert_eq!(m.input.cursor(), 0);
-        m.input_event(key_event!(Key::Alt('f')));
+        m.input_event(key_event!(KeyCode::Char('f'), ALT));
         assert_eq!(m.input.cursor(), 4);
-        m.input_event(key_event!(Key::Alt('f')));
+        m.input_event(key_event!(KeyCode::Char('f'), ALT));
         assert_eq!(m.input.cursor(), 6);
-        m.input_event(key_event!(Key::Alt('f')));
+        m.input_event(key_event!(KeyCode::Char('f'), ALT));
         assert_eq!(m.input.cursor(), 9);
     }
 
@@ -1269,15 +1281,15 @@ mod tests {
     fn remove_until_word_start() {
         let mut m = create_mainloop();
         m.input_str("abc x  123@");
-        m.input_event(key_event!(Key::Left));
+        m.input_event(key_event!(KeyCode::Left, NONE));
         assert_eq!(m.input.as_str(), "abc x  123@");
-        m.input_event(key_event!(Key::Ctrl('w')));
+        m.input_event(key_event!(KeyCode::Char('w'), CTRL));
         assert_eq!(m.input.as_str(), "abc x  @");
-        m.input_event(key_event!(Key::Ctrl('w')));
+        m.input_event(key_event!(KeyCode::Char('w'), CTRL));
         assert_eq!(m.input.as_str(), "abc @");
-        m.input_event(key_event!(Key::Ctrl('w')));
+        m.input_event(key_event!(KeyCode::Char('w'), CTRL));
         assert_eq!(m.input.as_str(), "@");
-        m.input_event(key_event!(Key::Ctrl('w')));
+        m.input_event(key_event!(KeyCode::Char('w'), CTRL));
         assert_eq!(m.input.as_str(), "@");
     }
 
@@ -1285,7 +1297,7 @@ mod tests {
     fn ctrl_c_to_clear_input() {
         let mut m = create_mainloop();
         m.input_str("abcd");
-        m.input_event(key_event!(Key::Ctrl('c')));
+        m.input_event(key_event!(KeyCode::Char('c'), CTRL));
         assert_eq!(m.input.as_str(), "");
     }
 
@@ -1330,7 +1342,7 @@ mod tests {
             "Makefile",
             "src",
         ]);
-        m.input_event(key_event!(Key::Right)); // Move the cursor to Makefile
+        m.input_event(key_event!(KeyCode::Right, NONE)); // Move the cursor to Makefile
         m.input_str("\n"); // Select Makefile in the completion
         assert_eq!(m.input.as_str(), "ls -l Makefile");
     }
@@ -1357,8 +1369,8 @@ mod tests {
             "Cargo.lock",
             "yarn.lock",
         ]);
-        m.input_event(key_event!(Key::Right)); // Move the cursor to Cargo.lock
-        m.input_event(key_event!(Key::Right)); // Move the cursor to yarn.lock
+        m.input_event(key_event!(KeyCode::Right, NONE)); // Move the cursor to Cargo.lock
+        m.input_event(key_event!(KeyCode::Right, NONE)); // Move the cursor to yarn.lock
         m.input_event(comps_event![
             "package.json",
             "node_modules",
