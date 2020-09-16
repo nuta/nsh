@@ -2,19 +2,19 @@ use crate::builtins::INTERNAL_COMMANDS;
 use crate::context_parser::{CommandSepType, InputContext, KeywordType, QuoteType, Span};
 use crate::shell::Shell;
 use std::path::Path;
+use crossterm::style::{Color, Attribute, SetAttribute, SetForegroundColor};
 
 pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
     use std::fmt::Write;
-    use termion::color::{Blue, Cyan, Fg, Green, Red, Yellow};
-    use termion::style::{Bold, Reset};
 
-    let argv0_color = Fg(Green);
-    let invalid_argv0_color = Fg(Red);
-    let option_color = Fg(Yellow);
-    let brace_color = Fg(Green);
-    let quote_color = Fg(Cyan);
-    let command_sep_color = Fg(Blue);
-    let reset_color = Fg(termion::color::Reset);
+    let argv0_color = SetForegroundColor(Color::Green);
+    let invalid_argv0_color = SetForegroundColor(Color::Red);
+    let option_color = SetForegroundColor(Color::Yellow);
+    let brace_color = SetForegroundColor(Color::Green);
+    let quote_color = SetForegroundColor(Color::Cyan);
+    let command_sep_color = SetForegroundColor(Color::Blue);
+    let bold = SetAttribute(Attribute::Bold);
+    let reset = SetAttribute(Attribute::Reset);
 
     let mut buf = String::new();
     let mut in_quote = false;
@@ -31,14 +31,14 @@ pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
                     || shell.lookup_alias(cmd.as_str()).is_some();
 
                 if command_exists {
-                    write!(buf, "{}{}{}{}", Bold, argv0_color, cmd, Reset).ok();
+                    write!(buf, "{}{}{}{}", bold, argv0_color, cmd, reset).ok();
                 } else {
-                    write!(buf, "{}{}{}{}", Bold, invalid_argv0_color, cmd, Reset).ok();
+                    write!(buf, "{}{}{}{}", bold, invalid_argv0_color, cmd, reset).ok();
                 };
             }
             Span::Literal(span) => {
                 if span.starts_with('-') {
-                    write!(buf, "{}{}{}", option_color, span, reset_color).ok();
+                    write!(buf, "{}{}{}", option_color, span, reset).ok();
                 } else {
                     buf += &span;
                 }
@@ -53,7 +53,7 @@ pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
                     KeywordType::Then => "then",
                 };
 
-                write!(buf, "{}{}{}", Bold, keyword_str, Reset).ok();
+                write!(buf, "{}{}{}", bold, keyword_str, reset).ok();
             }
             Span::QuoteStart(quote) => {
                 in_quote = true;
@@ -71,28 +71,28 @@ pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
                     QuoteType::Single => '\'',
                 };
 
-                write!(buf, "{}{}", quote_ch, Reset).ok();
+                write!(buf, "{}{}", quote_ch, reset).ok();
             }
             Span::CmdSubstStart => {
-                write!(buf, "{}$({}", brace_color, Reset).ok();
+                write!(buf, "{}$({}", brace_color, reset).ok();
             }
             Span::CmdSubstEnd => {
-                write!(buf, "{}){}", brace_color, Reset).ok();
+                write!(buf, "{}){}", brace_color, reset).ok();
             }
             Span::ParamExpandStart => {
-                write!(buf, "{}{}${{", Bold, brace_color).ok();
+                write!(buf, "{}{}${{", bold, brace_color).ok();
             }
             Span::ParamExpandEnd => {
-                write!(buf, "{}}}{}", brace_color, Reset).ok();
+                write!(buf, "{}}}{}", brace_color, reset).ok();
             }
             Span::Name(name) => {
-                write!(buf, "{}{}", name, Reset).ok();
+                write!(buf, "{}{}", name, reset).ok();
             }
             Span::Op(op) => {
-                write!(buf, "{}{}{}{}", Bold, reset_color, op, Reset).ok();
+                write!(buf, "{}{}{}{}", bold, reset, op, reset).ok();
             }
             Span::Param(name) => {
-                write!(buf, "{}${}{}", Bold, name, Reset).ok();
+                write!(buf, "{}${}{}", bold, name, reset).ok();
             }
             Span::CommandSep(sep) => {
                 let sep_str = match sep {
@@ -103,7 +103,7 @@ pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
                     CommandSepType::Newline => "\n",
                 };
 
-                write!(buf, "{}{}{}{}", Bold, command_sep_color, sep_str, Reset).ok();
+                write!(buf, "{}{}{}{}", bold, command_sep_color, sep_str, reset).ok();
             }
         }
     }

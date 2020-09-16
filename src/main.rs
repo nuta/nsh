@@ -8,7 +8,6 @@ extern crate dirs;
 extern crate glob;
 extern crate nix;
 extern crate structopt;
-extern crate termion;
 #[macro_use]
 extern crate failure;
 extern crate pest;
@@ -51,7 +50,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use structopt::StructOpt;
-use termion::is_tty;
+use crossterm::tty::IsTty;
 
 fn interactive_mode(shell: shell::Shell) -> ExitStatus {
     // Ignore job-control-related signals in order not to stop the shell.
@@ -108,8 +107,8 @@ fn shell_main(opt: Opt) {
         shell.set("PATH", Value::String(DEFAULT_PATH.to_owned()), false);
     }
 
-    let stdout = std::fs::File::create("/dev/stdout").unwrap();
-    shell.set_interactive(is_tty(&stdout) && opt.command.is_none() && opt.file.is_none());
+    let is_tty = std::io::stdout().is_tty();
+    shell.set_interactive(is_tty && opt.command.is_none() && opt.file.is_none());
     let status = match (opt.command, opt.file) {
         (Some(command), _) => shell.run_str(&command),
         (_, Some(file)) => {

@@ -1,9 +1,6 @@
 use pest::iterators::Pair;
 use pest::Parser;
 use std::os::unix::io::RawFd;
-use termion::color;
-use termion::color::Fg;
-use termion::style;
 
 #[derive(Parser)]
 #[grammar = "shell.pest"]
@@ -1377,17 +1374,18 @@ impl ShellParser {
     /// Dumps the parsed pairs for debbuging.
     #[allow(unused)]
     fn dump(&mut self, pairs: pest::iterators::Pairs<Rule>, level: usize) {
+        use crossterm::style::{Color, Attribute, SetAttribute, SetForegroundColor};
         for pair in pairs {
             for _ in 0..level {
                 print!("  ");
             }
             println!(
                 "{}{}{}{:?}{}: {:?}",
-                style::Reset,
-                style::Bold,
-                Fg(color::Magenta),
+                SetAttribute(Attribute::Reset),
+                SetAttribute(Attribute::Bold),
+                SetForegroundColor(Color::Magenta),
                 pair.as_rule(),
-                style::Reset,
+                SetAttribute(Attribute::Reset),
                 pair.as_span().as_str()
             );
 

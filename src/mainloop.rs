@@ -11,17 +11,31 @@ use crate::dircolor::DirColor;
 use signal_hook::{self, iterator::Signals};
 use std::cmp::{max, min};
 use std::fs;
-use std::io::{self, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::ops::Range;
+use crossterm::{execute, queue};
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent};
 use crossterm::event::KeyModifiers;
+use crossterm::terminal::{
+    self, enable_raw_mode, disable_raw_mode,
+    EnterAlternateScreen, LeaveAlternateScreen,
+    Clear, ClearType,
+};
+use crossterm::cursor::{self, MoveTo};
+use crossterm::style::{
+    Color, Attribute, SetAttribute, SetForegroundColor, Print,
+};
 const NONE: KeyModifiers = KeyModifiers::NONE;
 const CTRL: KeyModifiers = KeyModifiers::CONTROL;
 const ALT: KeyModifiers = KeyModifiers::ALT;
 
 const DEFAULT_PROMPT: &str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
+
+fn restore_main_screen() {
+    execute!(std::io::stdout(), LeaveAlternateScreen).ok();
+}
 
 pub enum Event {
     Input(TermEvent),
@@ -30,66 +44,7 @@ pub enum Event {
     NoCompletion,
 }
 
-#[cfg(not(test))]
-use termion::raw::{IntoRawMode, RawTerminal};
-#[cfg(not(test))]
-struct Stdout(RawTerminal<std::io::Stdout>);
-
-#[cfg(not(test))]
-impl Stdout {
-    pub fn new() -> Stdout {
-        Stdout(io::stdout().into_raw_mode().unwrap())
-    }
-
-    pub fn suspend_raw_mode(&mut self) {
-        self.0.suspend_raw_mode().ok();
-    }
-
-    pub fn activate_raw_mode(&mut self) {
-        self.0.activate_raw_mode().ok();
-    }
-}
-
-#[cfg(not(test))]
-impl Write for Stdout {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        self.0.flush()
-    }
-}
-
-#[cfg(test)]
-struct Stdout();
-
-#[cfg(test)]
-impl Stdout {
-    pub fn new() -> Stdout {
-        Stdout()
-    }
-
-    pub fn suspend_raw_mode(&mut self) {
-    }
-
-    pub fn activate_raw_mode(&mut self) {
-    }
-}
-
-#[cfg(test)]
-impl Write for Stdout {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
 pub struct Mainloop {
-    stdout: Stdout,
     shell: Shell,
     history_selector: HistorySelector,
     exited: Option<ExitStatus>,
@@ -121,10 +76,15 @@ pub struct Mainloop {
     input_stack: Vec<String>,
 }
 
+impl Drop for Mainloop {
+    fn drop(&mut self) {
+        disable_raw_mode().ok();
+    }
+}
+
 impl Mainloop {
     pub fn new(shell: Shell) -> Mainloop {
         Mainloop {
-            stdout: Stdout::new(),
             shell,
             history_selector: HistorySelector::new(),
             input: UserInput::new(),
@@ -156,9 +116,11 @@ impl Mainloop {
     }
 
     pub fn run(&mut self) -> ExitStatus {
-        let screen_size = termion::terminal_size().unwrap();
+        let screen_size = terminal::size().unwrap();
         self.columns = screen_size.0 as usize;
         self.lines = screen_size.1 as usize;
+
+        enable_raw_mode().ok();
         self.print_prompt();
 
         if let Some(var) = self.shell.get("LS_COLORS") {
@@ -286,7 +248,7 @@ impl Mainloop {
             }
             Event::ScreenResized => {
                 trace!("screen resize");
-                let screen_size = termion::terminal_size().unwrap();
+                let screen_size = terminal::size().unwrap();
                 self.columns = screen_size.0 as usize;
                 self.lines = screen_size.1 as usize;
             }
@@ -360,19 +322,17 @@ impl Mainloop {
             }
             (KeyCode::Char('c'), CTRL) => {
                 // Clear the input.
-                write!(self.stdout, "\r\n").ok();
+                execute!(std::io::stdout(), Print("\r\n")).ok();
                 self.print_prompt();
                 self.input.clear();
             }
             (KeyCode::Char('l'), CTRL) => {
                 // Clear the screen.
-                write!(
-                    self.stdout,
-                    "{}{}",
-                    termion::clear::All,
-                    termion::cursor::Goto(1, 1)
-                )
-                .ok();
+                execute!(
+                    std::io::stdout(),
+                    Clear(ClearType::All),
+                    MoveTo(1, 1)
+                ).ok();
                 self.print_prompt();
             }
             (KeyCode::Up, NONE) => {
@@ -483,16 +443,19 @@ impl Mainloop {
         // Just like PROMPT_SP in zsh, in case the command didn't printed a newline
         // at the end of the output, print '$' and a carriage return to preserve the
         // content (e.g. foo of `echo -n foo`).
-        write!(
-            self.stdout,
-            "{}{}${}{space:>width$}\r",
-            termion::style::Bold,
-            termion::style::Invert,
-            termion::style::Reset,
-            space = " ",
-            width = self.columns - 1,
-        )
-        .ok();
+        let mut stdout = std::io::stdout();
+        queue!(
+            stdout,
+            SetAttribute(Attribute::Bold),
+            SetAttribute(Attribute::Reverse),
+            Print("$"),
+            SetAttribute(Attribute::Reset),
+            Print(&format!(
+                "{space:>width$}\r",
+                space = " ",
+                width = self.columns - 1,
+            ))
+        ).ok();
 
         let prompt_fmt = &self
             .shell
@@ -508,8 +471,8 @@ impl Mainloop {
             }
         };
 
-        write!(self.stdout, "{}", prompt_str.replace("\n", "\r\n")).ok();
-        self.stdout.flush().ok();
+        queue!(stdout, Print(prompt_str.replace("\n", "\r\n"))).ok();
+        stdout.flush().ok();
 
         // Report the Time-To-First-Prompt (TTFP).
         if self.shell.get("NSH_TTFP").is_none() {
@@ -528,69 +491,61 @@ impl Mainloop {
             return;
         }
 
+        let mut stdout = std::io::stdout();
+
         // Hide the cursor to prevent annoying flickering.
-        write!(self.stdout, "{}", termion::cursor::Hide).ok();
+        queue!(stdout, cursor::Hide).ok();
 
         // Clear the previous user input and completions.
         // TODO: Don't clear the texts; overwrite instead to prevent flickering.
         if self.clear_below > 0 {
             for _ in 0..self.clear_below {
-                write!(
-                    self.stdout,
-                    "{}{}",
-                    termion::cursor::Down(1),
-                    termion::clear::CurrentLine
-                )
-                .ok();
+                queue!(
+                    stdout,
+                    cursor::MoveDown(1),
+                    Clear(ClearType::CurrentLine)
+                ).ok();
             }
 
-            write!(
-                self.stdout,
-                "{}",
-                termion::cursor::Up(self.clear_below as u16)
-            )
-            .ok();
+            queue!(stdout, cursor::MoveUp(self.clear_below as u16)).ok();
         }
 
         for _ in 0..self.clear_above {
-            write!(
-                self.stdout,
-                "{}{}",
-                termion::clear::CurrentLine,
-                termion::cursor::Up(1)
-            )
-            .ok();
+            queue!(
+                stdout,
+                Clear(ClearType::CurrentLine),
+                cursor::MoveUp(1)
+            ).ok();
         }
 
         // Print the highlighted input.
         let h = highlight::highlight(&self.input_ctx, &mut self.shell);
-        write!(
-            self.stdout,
-            "\r{}{}{}",
-            termion::cursor::Right(self.prompt_len as u16),
-            termion::clear::AfterCursor,
-            h.replace("\n", "\r\n")
-        )
-        .ok();
+        queue!(
+            stdout,
+            Print("\r"),
+            cursor::MoveRight(self.prompt_len as u16),
+            Clear(ClearType::UntilNewLine),
+            Print(h.replace("\n", "\r\n"))
+        ).ok();
 
         // Handle the case when the cursor is at the end of a line.
         let current_x = self.prompt_len + self.input.len();
         if current_x == self.columns {
-            write!(self.stdout, "\r\n").ok();
+            queue!(stdout, Print("\r\n")).ok();
         }
 
         // Print a notification message.
         if let Some(notification) = &self.notification {
-            write!(
-                self.stdout,
-                "\r\n{}{}[!] {}{}{}",
-                termion::color::Fg(termion::color::LightYellow),
-                termion::style::Bold,
-                notification,
-                termion::style::Reset,
-                termion::clear::AfterCursor,
-            )
-            .ok();
+            queue!(
+                stdout,
+                Print("\r\n"),
+                SetForegroundColor(Color::Yellow),
+                SetAttribute(Attribute::Bold),
+                Print("[!] "),
+                Print(notification),
+                SetAttribute(Attribute::Reset),
+                Clear(ClearType::UntilNewLine),
+            ).ok();
         }
 
         let notification_height = if self.notification.is_some() { 1 } else { 0 };
@@ -628,38 +583,33 @@ impl Mainloop {
                         break;
                     }
 
-                    write!(self.stdout, "\r\n").ok();
+                    queue!(stdout, Print("\r\n")).ok();
                     comps_height += 1;
                 }
 
                 let margin = column_width - min(comp.len(), column_width);
                 if self.comps_show_from + i == self.comp_selected {
-                    write!(
-                        self.stdout,
-                        "{}{}{}{}",
-                        termion::style::Invert,
-                        truncate(comp, self.columns),
-                        termion::style::NoInvert,
-                        termion::cursor::Right(margin as u16),
+                    queue!(
+                        stdout,
+                        SetAttribute(Attribute::Reverse),
+                        Print(truncate(comp, self.columns)),
+                        SetAttribute(Attribute::NoReverse),
+                        cursor::MoveRight(margin as u16),
                     )
                     .ok();
                 } else {
                     match color {
                         Some(ThemeColor::DirColor) => {
-                            self.dircolor.write(
-                                &mut self.stdout,
-                                Path::new(comp)
-                            ).ok();
+                            self.dircolor.write(&mut stdout, Path::new(comp)).ok();
                         }
                         _ => {}
                     }
 
-                    write!(
-                        self.stdout,
-                        "{}{}{}",
-                        truncate(comp, self.columns),
-                        termion::style::Reset,
-                        termion::cursor::Right(margin as u16)
+                    queue!(
+                        stdout,
+                        Print(truncate(comp, self.columns)),
+                        SetAttribute(Attribute::Reset),
+                        cursor::MoveRight(margin as u16)
                     )
                     .ok();
                 }
@@ -669,13 +619,15 @@ impl Mainloop {
 
             if remaining > 0 {
                 comps_height += 2;
-                write!(
-                    self.stdout,
-                    "{}\r\n{} {} more {}",
-                    termion::clear::AfterCursor,
-                    termion::style::Invert,
-                    remaining,
-                    termion::style::Reset,
+                queue!(
+                    stdout,
+                    Clear(ClearType::UntilNewLine),
+                    Print("\r\n"),
+                    SetAttribute(Attribute::Reverse),
+                    Print(" "),
+                    Print(remaining),
+                    Print(" more "),
+                    SetAttribute(Attribute::Reset),
                 )
                 .ok();
             }
@@ -688,19 +640,19 @@ impl Mainloop {
         let cursor_x = (self.prompt_len + self.input.cursor()) % self.columns;
         let cursor_y_diff = (input_height - cursor_y) + comps_height;
         if cursor_y_diff > 0 {
-            write!(self.stdout, "{}", termion::cursor::Up(cursor_y_diff as u16),).ok();
+            queue!(stdout, cursor::MoveUp(cursor_y_diff as u16),).ok();
         }
 
-        write!(self.stdout, "\r").ok();
+        queue!(stdout, Print("\r")).ok();
         if cursor_x > 0 {
-            write!(self.stdout, "{}", termion::cursor::Right(cursor_x as u16),).ok();
+            queue!(stdout, cursor::MoveRight(cursor_x as u16),).ok();
         }
 
-        write!(self.stdout, "{}", termion::cursor::Show).ok();
+        queue!(stdout, cursor::Show).ok();
         self.clear_above = cursor_y;
         self.clear_below = input_height - cursor_y + comps_height;
         self.comps_height = comps_height;
-        self.stdout.flush().ok();
+        stdout.flush().ok();
     }
 
     fn reparse_input_ctx(&mut self) {
@@ -757,38 +709,32 @@ impl Mainloop {
     }
 
     fn hide_completions(&mut self) {
+        let mut stdout = std::io::stdout();
         if self.comps_height > 0 {
-            write!(self.stdout, "{}", termion::cursor::Hide).ok();
+            queue!(stdout, cursor::Hide).ok();
 
             let comps_y_diff = self.clear_below - self.comps_height;
             if comps_y_diff > 0 {
-                write!(
-                    self.stdout,
-                    "{}",
-                    termion::cursor::Down(comps_y_diff as u16)
-                )
-                .ok();
+                queue!(stdout, cursor::MoveDown(comps_y_diff as u16)).ok();
             }
 
             for _ in 0..self.comps_height {
-                write!(
-                    self.stdout,
-                    "{}{}",
-                    termion::cursor::Down(1),
-                    termion::clear::CurrentLine
+                queue!(
+                    stdout,
+                    cursor::MoveDown(1),
+                    Clear(ClearType::CurrentLine)
                 )
                 .ok();
             }
 
-            write!(
-                self.stdout,
-                "{}{}",
-                termion::cursor::Up((comps_y_diff + self.comps_height) as u16),
-                termion::cursor::Show,
+            queue!(
+                stdout,
+                cursor::MoveUp((comps_y_diff + self.comps_height) as u16),
+                cursor::Show,
             )
             .ok();
 
-            self.stdout.flush().ok();
+            stdout.flush().ok();
         }
     }
 
@@ -798,12 +744,10 @@ impl Mainloop {
         self.print_user_input();
         self.hide_completions();
 
-        write!(self.stdout, "\r\n").ok();
-        self.stdout.flush().ok();
-
-        self.stdout.suspend_raw_mode();
+        print!("\r\n");
+        disable_raw_mode().ok();
         self.shell.run_str(&self.input.as_str());
-        self.stdout.activate_raw_mode();
+        enable_raw_mode().ok();
         check_background_jobs(&mut self.shell);
 
         self.shell.history_mut().append(self.input.as_str());
@@ -819,11 +763,6 @@ impl Mainloop {
         self.reparse_input_ctx();
         self.print_prompt();
         self.print_user_input();
-    }
-
-    fn restore_main_screen(&mut self) {
-        write!(self.stdout, "{}", termion::screen::ToMainScreen).ok();
-        self.stdout.flush().ok();
     }
 
     fn handle_key_event_in_history_mode(&mut self, ev: &KeyEvent) {
@@ -895,7 +834,7 @@ impl Mainloop {
 
         if leave_history_mode {
             self.history_mode = false;
-            self.restore_main_screen();
+            restore_main_screen();
             self.reparse_input_ctx();
             self.print_user_input();
         } else {
@@ -930,17 +869,18 @@ impl Mainloop {
             self.hist_selected = max.saturating_sub(1);
         }
 
-        write!(
-            self.stdout,
-            "{}{}{}{}{}{}{}{}\r\n",
-            termion::screen::ToAlternateScreen,
-            termion::clear::All,
-            termion::style::Reset,
-            termion::cursor::Goto(1, 1),
-            termion::style::Bold,
-            truncate(prompt, self.columns),
-            termion::style::Reset,
-            truncate(self.input.as_str(), self.hist_input_max),
+        let mut stdout = std::io::stdout();
+        queue!(
+            stdout,
+            EnterAlternateScreen,
+            Clear(ClearType::All),
+            SetAttribute(Attribute::Reset),
+            MoveTo(0, 0),
+            SetAttribute(Attribute::Bold),
+            Print(truncate(prompt, self.columns)),
+            SetAttribute(Attribute::Reset),
+            Print(truncate(self.input.as_str(), self.hist_input_max)),
+            Print("\r\n"),
         )
         .ok();
 
@@ -948,37 +888,39 @@ impl Mainloop {
         for i in 0..self.lines.saturating_sub(2) {
             if let Some(entry) = self.hist_entries.get(i as usize) {
                 if i == self.hist_selected {
-                    write!(
-                        self.stdout,
-                        "{}{}{}{}{}\r\n",
-                        termion::color::Fg(termion::color::Green),
-                        termion::style::Bold,
-                        termion::style::Underline,
-                        truncate_and_fill(entry, self.columns, ' '),
-                        termion::style::Reset
+                    queue!(
+                        stdout,
+                        SetForegroundColor(Color::Green),
+                        SetAttribute(Attribute::Bold),
+                        SetAttribute(Attribute::Underlined),
+                        Print(truncate_and_fill(entry, self.columns, ' ')),
+                        SetAttribute(Attribute::Reset),
+                        Print("\r\n"),
                     )
                     .ok();
                 } else {
-                    write!(self.stdout, "{}\r\n", truncate(entry, self.columns),).ok();
+                    queue!(
+                        stdout,
+                        Print(truncate(entry, self.columns)),
+                        Print("\r\n"),
+                    ).ok();
                 }
             } else {
-                write!(self.stdout, "\r\n").ok();
+                queue!(stdout, Print("\r\n")).ok();
             }
         }
 
         // Print the screen.
         let cursor_x = prompt.len() + self.input.cursor();
-        write!(
-            self.stdout,
-            "{}{}{}{}{}",
-            termion::style::Bold,
-            termion::style::Invert,
-            truncate(" Enter: Execute, Tab: Edit, ^C: Quit ", self.columns),
-            termion::style::Reset,
-            termion::cursor::Goto(1 + cursor_x as u16, 1),
-        )
-        .ok();
-        self.stdout.flush().ok();
+        queue!(
+            stdout,
+            SetAttribute(Attribute::Bold),
+            SetAttribute(Attribute::Reverse),
+            Print(truncate(" Enter: Execute, Tab: Edit, ^C: Quit ", self.columns)),
+            SetAttribute(Attribute::Reset),
+            MoveTo(cursor_x as u16, 0),
+        ).ok();
+        stdout.flush().ok();
     }
 }
 

@@ -58,20 +58,19 @@ impl DirColor {
         };
 
         if let Some(e) = self.map.get(key) {
-            use termion::style::Bold;
-            use termion::color::{Fg, Red, Green, Yellow, Blue, Magenta, Cyan};
+            use crossterm::style::{Color, Attribute, SetAttribute, SetForegroundColor};
 
             if e.bold {
-                write!(buf, "{}", Bold)?;
+                write!(buf, "{}", SetAttribute(Attribute::Bold))?;
             }
 
             match e.color.as_str() {
-                "31" => { write!(buf, "{}", Fg(Red))?; }
-                "32" => { write!(buf, "{}", Fg(Green))?; }
-                "33" => { write!(buf, "{}", Fg(Yellow))?; }
-                "34" => { write!(buf, "{}", Fg(Blue))?; }
-                "35" => { write!(buf, "{}", Fg(Magenta))?; }
-                "36" => { write!(buf, "{}", Fg(Cyan))?; }
+                "31" => { write!(buf, "{}", SetForegroundColor(Color::Red))?; }
+                "32" => { write!(buf, "{}", SetForegroundColor(Color::Green))?; }
+                "33" => { write!(buf, "{}", SetForegroundColor(Color::Yellow))?; }
+                "34" => { write!(buf, "{}", SetForegroundColor(Color::Blue))?; }
+                "35" => { write!(buf, "{}", SetForegroundColor(Color::Magenta))?; }
+                "36" => { write!(buf, "{}", SetForegroundColor(Color::Cyan))?; }
                 _ => {}
             }
         }

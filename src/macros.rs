@@ -11,9 +11,9 @@ macro_rules! print_err {
     ($fmt:expr) => {
         if *crate::macros::COLORS_ENABLED {
             eprintln!(concat!("{}{}nsh: ", $fmt, "{}"),
-                ::termion::style::Bold,
-                ::termion::color::Fg(::termion::color::Yellow),
-                ::termion::style::Reset);
+                ::crossterm::style::SetAttribute(::crossterm::style::Attribute::Bold),
+                ::crossterm::style::SetForegroundColor(::crossterm::style::Color::Yellow),
+                ::crossterm::style::SetAttribute(::crossterm::style::Attribute::Reset));
         } else {
             eprintln!(concat!("nsh: ", $fmt));
         }
@@ -22,10 +22,10 @@ macro_rules! print_err {
     ($fmt:expr, $($arg:tt)*) => {
         if *crate::macros::COLORS_ENABLED {
             eprintln!(concat!("{}{}nsh: ", $fmt, "{}"),
-                ::termion::style::Bold,
-                ::termion::color::Fg(::termion::color::Yellow),
+                ::crossterm::style::SetAttribute(::crossterm::style::Attribute::Bold),
+                ::crossterm::style::SetForegroundColor(::crossterm::style::Color::Yellow),
                 $($arg)*,
-                ::termion::style::Reset);
+                ::crossterm::style::SetAttribute(::crossterm::style::Attribute::Reset));
         } else {
             eprintln!(concat!("nsh: ", $fmt), $($arg)*);
         }
