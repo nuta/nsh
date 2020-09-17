@@ -331,7 +331,7 @@ impl Mainloop {
                 execute!(
                     std::io::stdout(),
                     Clear(ClearType::All),
-                    MoveTo(1, 1)
+                    MoveTo(0, 0)
                 ).ok();
                 self.print_prompt();
             }
