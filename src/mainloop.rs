@@ -15,6 +15,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::ops::Range;
+use std::time::Duration;
 use crossterm::{execute, queue};
 use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent};
 use crossterm::event::KeyModifiers;
@@ -30,6 +31,7 @@ use crossterm::style::{
 const NONE: KeyModifiers = KeyModifiers::NONE;
 const CTRL: KeyModifiers = KeyModifiers::CONTROL;
 const ALT: KeyModifiers = KeyModifiers::ALT;
+const SHIFT: KeyModifiers = KeyModifiers::SHIFT;
 
 const DEFAULT_PROMPT: &str = "\\{cyan}\\{bold}\\{current_dir} $\\{reset} ";
 
@@ -127,18 +129,8 @@ impl Mainloop {
             self.dircolor.load(var.as_str());
         }
 
-        // Read inputs.
-        let (tx, rx) = mpsc::channel();
-        let tx1 = tx.clone();
-        std::thread::spawn(move || {
-            loop {
-                if let Ok(ev) = crossterm::event::read() {
-                    tx1.send(Event::Input(ev)).ok();
-                }
-            }
-        });
-
         // Read signals.
+        let (tx, rx) = mpsc::channel();
         let tx2 = tx.clone();
         std::thread::spawn(move || {
             let signals = Signals::new(&[signal_hook::SIGWINCH]).unwrap();
@@ -161,9 +153,26 @@ impl Mainloop {
 
         // We're all set! Start processing events such as key inputs.
         loop {
-            let ev = rx.recv().unwrap();
             let started_at = std::time::SystemTime::now();
-            self.handle_event(ev);
+            match crossterm::event::poll(Duration::from_millis(100)) {
+                Ok(true) => {
+                    loop {
+                        if let Ok(ev) = crossterm::event::read() {
+                            self.handle_event(Event::Input(ev))
+                        }
+
+                        match crossterm::event::poll(Duration::from_millis(0)) {
+                            Ok(true) => (), // Continue reading stdin.
+                            _ => break,
+                        }
+                    }
+                }
+                _ => {
+                    if let Ok(ev) = rx.try_recv() {
+                        self.handle_event(ev);       
+                    }
+                }
+            }
 
             if let Some(status) = self.exited {
                 return status;
