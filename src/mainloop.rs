@@ -413,6 +413,9 @@ impl Mainloop {
             (KeyCode::Char(ch), NONE) => {
                 self.input.insert(ch);
             }
+            (KeyCode::Char(ch), SHIFT) => {
+                self.input.insert(ch);
+            }
             _ => {
                 warn!("unsupported key event: {:?}", ev);
             }
