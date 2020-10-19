@@ -153,7 +153,7 @@ impl Mainloop {
 
         // We're all set! Start processing events such as key inputs.
         loop {
-            let started_at = std::time::SystemTime::now();
+            let mut started_at = None;
             match crossterm::event::poll(Duration::from_millis(100)) {
                 Ok(true) => {
                     loop {
@@ -169,6 +169,7 @@ impl Mainloop {
                 }
                 _ => {
                     if let Ok(ev) = rx.try_recv() {
+                        started_at = Some(std::time::SystemTime::now());
                         self.handle_event(ev);       
                     }
                 }
@@ -218,8 +219,10 @@ impl Mainloop {
                 self.do_complete = false;
             }
 
-            trace!("handle_event: took {}ms",
-                started_at.elapsed().unwrap().as_millis());
+            if let Some(started_at) = started_at {
+                trace!("handle_event: took {}ms",
+                    started_at.elapsed().unwrap().as_millis());
+            }
         }
     }
 
