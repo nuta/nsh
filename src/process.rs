@@ -407,7 +407,7 @@ pub fn run_external_command(
     }
 
     // Spawn a child.
-    match fork().expect("failed to fork") {
+    match unsafe { fork() }.expect("failed to fork") {
         ForkResult::Parent { child } => Ok(ExitStatus::Running(child)),
         ForkResult::Child => {
             // Create or join a process group.

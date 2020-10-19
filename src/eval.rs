@@ -440,7 +440,7 @@ pub fn eval_in_subshell(shell: &mut Shell, terms: &[parser::Term]) -> Result<(i3
 }
 
 fn spawn_subshell(shell: &mut Shell, terms: &[parser::Term], ctx: &Context) -> Result<Pid> {
-    match fork().expect("failed to fork") {
+    match unsafe { fork() }.expect("failed to fork") {
         ForkResult::Parent { child } => Ok(child),
         ForkResult::Child => {
             let status = match run_terms(shell, terms, ctx.stdin, ctx.stdout, ctx.stderr) {
