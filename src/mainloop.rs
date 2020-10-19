@@ -1165,6 +1165,16 @@ fn path_completion(pattern: &str) -> FuzzyVec {
             let mut entries = FuzzyVec::new();
             for file in files {
                 let path = file.unwrap().path();
+                if !pattern.starts_with(".") {
+                    if let Some(filename) = path.file_name() {
+                        if let Some(filename) = filename.to_str() {
+                            if filename.starts_with(".") {
+                                continue;
+                            }
+                        }
+                    }
+                }
+
                 let (prefix, relpath) = if pattern.starts_with('~') {
                     ("~/", path.strip_prefix(&home_dir).unwrap())
                 } else {
