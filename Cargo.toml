@@ -39,8 +39,8 @@ failure = "0"
 pest = "2"
 pest_derive = "2"
 backtrace = "0"
-crossterm = "0"
-signal-hook = "0"
+crossterm = "^0.18"
+signal-hook = "0.2"
 phf = { version = "0", features = ["macros"] }
 
 [dev-dependencies]

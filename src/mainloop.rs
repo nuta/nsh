@@ -134,7 +134,7 @@ impl Mainloop {
         let tx2 = tx.clone();
         std::thread::spawn(move || {
             let signals = Signals::new(&[signal_hook::SIGWINCH]).unwrap();
-            for signal in &signals {
+            for signal in signals {
                 match signal {
                     signal_hook::SIGWINCH => {
                         tx2.send(Event::ScreenResized).ok();
