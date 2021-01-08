@@ -117,6 +117,14 @@ fn preload_bash() -> Child {
     bash
 }
 
+// Guesses the completion function (assuming its name is "_{cmd_name}").
+fn guess_completion_cmd_name(cmd_name: &str) -> String {
+    match cmd_name {
+        "git" => "__git_main".to_owned(),
+        _ => format!("_{}", &cmd_name.replace('-', "_")),
+    }
+}
+
 fn run_bash(bash: &mut Option<Child>, words: Vec<String>, current_word: usize) -> Option<FuzzyVec> {
     if words.is_empty() {
         return None;
@@ -155,8 +163,9 @@ fn run_bash(bash: &mut Option<Child>, words: Vec<String>, current_word: usize) -
     }
     writeln!(stdin, ")").ok();
 
-    // Run the completion function (assuming its name is "_{cmd_name}").
-    writeln!(stdin, "_{} >/dev/null 2>&1", &cmd_name.replace('-', "_")).ok();
+    // Run the completion function.
+    let completion_cmd = guess_completion_cmd_name(&cmd_name);
+    writeln!(stdin, "{} >/dev/null 2>>~/.nsh.log", completion_cmd).ok();
 
     // Print the results.
     writeln!(
