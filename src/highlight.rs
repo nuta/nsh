@@ -31,9 +31,9 @@ pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
                     || shell.lookup_alias(cmd.as_str()).is_some();
 
                 if command_exists {
-                    write!(buf, "{}{}{}{}", bold, argv0_color, cmd, reset).ok();
+                    write!(buf, "{}{}{}", argv0_color, cmd, reset).ok();
                 } else {
-                    write!(buf, "{}{}{}{}", bold, invalid_argv0_color, cmd, reset).ok();
+                    write!(buf, "{}{}{}", invalid_argv0_color, cmd, reset).ok();
                 };
             }
             Span::Literal(span) => {
