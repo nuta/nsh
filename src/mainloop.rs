@@ -449,6 +449,22 @@ impl Mainloop {
         self.handle_event(ev);
     }
 
+    fn build_prompt(&mut self) -> (String, usize) {
+        let prompt_fmt = &self
+            .shell
+            .get("PROMPT")
+            .map(|var| var.as_str().to_owned())
+            .unwrap_or_else(|| DEFAULT_PROMPT.to_owned());
+
+        match parse_prompt(prompt_fmt) {
+            Ok(fmt) => draw_prompt(&fmt),
+            Err(err) => {
+                print_err!("failed to parse $PROMPT: {}", err);
+                ("$ ".to_owned(), 2)
+            }
+        }
+    }
+
     fn print_prompt(&mut self) {
         if cfg!(test) {
             // Do nothing in tests.
@@ -472,21 +488,8 @@ impl Mainloop {
             ))
         ).ok();
 
-        let prompt_fmt = &self
-            .shell
-            .get("PROMPT")
-            .map(|var| var.as_str().to_owned())
-            .unwrap_or_else(|| DEFAULT_PROMPT.to_owned());
-
-        let (prompt_str, prompt_len) = match parse_prompt(prompt_fmt) {
-            Ok(fmt) => draw_prompt(&fmt),
-            Err(err) => {
-                print_err!("failed to parse $PROMPT: {}", err);
-                ("$ ".to_owned(), 2)
-            }
-        };
-
-        queue!(stdout, Print(prompt_str.replace("\n", "\r\n"))).ok();
+        let (prompt_str, prompt_len) = self.build_prompt();
+        queue!(stdout, Print(prompt_str.replace("\n", "\r\n"))).ok();        
         stdout.flush().ok();
 
         // Report the Time-To-First-Prompt (TTFP).
@@ -533,6 +536,16 @@ impl Mainloop {
             ).ok();
         }
 
+        if self.clear_above > 0 {
+            // Redraw the prompt since it has been cleared.           
+            let (prompt_str, _) = self.build_prompt();
+            queue!(
+                stdout,
+                Print("\r"),
+                Print(prompt_str.replace("\n", "\r\n"))
+            ).ok();
+        }
+
         // Print the highlighted input.
         let h = highlight::highlight(&self.input_ctx, &mut self.shell);
         queue!(
@@ -545,7 +558,7 @@ impl Mainloop {
 
         // Handle the case when the cursor is at the end of a line.
         let current_x = self.prompt_len + self.input.len();
-        if current_x == self.columns {
+        if current_x % self.columns == 0 {
             queue!(stdout, Print("\r\n")).ok();
         }
 
