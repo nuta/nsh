@@ -1,6 +1,5 @@
 # Summary
 
-- [nsh](README.md)
 - [Getting Started](getting_started.md)
 
 - [Key Bindings](key_bindings.md)

@@ -3,13 +3,11 @@ nsh
 ![CI Status](https://github.com/nuta/nsh/workflows/CI/badge.svg?branch=master)
 [![Latest version](https://img.shields.io/crates/v/nsh.svg)](https://crates.io/crates/nsh)
 
-**Currently nsh is incomplete and not yet stable. Succeeded in crashing nsh? [Let me know](https://github.com/nuta/nsh/issues)!**
-
 A command-line shell that focuses on productivity and swiftness featuring:
 
 - A POSIX compliant interactive shell with some Bash extensions.
 - Tab completions and syntax highlighting.
-- A builtin interactive fuzzy completion filter.
+- Bash completion support (by internally invoking the genuine Bash).
 - Builtin zero configration features.
 - Written in Rust :crab:
 
@@ -23,7 +21,7 @@ $ cargo install nsh
 
 Documentation
 -------------
-**[Documentation](https://seiya.me/nsh)**
+**[Documentation](https://github.com/nuta/nsh/tree/master/docs)**
 
 Why create a new shell?
 -----------------------
