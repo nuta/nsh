@@ -1196,7 +1196,9 @@ fn path_completion(pattern: &str, only_dirs: bool) -> FuzzyVec {
                 }
 
                 let path = file.path();
-                if !pattern.starts_with(".") {
+
+                // Ignore dotfiles unless the pattern contains ".".
+                if !pattern.starts_with(".") && !pattern.contains("/.") {
                     if let Some(filename) = path.file_name() {
                         if let Some(filename) = filename.to_str() {
                             if filename.starts_with(".") {
