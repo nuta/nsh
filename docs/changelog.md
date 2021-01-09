@@ -1,5 +1,12 @@
 # Change Log
 
+## v0.4.0 (Jan 9, 2021)
+- Support filtering the history in the current working directory (Press <kbd>^H<Kbd>).
+- Implement zsh's push-line feature (Press <kbd>M-q</kbd>): useful when you wrote a long command but noticed that you need to another command before executing the long one.
+- completion: Implement the fastpath for cd(1) to improve its responsibility.
+- Use crostterm library.
+- Fix a 100% CPU usage bug which occurred when you spawn nsh in nsh.
+
 ## v0.3.5 (Aug 26, 2020)
 - Minor improvements and bug fixes.
 
