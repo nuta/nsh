@@ -82,6 +82,10 @@ impl History {
             return;
         }
 
+        if cmd.len() < 8 {
+            return;
+        }
+
         // Ignore if `cmd` is same as the last command.
         if let Some(last) = self.history.nth_last(0) {
             if last.as_str() == cmd {
