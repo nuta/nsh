@@ -194,7 +194,7 @@ impl Mainloop {
                     let argv0 = self.current_span_text().unwrap();
                     let comps = if argv0.starts_with('/')
                         || argv0.starts_with('.') || argv0.starts_with('~') {
-                        path_completion(argv0)
+                        path_completion(argv0, false)
                     } else {
                         self.shell.path_table().fuzzy_vec().clone()
                     };
@@ -208,12 +208,22 @@ impl Mainloop {
                         }
                     }
 
-                    tx_bash
-                        .send(BashRequest::Complete {
-                            words: self.input_ctx.words.clone(),
-                            current_word: self.input_ctx.current_word,
-                        })
-                        .ok();
+                    // For cd(1), invoek path completion quickly to improve UX.
+                    if self.input_ctx.words[0] == "cd" {
+                        let pattern = self.current_span_text().unwrap_or("");
+                        let entries = path_completion(pattern, true);
+                        if entries.is_empty() {
+                            self.notify("completion: no files");
+                        }
+                        self.update_completion_entries(entries);        
+                    } else {
+                        tx_bash
+                            .send(BashRequest::Complete {
+                                words: self.input_ctx.words.clone(),
+                                current_word: self.input_ctx.current_word,
+                            })
+                            .ok();
+                    }
                 }
 
                 self.do_complete = false;
@@ -267,7 +277,7 @@ impl Mainloop {
             Event::NoCompletion => {
                 trace!("completion not found, using path finder instead");
                 let pattern = self.current_span_text().unwrap_or("");
-                let entries = path_completion(pattern);
+                let entries = path_completion(pattern, false);
                 if entries.is_empty() {
                     self.notify("completion: no files");
                 }
@@ -1152,7 +1162,7 @@ impl UserInput {
     }
 }
 
-fn path_completion(pattern: &str) -> FuzzyVec {
+fn path_completion(pattern: &str, only_dirs: bool) -> FuzzyVec {
     let home_dir = dirs::home_dir().unwrap();
     let current_dir = std::env::current_dir().unwrap();
     let mut dir = if pattern.is_empty() {
@@ -1175,12 +1185,17 @@ fn path_completion(pattern: &str) -> FuzzyVec {
         }
     };
 
-    trace!("path_completion: dir={}, pattern='{}'", dir.display(), pattern);
+    trace!("path_completion: dir={}, pattern='{}', only_dirs={}", dir.display(), pattern, only_dirs);
     match fs::read_dir(&dir) {
         Ok(files) => {
             let mut entries = FuzzyVec::new();
             for file in files {
-                let path = file.unwrap().path();
+                let file = file.unwrap();
+                if only_dirs && !file.file_type().unwrap().is_dir() {
+                    continue;
+                }
+
+                let path = file.path();
                 if !pattern.starts_with(".") {
                     if let Some(filename) = path.file_name() {
                         if let Some(filename) = filename.to_str() {
