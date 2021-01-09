@@ -14,7 +14,7 @@ magenta_span     = { "\\{magenta}" }
 newline_span     = { "\\n" }
 
 condition = {
-    "in_repo"
+    "in_repo" | "in_remote"
 }
 if_span = { "\\if{" ~ condition ~ "}" ~ "{" ~ prompt ~ "}" ~ "{"~ prompt ~ "}" }
 

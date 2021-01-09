@@ -46,6 +46,7 @@ PROMPT="\{current_dir}\if{in_repo}{ [\{repo_status}]}{} \$ "
 ### Conditionals
 |          **Value**            |                **Description**               |
 |:-----------------------------:|:--------------------------------------------:|
+| `in_remote`                   | True if it is in a remote host over SSH.     |
 | `in_repo`                     | True if the current directory is in a repo.  |
 
 ## misc.

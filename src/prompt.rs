@@ -25,6 +25,7 @@ pub enum Color {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Condition {
     InRepo,
+    InRemote,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -70,6 +71,7 @@ fn visit_prompt(pair: Pair<Rule>) -> Prompt {
                 let mut inner = pair.into_inner();
                 let condition = match inner.next().unwrap().as_span().as_str() {
                     "in_repo" => Condition::InRepo,
+                    "in_remote" => Condition::InRemote,
                     _ => unreachable!(),
                 };
 
@@ -221,6 +223,13 @@ fn get_repo_info() -> String {
     columns.join("|")
 }
 
+lazy_static! {
+    // Use lazy_static to cache the result.
+    static ref IN_REMOTE: bool = {
+        std::env::var("SSH_CLIENT").is_ok()
+    };
+}
+
 fn evaluate_condition(cond: &Condition) -> bool {
     match cond {
         Condition::InRepo => {
@@ -233,6 +242,9 @@ fn evaluate_condition(cond: &Condition) -> bool {
                 .status()
                 .map(|status| status.success())
                 .unwrap_or(false)
+        }
+        Condition::InRemote => {
+            *IN_REMOTE        
         }
     }
 }
