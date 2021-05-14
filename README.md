@@ -44,4 +44,4 @@ source code, and there must be bugs. To make nsh practical for daily use, I need
 
 License
 -------
-CC0 or MIT. Choose whichever you prefer.
+See [LICENSE.md](https://github.com/nuta/nsh/blob/main/LICENSE.md).
