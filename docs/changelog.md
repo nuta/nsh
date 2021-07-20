@@ -1,5 +1,9 @@
 # Change Log
 
+## v0.4.1 (Jul 20, 2021)
+- Prompt: Support `in_remote` predicate.
+- Fix some compile errors.
+
 ## v0.4.0 (Jan 9, 2021)
 - Support filtering the history in the current working directory (Press <kbd>^H<Kbd>).
 - Implement zsh's push-line feature (Press <kbd>M-q</kbd>): useful when you wrote a long command but noticed that you need to another command before executing the long one.
