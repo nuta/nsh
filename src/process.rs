@@ -316,7 +316,7 @@ pub fn wait_for_any_process(shell: &mut Shell, no_block: bool) -> Option<Pid> {
             (pid, ProcessState::Completed(-1))
         }
         Ok(WaitStatus::Stopped(pid, _signal)) => (pid, ProcessState::Stopped(pid)),
-        Err(nix::Error::Sys(nix::errno::Errno::ECHILD)) | Ok(WaitStatus::StillAlive) => {
+        Err(nix::errno::Errno::ECHILD) | Ok(WaitStatus::StillAlive) => {
             // No childs to be reported.
             return None;
         }
@@ -472,9 +472,8 @@ pub fn run_external_command(
                 Ok(_) => {
                     unreachable!();
                 }
-                Err(nix::Error::Sys(nix::errno::Errno::EACCES)) => {
-                    print_err!("Failed to exec {:?} (EACCESS). chmod(1) may help.",
-                        argv0);
+                Err(nix::errno::Errno::EACCES) => {
+                    print_err!("Failed to exec {:?} (EACCESS). chmod(1) may help.", argv0);
                     std::process::exit(1);
                 }
                 Err(err) => {
