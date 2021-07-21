@@ -1,5 +1,8 @@
 # Change Log
 
+## v0.4.2 (Jul 21, 2021)
+- bash_server: Search `$PATH` for a bash executable
+
 ## v0.4.1 (Jul 20, 2021)
 - Prompt: Support `in_remote` predicate.
 - Fix some compile errors.

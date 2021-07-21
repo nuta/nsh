@@ -454,7 +454,7 @@ dependencies = [
 
 [[package]]
 name = "nsh"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "backtrace",
  "crossterm",
