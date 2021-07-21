@@ -102,7 +102,7 @@ fn escape(s: &str) -> String {
 }
 
 fn preload_bash() -> Child {
-    let mut bash = Command::new("/bin/bash")
+    let mut bash = Command::new("bash")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
