@@ -299,7 +299,7 @@ impl Mainloop {
 
         let mut needs_redraw = true;
         match (ev.code, ev.modifiers) {
-            (KeyCode::Left, NONE) if self.completion_mode() => {
+            (KeyCode::Left, NONE) | (KeyCode::BackTab, SHIFT) if self.completion_mode() => {
                 self.comp_selected = self.comp_selected.saturating_sub(1);
             }
             (KeyCode::Right, NONE) | (KeyCode::Tab, NONE)
