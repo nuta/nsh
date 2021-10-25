@@ -716,7 +716,7 @@ impl Mainloop {
             .completions
             .search(self.current_span_text().unwrap_or(""))
             .iter()
-            .map(|(c, s)| (*c, s.to_string()))
+            .map(|(c, s)| (*c, s.to_string().replace(" ", "\\ ")))
             .collect();
         self.comp_selected =
             min(self.comp_selected, self.comps_filtered.len().saturating_sub(1));
