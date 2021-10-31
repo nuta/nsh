@@ -151,6 +151,17 @@ impl ContextParser {
         }
     }
 
+    // Returns true if self is currently within a quoted string
+    // and character passed in as an argument represents the ending character
+    // of that quoted string
+    fn is_end_of_quote(&self, c: char) -> bool {
+        return match self.in_quote {
+            Some(QuoteType::Single) => c == '\'',
+            Some(QuoteType::Double) => c == '"',
+            None => false,
+        };
+    }
+
     fn consume_span(&mut self) -> (State, Span) {
         let s: String = self.input.chars().skip(self.index).collect();
 
@@ -319,10 +330,13 @@ impl ContextParser {
                     buf.push('\\');
                     buf.push(escaped);
                 }
-                (Some(ch), _) if " \t\r\n".contains(ch) && self.in_quote.is_none() => {
+                (Some(ch), _) if " \t\r\n'\"".contains(ch) && self.in_quote.is_none() => {
                     break;
                 }
-                (Some(ch), _) if "'\";$".contains(ch) => {
+                (Some(ch), _) if ";$".contains(ch) => {
+                    break;
+                }
+                (Some(ch), _) if self.is_end_of_quote(ch) => {
                     break;
                 }
                 (Some('}'), _) if self.nested_param_expands > 0 => {
