@@ -1118,7 +1118,7 @@ impl UserInput {
     pub fn remove_until_word_start(&mut self) {
         // Remove whitespaces and slashes.
         while let Some(ch) = self.nth(self.cursor.saturating_sub(1)) {
-            if !self.word_split.contains(ch) {
+            if self.cursor == 0 || !self.word_split.contains(ch) {
                 break;
             }
 
