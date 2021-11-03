@@ -1210,6 +1210,8 @@ fn path_completion(pattern: &str, only_dirs: bool) -> FuzzyVec {
 
                 let (prefix, relpath) = if pattern.starts_with('~') {
                     ("~/", path.strip_prefix(&home_dir).unwrap())
+                } else if pattern.starts_with("/") {
+                    ("/", path.strip_prefix("/").unwrap())
                 } else {
                     ("", path.strip_prefix(&current_dir).unwrap_or(&path))
                 };
