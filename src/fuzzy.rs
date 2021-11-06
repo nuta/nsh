@@ -100,7 +100,8 @@ fn fuzzy_search<'a>(
 
     /// Check if entries contain the query characters with correct order.
     fn is_fuzzily_matched(s: &str, query: &str) -> bool {
-        let mut iter = s.chars();
+        let tmp = s.replace(" ", "\\ ");
+        let mut iter = tmp.chars();
         for q in query.chars() {
             loop {
                 match iter.next() {
@@ -119,7 +120,8 @@ fn fuzzy_search<'a>(
         .filter(|(_, s)| is_fuzzily_matched(s, query))
         .map(|(c, s)| (*c, s.as_str()))
         .collect::<Vec<_>>();
-    filtered.sort_by_cached_key(|entry| compute_score(entry.1, query));
+    let query = query.replace("\\ ", " ");
+    filtered.sort_by_cached_key(|entry| compute_score(entry.1, query.as_str()));
     filtered
 }
 
@@ -177,6 +179,29 @@ mod tests {
                     (None, "g++9"),
                 ]
             );
+        }
+
+        // Space in entry name
+        {
+            let entries = &[
+                (None, "test dir2".to_owned()),
+                (None, "test dir3".to_owned()),
+                (None, "test dir".to_owned()), // Must be found first, as it's an exact match
+            ];
+            for query in vec![
+                "test dir",     // entry name in quoted string literal
+                "test\\ dir",   // entry name with space character escaped
+            ] {
+                assert_eq!(
+                    fuzzy_search(entries, query),
+                    vec![
+                        (None, "test dir"),
+                        (None, "test dir2"),
+                        (None, "test dir3"),
+                    ],
+                    "input query: {}", query,
+                );
+            }
         }
     }
 }
