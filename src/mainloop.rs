@@ -1048,8 +1048,12 @@ impl UserInput {
         self.cursor = self.cursor.saturating_sub(1);
 
         while self.cursor > 0 {
-            if let Some(ch) = self.nth(self.cursor.saturating_sub(1)) {
-                if self.word_split.contains(ch) {
+            if let Some(next_ch) = self.nth(self.cursor.saturating_sub(1)) {
+                if let Some(ch) = self.nth(self.cursor) {
+                    if self.word_split.contains(next_ch) && !self.word_split.contains(ch) {
+                        break;
+                    }
+                } else {
                     break;
                 }
             } else {
@@ -1068,8 +1072,12 @@ impl UserInput {
         }
 
         while self.cursor < self.input.len() {
-            if let Some(ch) = self.nth(self.cursor.saturating_sub(1)) {
-                if self.word_split.contains(ch) {
+            if let Some(prev_ch) = self.nth(self.cursor.saturating_sub(1)) {
+                if let Some(ch) = self.nth(self.cursor) {
+                    if self.word_split.contains(prev_ch) && !self.word_split.contains(ch) {
+                        break;
+                    }
+                } else {
                     break;
                 }
             } else {
@@ -1256,10 +1264,16 @@ mod tests {
     #[test]
     fn move_by_word() {
         let mut m = create_mainloop();
-        m.input_str("abc x 123");
-        assert_eq!(m.input.cursor(), 9);
+        assert_eq!(m.input.cursor(), 0);
         m.input_event(key_event!(KeyCode::Char('b'), ALT));
-        assert_eq!(m.input.cursor(), 6);
+        assert_eq!(m.input.cursor(), 0);
+        m.input_event(key_event!(KeyCode::Char('f'), ALT));
+        assert_eq!(m.input.cursor(), 0);
+
+        m.input_str("abc x  123");
+        assert_eq!(m.input.cursor(), 10);
+        m.input_event(key_event!(KeyCode::Char('b'), ALT));
+        assert_eq!(m.input.cursor(), 7);
         m.input_event(key_event!(KeyCode::Char('b'), ALT));
         assert_eq!(m.input.cursor(), 4);
         m.input_event(key_event!(KeyCode::Char('b'), ALT));
@@ -1269,9 +1283,16 @@ mod tests {
         m.input_event(key_event!(KeyCode::Char('f'), ALT));
         assert_eq!(m.input.cursor(), 4);
         m.input_event(key_event!(KeyCode::Char('f'), ALT));
-        assert_eq!(m.input.cursor(), 6);
+        assert_eq!(m.input.cursor(), 7);
         m.input_event(key_event!(KeyCode::Char('f'), ALT));
-        assert_eq!(m.input.cursor(), 9);
+        assert_eq!(m.input.cursor(), 10);
+
+        m.input.clear();
+        m.input_str("     ");
+        m.input_event(key_event!(KeyCode::Char('f'), ALT));
+        assert_eq!(m.input.cursor(), 5);
+        m.input_event(key_event!(KeyCode::Char('b'), ALT));
+        assert_eq!(m.input.cursor(), 0);
     }
 
     #[test]
