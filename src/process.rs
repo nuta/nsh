@@ -6,7 +6,6 @@ use crate::shell::Shell;
 use crate::utils::FdFile;
 use crate::variable::Value;
 use failure::Error;
-use nix;
 use nix::sys::signal::{kill, sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use nix::sys::termios::{tcgetattr, tcsetattr, SetArg::TCSADRAIN, Termios};
 use nix::sys::wait::{waitpid, WaitPidFlag, WaitStatus};
@@ -141,20 +140,14 @@ impl Job {
     pub fn completed(&self, shell: &Shell) -> bool {
         self.processes.iter().all(|pid| {
             let state = shell.get_process_state(*pid).unwrap();
-            match state {
-                ProcessState::Completed(_) => true,
-                _ => false,
-            }
+            matches!(state, ProcessState::Completed(_))
         })
     }
 
     pub fn stopped(&self, shell: &Shell) -> bool {
         self.processes.iter().all(|pid| {
             let state = shell.get_process_state(*pid).unwrap();
-            match state {
-                ProcessState::Stopped(_) => true,
-                _ => false,
-            }
+            matches!(state, ProcessState::Stopped(_))
         })
     }
 }
@@ -182,9 +175,9 @@ pub fn continue_job(shell: &mut Shell, job: &Rc<Job>, background: bool) {
     }
 
     if background {
-        run_in_background(shell, &job, true);
+        run_in_background(shell, job, true);
     } else {
-        run_in_foreground(shell, &job, true);
+        run_in_foreground(shell, job, true);
     }
 }
 
@@ -211,7 +204,7 @@ pub fn run_in_foreground(shell: &mut Shell, job: &Rc<Job>, sigcont: bool) -> Pro
     }
 
     // Wait for the job to exit or stop.
-    let status = wait_for_job(shell, &job);
+    let status = wait_for_job(shell, job);
 
     // Save the current terminal status.
     job.termios

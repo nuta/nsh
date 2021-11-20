@@ -107,7 +107,7 @@ impl History {
         }
 
         self.history.append(cmd.to_string());
-        self.path2cwd.insert(cmd.to_string(), cwd.to_owned());
+        self.path2cwd.insert(cmd.to_string(), cwd);
     }
 }
 

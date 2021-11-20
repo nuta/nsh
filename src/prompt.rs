@@ -1,4 +1,3 @@
-use libc;
 use nix::unistd;
 use pest::iterators::{Pair, Pairs};
 use pest::Parser;
@@ -255,7 +254,7 @@ pub fn draw_prompt(prompt: &Prompt) -> (String, usize) {
         match span {
             Span::Literal(s) => {
                 len += s.len();
-                buf.push_str(&s)
+                buf.push_str(s)
             }
             Span::Color(c) => match c {
                 Color::Red => buf.push_str("\x1b[31m"),
@@ -270,7 +269,7 @@ pub fn draw_prompt(prompt: &Prompt) -> (String, usize) {
             },
             Span::Newline => {
                 len = 0;
-                buf.push_str("\n")
+                buf.push('\n')
             }
             Span::Username => {
                 let username = get_current_username();

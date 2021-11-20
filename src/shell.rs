@@ -4,7 +4,6 @@ use crate::parser;
 use crate::path::PathTable;
 use crate::process::{ExitStatus, Job, JobId, ProcessState};
 use crate::variable::{Frame, Value, Variable};
-use nix;
 use nix::sys::termios::{tcgetattr, Termios};
 use nix::unistd::{getpid, Pid};
 use std::collections::{HashMap, HashSet};

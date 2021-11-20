@@ -47,11 +47,10 @@ impl PatternWord {
 
     //// Expand patterns as a file path globbing.
     pub fn expand_glob(self) -> Result<Vec<String>> {
-        let includes_glob = self.fragments.iter().any(|frag| match frag {
-            LiteralOrGlob::AnyString => true,
-            LiteralOrGlob::AnyChar => true,
-            _ => false,
-        });
+        let includes_glob = self
+            .fragments
+            .iter()
+            .any(|frag| matches!(frag, LiteralOrGlob::AnyString | LiteralOrGlob::AnyChar));
 
         let mut expanded_words = Vec::new();
         if includes_glob {

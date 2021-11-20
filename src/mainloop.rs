@@ -178,10 +178,10 @@ impl Mainloop {
 
             if self.do_complete {
                 let is_argv0 = if let Some(current_span) = self.input_ctx.current_span {
-                    match &self.input_ctx.spans[current_span] {
-                        context_parser::Span::Argv0(_) => true,
-                        _ => false,
-                    }
+                    matches!(
+                        &self.input_ctx.spans[current_span],
+                        context_parser::Span::Argv0(_)
+                    )
                 } else {
                     false
                 };
@@ -257,14 +257,16 @@ impl Mainloop {
 
     fn handle_event(&mut self, ev: Event) {
         match ev {
-            Event::Input(input) if self.history_mode => match input {
-                TermEvent::Key(key) => self.handle_key_event_in_history_mode(&key),
-                _ => {}
-            },
-            Event::Input(input) => match input {
-                TermEvent::Key(key) => self.handle_key_event(&key),
-                _ => {}
-            },
+            Event::Input(input) if self.history_mode => {
+                if let TermEvent::Key(key) = input {
+                    self.handle_key_event_in_history_mode(&key)
+                }
+            }
+            Event::Input(input) => {
+                if let TermEvent::Key(key) = input {
+                    self.handle_key_event(&key)
+                }
+            }
             Event::ScreenResized => {
                 trace!("screen resize");
                 let screen_size = terminal::size().unwrap();
@@ -614,11 +616,8 @@ impl Mainloop {
                     )
                     .ok();
                 } else {
-                    match color {
-                        Some(ThemeColor::DirColor) => {
-                            self.dircolor.write(&mut stdout, Path::new(comp)).ok();
-                        }
-                        _ => {}
+                    if let Some(ThemeColor::DirColor) = color {
+                        self.dircolor.write(&mut stdout, Path::new(comp)).ok();
                     }
 
                     queue!(
@@ -757,7 +756,7 @@ impl Mainloop {
 
         print!("\r\n");
         disable_raw_mode().ok();
-        self.shell.run_str(&self.input.as_str());
+        self.shell.run_str(self.input.as_str());
         enable_raw_mode().ok();
         check_background_jobs(&mut self.shell);
 
@@ -1147,9 +1146,9 @@ fn path_completion(pattern: &str, only_dirs: bool) -> FuzzyVec {
     let home_dir = dirs::home_dir().unwrap();
     let current_dir = std::env::current_dir().unwrap();
     let mut dir = if pattern.is_empty() {
-        current_dir.to_path_buf()
-    } else if pattern.starts_with('~') {
-        home_dir.join(&pattern[1..].trim_start_matches('/'))
+        current_dir.clone()
+    } else if let Some(pattern) = pattern.strip_prefix('~') {
+        home_dir.join(&pattern.trim_start_matches('/'))
     } else {
         PathBuf::from(pattern)
     };
@@ -1160,7 +1159,7 @@ fn path_completion(pattern: &str, only_dirs: bool) -> FuzzyVec {
     } else {
         dir.pop();
         if dir.to_str().unwrap().is_empty() {
-            current_dir.to_path_buf()
+            current_dir.clone()
         } else {
             dir
         }
@@ -1184,10 +1183,10 @@ fn path_completion(pattern: &str, only_dirs: bool) -> FuzzyVec {
                 let path = file.path();
 
                 // Ignore dotfiles unless the pattern contains ".".
-                if !pattern.starts_with(".") && !pattern.contains("/.") {
+                if !pattern.starts_with('.') && !pattern.contains("/.") {
                     if let Some(filename) = path.file_name() {
                         if let Some(filename) = filename.to_str() {
-                            if filename.starts_with(".") {
+                            if filename.starts_with('.') {
                                 continue;
                             }
                         }
@@ -1196,7 +1195,7 @@ fn path_completion(pattern: &str, only_dirs: bool) -> FuzzyVec {
 
                 let (prefix, relpath) = if pattern.starts_with('~') {
                     ("~/", path.strip_prefix(&home_dir).unwrap())
-                } else if pattern.starts_with("/") {
+                } else if pattern.starts_with('/') {
                     ("/", path.strip_prefix("/").unwrap())
                 } else {
                     ("", path.strip_prefix(&current_dir).unwrap_or(&path))

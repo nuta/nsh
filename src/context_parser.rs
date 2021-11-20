@@ -65,10 +65,10 @@ pub enum Span {
 }
 
 fn is_word_separator(span: &Span) -> bool {
-    match span {
-        Span::Space(_) | Span::CommandSep(_) | Span::CmdSubstStart => true,
-        _ => false,
-    }
+    matches!(
+        span,
+        Span::Space(_) | Span::CommandSep(_) | Span::CmdSubstStart
+    )
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -155,11 +155,11 @@ impl ContextParser {
     // and character passed in as an argument represents the ending character
     // of that quoted string
     fn is_end_of_quote(&self, c: char) -> bool {
-        return match self.in_quote {
+        match self.in_quote {
             Some(QuoteType::Single) => c == '\'',
             Some(QuoteType::Double) => c == '"',
             None => false,
-        };
+        }
     }
 
     fn consume_span(&mut self) -> (State, Span) {
@@ -202,7 +202,7 @@ impl ContextParser {
         }
 
         // Whitespaces.
-        if let Some(ch) = s.chars().nth(0) {
+        if let Some(ch) = s.chars().next() {
             if is_whitespace(ch) {
                 let mut sep = String::new();
                 for ch in s.chars().take_while(|ch| is_whitespace(*ch)) {
@@ -286,7 +286,7 @@ impl ContextParser {
         }
 
         // Quoted strings.
-        match s.chars().nth(0) {
+        match s.chars().next() {
             Some(ch @ '"') | Some(ch @ '\'') => {
                 let quote_type = if ch == '"' {
                     QuoteType::Double

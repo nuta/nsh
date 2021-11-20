@@ -17,11 +17,11 @@ struct AliasParser;
 fn parse_alias(alias: &str) -> Result<Alias, parser::ParseError> {
     AliasParser::parse(Rule::alias, alias)
         .map_err(|err| parser::ParseError::Fatal(err.to_string()))
-        .and_then(|mut pairs| {
+        .map(|mut pairs| {
             let mut inner = pairs.next().unwrap().into_inner();
             let name = inner.next().unwrap().as_span().as_str().to_owned();
             let body = inner.next().unwrap().as_str().to_owned();
-            Ok(Alias { name, body })
+            Alias { name, body }
         })
 }
 

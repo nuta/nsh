@@ -26,7 +26,7 @@ pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
         match span {
             Span::Argv0(cmd) => {
                 let command_exists = (cmd.starts_with('/') && Path::new(cmd.as_str()).exists())
-                    || shell.path_table().contains(&cmd)
+                    || shell.path_table().contains(cmd)
                     || INTERNAL_COMMANDS.contains_key(cmd.as_str())
                     || shell.lookup_alias(cmd.as_str()).is_some();
 
@@ -40,11 +40,11 @@ pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
                 if span.starts_with('-') {
                     write!(buf, "{}{}{}", option_color, span, reset).ok();
                 } else {
-                    buf += &span;
+                    buf += span;
                 }
             }
             Span::Space(span) => {
-                buf += &span;
+                buf += span;
             }
             Span::Keyword(keyword) => {
                 let keyword_str = match keyword {

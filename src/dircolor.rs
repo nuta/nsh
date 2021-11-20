@@ -22,25 +22,22 @@ impl DirColor {
     pub fn load(&mut self, dircolors: &str) {
         for part in dircolors.trim().split(':') {
             let mut columns = part.splitn(2, '=');
-            match (columns.next(), columns.next()) {
-                (Some(key), Some(value)) => {
-                    let mut cols = value.split(';');
-                    let (bold, color) = match cols.next() {
-                        Some("01") => (true, cols.next()),
-                        Some("05") => (false, cols.next()),
-                        col @ _ => (false, col),
+            if let (Some(key), Some(value)) = (columns.next(), columns.next()) {
+                let mut cols = value.split(';');
+                let (bold, color) = match cols.next() {
+                    Some("01") => (true, cols.next()),
+                    Some("05") => (false, cols.next()),
+                    col => (false, col),
+                };
+
+                if let Some(color) = color {
+                    let entry = DirColorEntry {
+                        color: color.to_owned(),
+                        bold,
                     };
 
-                    if let Some(color) = color {
-                        let entry = DirColorEntry {
-                            color: color.to_owned(),
-                            bold,
-                        };
-
-                        self.map.insert(key.to_owned(), entry);
-                    }
+                    self.map.insert(key.to_owned(), entry);
                 }
-                _ => {}
             }
         }
     }
