@@ -58,8 +58,7 @@ static COMP_DIRS: &[&str] = &[
     "/etc/bash_completion.d",
 ];
 
-static COMP_SUFFIXES: &[&str] =
-    &["-completion.bash", "-completion.sh", ".bash", ".sh", ""];
+static COMP_SUFFIXES: &[&str] = &["-completion.bash", "-completion.sh", ".bash", ".sh", ""];
 
 static PRELOADED_COMPS: phf::Set<&'static str> = phf_set! {
     "git",

@@ -59,7 +59,9 @@ impl FuzzyVec {
             return None;
         }
 
-        self.entries.get(self.entries.len() - nth - 1).map(|(_, s)| s.to_owned())
+        self.entries
+            .get(self.entries.len() - nth - 1)
+            .map(|(_, s)| s.to_owned())
     }
 
     /// appends a entry.
@@ -91,7 +93,7 @@ impl FuzzyVec {
 ///
 fn fuzzy_search<'a>(
     entries: &'a [(Option<ThemeColor>, String)],
-    query: &str
+    query: &str,
 ) -> Vec<(Option<ThemeColor>, &'a str)> {
     if query.is_empty() {
         // Return the all entries.
@@ -156,10 +158,7 @@ mod tests {
             // "cba" does not contain "bc" with correct order, so "cba" must be removed.
             assert_eq!(
                 fuzzy_search(entries, query),
-                vec![
-                    (None, "bca"),
-                    (None, "abc")
-                ]
+                vec![(None, "bca"), (None, "abc")]
             );
         }
 
@@ -173,11 +172,7 @@ mod tests {
             let query = "g++";
             assert_eq!(
                 fuzzy_search(entries, query),
-                vec![
-                    (None, "g++"),
-                    (None, "g++8"),
-                    (None, "g++9"),
-                ]
+                vec![(None, "g++"), (None, "g++8"), (None, "g++9"),]
             );
         }
 
@@ -189,17 +184,14 @@ mod tests {
                 (None, "test dir".to_owned()), // Must be found first, as it's an exact match
             ];
             for query in vec![
-                "test dir",     // entry name in quoted string literal
-                "test\\ dir",   // entry name with space character escaped
+                "test dir",   // entry name in quoted string literal
+                "test\\ dir", // entry name with space character escaped
             ] {
                 assert_eq!(
                     fuzzy_search(entries, query),
-                    vec![
-                        (None, "test dir"),
-                        (None, "test dir2"),
-                        (None, "test dir3"),
-                    ],
-                    "input query: {}", query,
+                    vec![(None, "test dir"), (None, "test dir2"), (None, "test dir3"),],
+                    "input query: {}",
+                    query,
                 );
             }
         }

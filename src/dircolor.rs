@@ -1,7 +1,7 @@
-use std::path::Path;
 use std::collections::HashMap;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 struct DirColorEntry {
     bold: bool,
@@ -58,19 +58,31 @@ impl DirColor {
         };
 
         if let Some(e) = self.map.get(key) {
-            use crossterm::style::{Color, Attribute, SetAttribute, SetForegroundColor};
+            use crossterm::style::{Attribute, Color, SetAttribute, SetForegroundColor};
 
             if e.bold {
                 write!(buf, "{}", SetAttribute(Attribute::Bold))?;
             }
 
             match e.color.as_str() {
-                "31" => { write!(buf, "{}", SetForegroundColor(Color::Red))?; }
-                "32" => { write!(buf, "{}", SetForegroundColor(Color::Green))?; }
-                "33" => { write!(buf, "{}", SetForegroundColor(Color::Yellow))?; }
-                "34" => { write!(buf, "{}", SetForegroundColor(Color::Blue))?; }
-                "35" => { write!(buf, "{}", SetForegroundColor(Color::Magenta))?; }
-                "36" => { write!(buf, "{}", SetForegroundColor(Color::Cyan))?; }
+                "31" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Red))?;
+                }
+                "32" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Green))?;
+                }
+                "33" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Yellow))?;
+                }
+                "34" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Blue))?;
+                }
+                "35" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Magenta))?;
+                }
+                "36" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Cyan))?;
+                }
                 _ => {}
             }
         }

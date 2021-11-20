@@ -26,8 +26,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             (Some(name), None) => {
                 ctx.shell.export(name);
             }
-            _ => {
-            }
+            _ => {}
         }
     }
 

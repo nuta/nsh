@@ -1374,7 +1374,7 @@ impl ShellParser {
     /// Dumps the parsed pairs for debbuging.
     #[allow(unused)]
     fn dump(&mut self, pairs: pest::iterators::Pairs<Rule>, level: usize) {
-        use crossterm::style::{Color, Attribute, SetAttribute, SetForegroundColor};
+        use crossterm::style::{Attribute, Color, SetAttribute, SetForegroundColor};
         for pair in pairs {
             for _ in 0..level {
                 print!("  ");

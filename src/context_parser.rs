@@ -466,8 +466,7 @@ impl ContextParser {
         // If the cursor is at end of input, add a empty span for completion.
         if self.cursor == self.input.len() {
             match spans.last() {
-                Some(Span::Literal(s)) | Some(Span::Argv0(s))
-                    if !s.ends_with('=') => {}
+                Some(Span::Literal(s)) | Some(Span::Argv0(s)) if !s.ends_with('=') => {}
                 _ => {
                     if self.cursor == 0 {
                         spans.push(Span::Argv0("".to_owned()));
@@ -480,8 +479,12 @@ impl ContextParser {
             }
         }
 
-        trace!("words={:?}, current_word={}, spans={:?}",
-               words, words[current_word_index], spans);
+        trace!(
+            "words={:?}, current_word={}, spans={:?}",
+            words,
+            words[current_word_index],
+            spans
+        );
 
         InputContext {
             words,
@@ -513,9 +516,7 @@ mod tests {
         assert_eq!(
             parse(&input, cursor),
             InputContext {
-                spans: vec![
-                    Span::Argv0("".to_owned()),
-                ],
+                spans: vec![Span::Argv0("".to_owned()),],
                 nested: vec![],
                 current_literal: Some(0..0),
                 input,
@@ -531,9 +532,7 @@ mod tests {
         assert_eq!(
             parse(&input, cursor),
             InputContext {
-                spans: vec![
-                    Span::Argv0("git".to_owned()),
-                ],
+                spans: vec![Span::Argv0("git".to_owned()),],
                 nested: vec![],
                 current_literal: Some(0..3),
                 input,
@@ -762,10 +761,7 @@ mod tests {
                 cursor,
                 nested: vec![],
                 current_literal: Some(21..21),
-                words: vec![
-                    "./configure".to_owned(),
-                    "--prefix=".to_owned(),
-                ],
+                words: vec!["./configure".to_owned(), "--prefix=".to_owned(),],
                 current_word: 1,
                 current_span: Some(3),
             }
@@ -786,10 +782,7 @@ mod tests {
                 cursor,
                 nested: vec![],
                 current_literal: Some(21..26),
-                words: vec![
-                    "./configure".to_owned(),
-                    "--prefix=~/dev".to_owned(),
-                ],
+                words: vec!["./configure".to_owned(), "--prefix=~/dev".to_owned(),],
                 current_word: 1,
                 current_span: Some(3),
             }

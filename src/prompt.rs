@@ -243,9 +243,7 @@ fn evaluate_condition(cond: &Condition) -> bool {
                 .map(|status| status.success())
                 .unwrap_or(false)
         }
-        Condition::InRemote => {
-            *IN_REMOTE        
-        }
+        Condition::InRemote => *IN_REMOTE,
     }
 }
 

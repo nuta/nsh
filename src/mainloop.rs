@@ -1,33 +1,30 @@
 use crate::bash_server::{bash_server, BashRequest};
 use crate::context_parser::{self, InputContext};
+use crate::dircolor::DirColor;
 use crate::fuzzy::FuzzyVec;
-use crate::theme::ThemeColor;
+use crate::highlight;
 use crate::history::HistorySelector;
 use crate::process::{check_background_jobs, ExitStatus};
 use crate::prompt::{draw_prompt, parse_prompt};
 use crate::shell::Shell;
-use crate::highlight;
-use crate::dircolor::DirColor;
+use crate::theme::ThemeColor;
+use crossterm::cursor::{self, MoveTo};
+use crossterm::event::KeyModifiers;
+use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent};
+use crossterm::style::{Attribute, Color, Print, SetAttribute, SetForegroundColor};
+use crossterm::terminal::{
+    self, disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
+    LeaveAlternateScreen,
+};
+use crossterm::{execute, queue};
 use signal_hook::{self, iterator::Signals};
 use std::cmp::{max, min};
 use std::fs;
 use std::io::Write;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::ops::Range;
 use std::time::Duration;
-use crossterm::{execute, queue};
-use crossterm::event::{Event as TermEvent, KeyCode, KeyEvent};
-use crossterm::event::KeyModifiers;
-use crossterm::terminal::{
-    self, enable_raw_mode, disable_raw_mode,
-    EnterAlternateScreen, LeaveAlternateScreen,
-    Clear, ClearType,
-};
-use crossterm::cursor::{self, MoveTo};
-use crossterm::style::{
-    Color, Attribute, SetAttribute, SetForegroundColor, Print,
-};
 const NONE: KeyModifiers = KeyModifiers::NONE;
 const CTRL: KeyModifiers = KeyModifiers::CONTROL;
 const ALT: KeyModifiers = KeyModifiers::ALT;
@@ -170,7 +167,7 @@ impl Mainloop {
                 _ => {
                     if let Ok(ev) = rx.try_recv() {
                         started_at = Some(std::time::SystemTime::now());
-                        self.handle_event(ev);       
+                        self.handle_event(ev);
                     }
                 }
             }
@@ -193,7 +190,9 @@ impl Mainloop {
                     // Command name completion.
                     let argv0 = self.current_span_text().unwrap();
                     let comps = if argv0.starts_with('/')
-                        || argv0.starts_with('.') || argv0.starts_with('~') {
+                        || argv0.starts_with('.')
+                        || argv0.starts_with('~')
+                    {
                         path_completion(argv0, false)
                     } else {
                         self.shell.path_table().fuzzy_vec().clone()
@@ -215,7 +214,7 @@ impl Mainloop {
                         if entries.is_empty() {
                             self.notify("completion: no files");
                         }
-                        self.update_completion_entries(entries);        
+                        self.update_completion_entries(entries);
                     } else {
                         tx_bash
                             .send(BashRequest::Complete {
@@ -230,8 +229,10 @@ impl Mainloop {
             }
 
             if let Some(started_at) = started_at {
-                trace!("handle_event: took {}ms",
-                    started_at.elapsed().unwrap().as_millis());
+                trace!(
+                    "handle_event: took {}ms",
+                    started_at.elapsed().unwrap().as_millis()
+                );
             }
         }
     }
@@ -256,18 +257,14 @@ impl Mainloop {
 
     fn handle_event(&mut self, ev: Event) {
         match ev {
-            Event::Input(input) if self.history_mode => {
-                match input {
-                    TermEvent::Key(key) => self.handle_key_event_in_history_mode(&key),
-                    _ => {},
-                }
-            }
-            Event::Input(input) => {
-                match input {
-                    TermEvent::Key(key) => self.handle_key_event(&key),
-                    _ => {},
-                }
-            }
+            Event::Input(input) if self.history_mode => match input {
+                TermEvent::Key(key) => self.handle_key_event_in_history_mode(&key),
+                _ => {}
+            },
+            Event::Input(input) => match input {
+                TermEvent::Key(key) => self.handle_key_event(&key),
+                _ => {}
+            },
             Event::ScreenResized => {
                 trace!("screen resize");
                 let screen_size = terminal::size().unwrap();
@@ -302,9 +299,7 @@ impl Mainloop {
             (KeyCode::Left, NONE) | (KeyCode::BackTab, SHIFT) if self.completion_mode() => {
                 self.comp_selected = self.comp_selected.saturating_sub(1);
             }
-            (KeyCode::Right, NONE) | (KeyCode::Tab, NONE)
-                if self.completion_mode() =>
-            {
+            (KeyCode::Right, NONE) | (KeyCode::Tab, NONE) if self.completion_mode() => {
                 if self.comps_filtered.is_empty() {
                     self.clear_completions();
                 } else {
@@ -317,17 +312,13 @@ impl Mainloop {
             (KeyCode::Up, NONE) | (KeyCode::Char('p'), CTRL) if self.completion_mode() => {
                 self.comp_selected = self.comp_selected.saturating_sub(self.comps_per_line);
             }
-            (KeyCode::Down, NONE) | (KeyCode::Char('n'), CTRL)
-                if self.completion_mode() =>
-            {
+            (KeyCode::Down, NONE) | (KeyCode::Char('n'), CTRL) if self.completion_mode() => {
                 self.comp_selected = min(
                     self.comp_selected + self.comps_per_line,
                     self.comps_filtered.len().saturating_sub(1),
                 );
             }
-            (KeyCode::Esc, NONE)
-            | (KeyCode::Char('q'), NONE)
-            | (KeyCode::Char('c'), CTRL)
+            (KeyCode::Esc, NONE) | (KeyCode::Char('q'), NONE) | (KeyCode::Char('c'), CTRL)
                 if self.completion_mode() =>
             {
                 self.clear_completions();
@@ -350,11 +341,7 @@ impl Mainloop {
             }
             (KeyCode::Char('l'), CTRL) => {
                 // Clear the screen.
-                execute!(
-                    std::io::stdout(),
-                    Clear(ClearType::All),
-                    MoveTo(0, 0)
-                ).ok();
+                execute!(std::io::stdout(), Clear(ClearType::All), MoveTo(0, 0)).ok();
                 self.print_prompt();
             }
             (KeyCode::Up, NONE) => {
@@ -496,10 +483,11 @@ impl Mainloop {
                 space = " ",
                 width = self.columns - 1,
             ))
-        ).ok();
+        )
+        .ok();
 
         let (prompt_str, prompt_len) = self.build_prompt();
-        queue!(stdout, Print(prompt_str.replace("\n", "\r\n"))).ok();        
+        queue!(stdout, Print(prompt_str.replace("\n", "\r\n"))).ok();
         stdout.flush().ok();
 
         // Report the Time-To-First-Prompt (TTFP).
@@ -528,32 +516,20 @@ impl Mainloop {
         // TODO: Don't clear the texts; overwrite instead to prevent flickering.
         if self.clear_below > 0 {
             for _ in 0..self.clear_below {
-                queue!(
-                    stdout,
-                    cursor::MoveDown(1),
-                    Clear(ClearType::CurrentLine)
-                ).ok();
+                queue!(stdout, cursor::MoveDown(1), Clear(ClearType::CurrentLine)).ok();
             }
 
             queue!(stdout, cursor::MoveUp(self.clear_below as u16)).ok();
         }
 
         for _ in 0..self.clear_above {
-            queue!(
-                stdout,
-                Clear(ClearType::CurrentLine),
-                cursor::MoveUp(1)
-            ).ok();
+            queue!(stdout, Clear(ClearType::CurrentLine), cursor::MoveUp(1)).ok();
         }
 
         if self.clear_above > 0 {
-            // Redraw the prompt since it has been cleared.           
+            // Redraw the prompt since it has been cleared.
             let (prompt_str, _) = self.build_prompt();
-            queue!(
-                stdout,
-                Print("\r"),
-                Print(prompt_str.replace("\n", "\r\n"))
-            ).ok();
+            queue!(stdout, Print("\r"), Print(prompt_str.replace("\n", "\r\n"))).ok();
         }
 
         // Print the highlighted input.
@@ -564,7 +540,8 @@ impl Mainloop {
             cursor::MoveRight(self.prompt_len as u16),
             Clear(ClearType::UntilNewLine),
             Print(h.replace("\n", "\r\n"))
-        ).ok();
+        )
+        .ok();
 
         // Handle the case when the cursor is at the end of a line.
         let current_x = self.prompt_len + self.input.len();
@@ -583,7 +560,8 @@ impl Mainloop {
                 Print(notification),
                 SetAttribute(Attribute::Reset),
                 Clear(ClearType::UntilNewLine),
-            ).ok();
+            )
+            .ok();
         }
 
         let notification_height = if self.notification.is_some() { 1 } else { 0 };
@@ -694,8 +672,7 @@ impl Mainloop {
     }
 
     fn reparse_input_ctx(&mut self) {
-        self.input_ctx
-            = context_parser::parse(self.input.as_str(), self.input.cursor());
+        self.input_ctx = context_parser::parse(self.input.as_str(), self.input.cursor());
     }
 
     fn update_completion_entries(&mut self, entries: FuzzyVec) {
@@ -718,15 +695,16 @@ impl Mainloop {
             .iter()
             .map(|(c, s)| (*c, s.to_string().replace(" ", "\\ ")))
             .collect();
-        self.comp_selected =
-            min(self.comp_selected, self.comps_filtered.len().saturating_sub(1));
+        self.comp_selected = min(
+            self.comp_selected,
+            self.comps_filtered.len().saturating_sub(1),
+        );
     }
 
     fn current_span_text(&self) -> Option<&str> {
         if let Some(current_span_index) = self.input_ctx.current_span {
             match &self.input_ctx.spans[current_span_index] {
-                context_parser::Span::Literal(literal)
-                | context_parser::Span::Argv0(literal) => {
+                context_parser::Span::Literal(literal) | context_parser::Span::Argv0(literal) => {
                     return Some(literal);
                 }
                 _ => {}
@@ -757,12 +735,7 @@ impl Mainloop {
             }
 
             for _ in 0..self.comps_height {
-                queue!(
-                    stdout,
-                    cursor::MoveDown(1),
-                    Clear(ClearType::CurrentLine)
-                )
-                .ok();
+                queue!(stdout, cursor::MoveDown(1), Clear(ClearType::CurrentLine)).ok();
             }
 
             queue!(
@@ -793,7 +766,7 @@ impl Mainloop {
         self.history_selector.reset();
         self.clear_above = 0;
         self.clear_below = 0;
-        
+
         if let Some(input) = self.input_stack.pop() {
             self.input.insert_str(&input);
         }
@@ -937,11 +910,7 @@ impl Mainloop {
                     )
                     .ok();
                 } else {
-                    queue!(
-                        stdout,
-                        Print(truncate(entry, self.columns)),
-                        Print("\r\n"),
-                    ).ok();
+                    queue!(stdout, Print(truncate(entry, self.columns)), Print("\r\n"),).ok();
                 }
             } else {
                 queue!(stdout, Print("\r\n")).ok();
@@ -954,10 +923,14 @@ impl Mainloop {
             stdout,
             SetAttribute(Attribute::Bold),
             SetAttribute(Attribute::Reverse),
-            Print(truncate(" Enter: Execute, Tab: Edit, ^C: Quit ", self.columns)),
+            Print(truncate(
+                " Enter: Execute, Tab: Edit, ^C: Quit ",
+                self.columns
+            )),
             SetAttribute(Attribute::Reset),
             MoveTo(cursor_x as u16, 0),
-        ).ok();
+        )
+        .ok();
         stdout.flush().ok();
     }
 }
@@ -1193,7 +1166,12 @@ fn path_completion(pattern: &str, only_dirs: bool) -> FuzzyVec {
         }
     };
 
-    trace!("path_completion: dir={}, pattern='{}', only_dirs={}", dir.display(), pattern, only_dirs);
+    trace!(
+        "path_completion: dir={}, pattern='{}', only_dirs={}",
+        dir.display(),
+        pattern,
+        only_dirs
+    );
     match fs::read_dir(&dir) {
         Ok(files) => {
             let mut entries = FuzzyVec::new();
@@ -1224,13 +1202,12 @@ fn path_completion(pattern: &str, only_dirs: bool) -> FuzzyVec {
                     ("", path.strip_prefix(&current_dir).unwrap_or(&path))
                 };
 
-                let comp =
-                    format!("{}{}", prefix, relpath.to_str().unwrap());
+                let comp = format!("{}{}", prefix, relpath.to_str().unwrap());
                 entries.append_with_color(comp, ThemeColor::DirColor);
             }
             entries.sort();
             entries
-        },
+        }
         Err(err) => {
             warn!("failed to readdir '{}': {}", dir.display(), err);
             FuzzyVec::new()
@@ -1240,9 +1217,9 @@ fn path_completion(pattern: &str, only_dirs: bool) -> FuzzyVec {
 
 #[cfg(test)]
 mod tests {
-    use tempfile::NamedTempFile;
     use super::*;
     use crossterm::event::KeyModifiers;
+    use tempfile::NamedTempFile;
     const NONE: KeyModifiers = KeyModifiers::NONE;
     const CTRL: KeyModifiers = KeyModifiers::CONTROL;
     const ALT: KeyModifiers = KeyModifiers::ALT;
@@ -1333,11 +1310,7 @@ mod tests {
     fn select_completion_at_the_end_of_input() {
         let mut m = create_mainloop();
         m.input_str("ls -l \t");
-        m.input_event(comps_event![
-            "README.md",
-            "Makefile",
-            "src",
-        ]);
+        m.input_event(comps_event!["README.md", "Makefile", "src",]);
         m.input_str("\n"); // Select README.md in the completion
         assert_eq!(m.input.as_str(), "ls -l README.md");
     }
@@ -1346,10 +1319,7 @@ mod tests {
     fn automatically_select_single_completion() {
         let mut m = create_mainloop();
         m.input_str("ls -l Sc\t");
-        m.input_event(comps_event![
-            "Makefile",
-            "SConstruct",
-        ]);
+        m.input_event(comps_event!["Makefile", "SConstruct",]);
         assert_eq!(m.input.as_str(), "ls -l SConstruct");
     }
 
@@ -1357,11 +1327,7 @@ mod tests {
     fn move_cursor_in_completion() {
         let mut m = create_mainloop();
         m.input_str("ls -l \t");
-        m.input_event(comps_event![
-            "README.md",
-            "Makefile",
-            "src",
-        ]);
+        m.input_event(comps_event!["README.md", "Makefile", "src",]);
         m.input_event(key_event!(KeyCode::Right, NONE)); // Move the cursor to Makefile
         m.input_str("\n"); // Select Makefile in the completion
         assert_eq!(m.input.as_str(), "ls -l Makefile");
@@ -1371,11 +1337,7 @@ mod tests {
     fn select_completion_in_current_word() {
         let mut m = create_mainloop();
         m.input_str("ls \t.lo");
-        m.input_event(comps_event![
-            "Cargo.toml",
-            "Cargo.lock",
-            "yarn.lock",
-        ]);
+        m.input_event(comps_event!["Cargo.toml", "Cargo.lock", "yarn.lock",]);
         m.input_str("\n"); // Select Cargo.lock in the completion
         assert_eq!(m.input.as_str(), "ls Cargo.lock");
     }
@@ -1384,17 +1346,10 @@ mod tests {
     fn completion_updates() {
         let mut m = create_mainloop();
         m.input_str("ls \t");
-        m.input_event(comps_event![
-            "Cargo.toml",
-            "Cargo.lock",
-            "yarn.lock",
-        ]);
+        m.input_event(comps_event!["Cargo.toml", "Cargo.lock", "yarn.lock",]);
         m.input_event(key_event!(KeyCode::Right, NONE)); // Move the cursor to Cargo.lock
         m.input_event(key_event!(KeyCode::Right, NONE)); // Move the cursor to yarn.lock
-        m.input_event(comps_event![
-            "package.json",
-            "node_modules",
-        ]);
+        m.input_event(comps_event!["package.json", "node_modules",]);
         m.input_str("\n"); // Select node_modules in the completion
         assert_eq!(m.input.as_str(), "ls node_modules");
     }

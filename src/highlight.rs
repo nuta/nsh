@@ -1,8 +1,8 @@
 use crate::builtins::INTERNAL_COMMANDS;
 use crate::context_parser::{CommandSepType, InputContext, KeywordType, QuoteType, Span};
 use crate::shell::Shell;
+use crossterm::style::{Attribute, Color, SetAttribute, SetForegroundColor};
 use std::path::Path;
-use crossterm::style::{Color, Attribute, SetAttribute, SetForegroundColor};
 
 pub fn highlight(ctx: &InputContext, shell: &mut Shell) -> String {
     use std::fmt::Write;

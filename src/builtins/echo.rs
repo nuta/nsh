@@ -53,11 +53,14 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             no_newline = true;
             true
         }
-        _ => false
+        _ => false,
     };
 
-    let iter =
-        ctx.argv.iter().skip(1 + if skip { 1 } else { 0 }).enumerate();
+    let iter = ctx
+        .argv
+        .iter()
+        .skip(1 + if skip { 1 } else { 0 })
+        .enumerate();
     for (i, escaped_arg) in iter {
         let arg = if escape {
             handle_escape_sequence(escaped_arg)

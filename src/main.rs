@@ -26,9 +26,11 @@ mod macros;
 mod bash_server;
 mod builtins;
 mod context_parser;
+mod dircolor;
 mod eval;
 mod expand;
 mod fuzzy;
+mod highlight;
 mod history;
 mod mainloop;
 mod parser;
@@ -37,20 +39,18 @@ mod pattern;
 mod process;
 mod prompt;
 mod shell;
-mod highlight;
+mod theme;
 mod utils;
 mod variable;
-mod theme;
-mod dircolor;
 
 use crate::process::ExitStatus;
 use crate::variable::Value;
+use crossterm::tty::IsTty;
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal};
 use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use structopt::StructOpt;
-use crossterm::tty::IsTty;
 
 fn interactive_mode(shell: shell::Shell) -> ExitStatus {
     // Ignore job-control-related signals in order not to stop the shell.
@@ -69,9 +69,7 @@ fn interactive_mode(shell: shell::Shell) -> ExitStatus {
 }
 
 lazy_static! {
-    pub static ref STARTED_AT: std::time::SystemTime = {
-        std::time::SystemTime::now()
-    };
+    pub static ref STARTED_AT: std::time::SystemTime = std::time::SystemTime::now();
 }
 
 const DEFAULT_PATH: &str = "/sbin:/usr/sbin:/usr/local/sbin:/bin:/usr/bin:/usr/local/bin";
@@ -162,8 +160,7 @@ struct Opt {
 fn init_logger() {
     use fern::colors::{Color, ColoredLevelConfig};
 
-    let log_colors = ColoredLevelConfig::new()
-        .info(Color::Green);
+    let log_colors = ColoredLevelConfig::new().info(Color::Green);
     let log_file = fern::log_file(dirs::home_dir().unwrap().join(".nsh.log"))
         .expect("failed to open ~/.nsh.log");
     fern::Dispatch::new()
