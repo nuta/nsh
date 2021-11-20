@@ -98,7 +98,7 @@ impl fmt::Display for JobId {
 /// Represents a job.
 /// See https://www.gnu.org/software/libc/manual/html_node/Implementing-a-Shell.html
 pub struct Job {
-    pub id: JobId,
+    id: JobId,
     pub pgid: Pid,
     pub cmd: String,
     // TODO: Remove entries in shell.states on destruction.
