@@ -148,7 +148,7 @@ struct Opt {
     version: bool,
     /// Behave like a login shell.
     #[structopt(short = "l", long = "login")]
-    login: bool,
+    _login: bool,
     /// The file to be executed.
     #[structopt(name = "FILE", parse(from_os_str))]
     file: Option<PathBuf>,
