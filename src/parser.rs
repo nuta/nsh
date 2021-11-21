@@ -75,6 +75,7 @@ pub enum LocalDeclaration {
     Name(String),
 }
 
+#[allow(clippy::enum_variant_names)] // Allow SimpleCommand
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Command {
     SimpleCommand {
@@ -198,6 +199,7 @@ pub struct BinaryExpr {
     pub rhs: Box<Expr>,
 }
 
+#[allow(clippy::enum_variant_names)] // Allow nested Expr
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Expr {
     Add(BinaryExpr),
@@ -384,14 +386,14 @@ impl ShellParser {
                 "/" | "//" => {
                     let spans = rest
                         .map(|p| self.visit_escaped_word(p, true).0)
-                        .unwrap_or_else(|| vec![]);
+                        .unwrap_or_else(Vec::new);
 
                     let mut pattern_spans = Vec::new();
                     let mut replacement_spans = Vec::new();
                     let mut spans_iter = spans.iter();
                     let mut lit = String::new();
                     let mut in_pattern = true;
-                    while let Some(span) = spans_iter.next() {
+                    for span in spans_iter.by_ref() {
                         match span {
                             Span::LiteralChars(chars) => {
                                 for ch in chars {
@@ -745,7 +747,7 @@ impl ShellParser {
                                 chars.push(LiteralChar::Escaped(lit_ch))
                             }
                             Rule::unescaped_char => {
-                                let lit_ch = ch.as_str().chars().nth(0).unwrap();
+                                let lit_ch = ch.as_str().chars().next().unwrap();
                                 chars.push(LiteralChar::Normal(lit_ch))
                             }
                             _ => unreachable!(),
@@ -1374,7 +1376,7 @@ impl ShellParser {
     /// Dumps the parsed pairs for debbuging.
     #[allow(unused)]
     fn dump(&mut self, pairs: pest::iterators::Pairs<Rule>, level: usize) {
-        use crossterm::style::{Color, Attribute, SetAttribute, SetForegroundColor};
+        use crossterm::style::{Attribute, Color, SetAttribute, SetForegroundColor};
         for pair in pairs {
             for _ in 0..level {
                 print!("  ");

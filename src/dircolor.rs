@@ -1,7 +1,7 @@
-use std::path::Path;
 use std::collections::HashMap;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 
 struct DirColorEntry {
     bold: bool,
@@ -22,25 +22,22 @@ impl DirColor {
     pub fn load(&mut self, dircolors: &str) {
         for part in dircolors.trim().split(':') {
             let mut columns = part.splitn(2, '=');
-            match (columns.next(), columns.next()) {
-                (Some(key), Some(value)) => {
-                    let mut cols = value.split(';');
-                    let (bold, color) = match cols.next() {
-                        Some("01") => (true, cols.next()),
-                        Some("05") => (false, cols.next()),
-                        col @ _ => (false, col),
+            if let (Some(key), Some(value)) = (columns.next(), columns.next()) {
+                let mut cols = value.split(';');
+                let (bold, color) = match cols.next() {
+                    Some("01") => (true, cols.next()),
+                    Some("05") => (false, cols.next()),
+                    col => (false, col),
+                };
+
+                if let Some(color) = color {
+                    let entry = DirColorEntry {
+                        color: color.to_owned(),
+                        bold,
                     };
 
-                    if let Some(color) = color {
-                        let entry = DirColorEntry {
-                            color: color.to_owned(),
-                            bold,
-                        };
-
-                        self.map.insert(key.to_owned(), entry);
-                    }
+                    self.map.insert(key.to_owned(), entry);
                 }
-                _ => {}
             }
         }
     }
@@ -58,19 +55,31 @@ impl DirColor {
         };
 
         if let Some(e) = self.map.get(key) {
-            use crossterm::style::{Color, Attribute, SetAttribute, SetForegroundColor};
+            use crossterm::style::{Attribute, Color, SetAttribute, SetForegroundColor};
 
             if e.bold {
                 write!(buf, "{}", SetAttribute(Attribute::Bold))?;
             }
 
             match e.color.as_str() {
-                "31" => { write!(buf, "{}", SetForegroundColor(Color::Red))?; }
-                "32" => { write!(buf, "{}", SetForegroundColor(Color::Green))?; }
-                "33" => { write!(buf, "{}", SetForegroundColor(Color::Yellow))?; }
-                "34" => { write!(buf, "{}", SetForegroundColor(Color::Blue))?; }
-                "35" => { write!(buf, "{}", SetForegroundColor(Color::Magenta))?; }
-                "36" => { write!(buf, "{}", SetForegroundColor(Color::Cyan))?; }
+                "31" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Red))?;
+                }
+                "32" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Green))?;
+                }
+                "33" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Yellow))?;
+                }
+                "34" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Blue))?;
+                }
+                "35" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Magenta))?;
+                }
+                "36" => {
+                    write!(buf, "{}", SetForegroundColor(Color::Cyan))?;
+                }
                 _ => {}
             }
         }

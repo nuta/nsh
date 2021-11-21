@@ -58,8 +58,7 @@ static COMP_DIRS: &[&str] = &[
     "/etc/bash_completion.d",
 ];
 
-static COMP_SUFFIXES: &[&str] =
-    &["-completion.bash", "-completion.sh", ".bash", ".sh", ""];
+static COMP_SUFFIXES: &[&str] = &["-completion.bash", "-completion.sh", ".bash", ".sh", ""];
 
 static PRELOADED_COMPS: phf::Set<&'static str> = phf_set! {
     "git",
@@ -164,14 +163,13 @@ fn run_bash(bash: &mut Option<Child>, words: Vec<String>, current_word: usize) -
     writeln!(stdin, ")").ok();
 
     // Run the completion function.
-    let completion_cmd = guess_completion_cmd_name(&cmd_name);
+    let completion_cmd = guess_completion_cmd_name(cmd_name);
     writeln!(stdin, "{} >/dev/null 2>>~/.nsh.log", completion_cmd).ok();
 
     // Print the results.
     writeln!(
         stdin,
-        "{}",
-        "for c in \"${COMPREPLY[@]}\"; do echo \"$c\"; done"
+        "for c in \"${{COMPREPLY[@]}}\"; do echo \"$c\"; done"
     )
     .ok();
 

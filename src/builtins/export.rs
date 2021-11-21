@@ -21,13 +21,12 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
             (Some(name), Some(value)) => {
                 ctx.shell.export(name);
                 ctx.shell
-                    .set(&name, Value::String(value.to_owned().to_string()), false);
+                    .set(name, Value::String(value.to_owned().to_string()), false);
             }
             (Some(name), None) => {
                 ctx.shell.export(name);
             }
-            _ => {
-            }
+            _ => {}
         }
     }
 

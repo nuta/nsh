@@ -4,7 +4,6 @@ use crate::parser;
 use crate::path::PathTable;
 use crate::process::{ExitStatus, Job, JobId, ProcessState};
 use crate::variable::{Frame, Value, Variable};
-use nix;
 use nix::sys::termios::{tcgetattr, Termios};
 use nix::unistd::{getpid, Pid};
 use std::collections::{HashMap, HashSet};
@@ -279,6 +278,7 @@ impl Shell {
         &mut self.jobs
     }
 
+    #[warn(clippy::mutable_key_type)]
     pub fn background_jobs_mut(&mut self) -> &mut HashSet<Rc<Job>> {
         &mut self.background_jobs
     }

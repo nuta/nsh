@@ -19,8 +19,8 @@ pub(super) fn parse_job_id(
     let id = match job_id {
         Some(job_id) => {
             let job_id = job_id.as_str();
-            if job_id.chars().nth(0) == Some('%') {
-                match (&job_id[1..]).parse() {
+            if let Some(job_id) = job_id.strip_prefix('%') {
+                match job_id.parse() {
                     Ok(job_id) => JobId::new(job_id),
                     Err(_) => {
                         writeln!(ctx.stderr, "nsh: invalid job id `{}'", job_id).ok();

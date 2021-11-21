@@ -1,10 +1,10 @@
 //! History management.
 use crate::fuzzy::FuzzyVec;
 use crate::theme::ThemeColor;
+use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 
 /// Command history.
 pub struct History {
@@ -59,18 +59,20 @@ impl History {
 
     pub fn search(&self, query: &str, filter_by_cwd: bool) -> Vec<(Option<ThemeColor>, &str)> {
         if filter_by_cwd {
-                let cwd = std::env::current_dir().unwrap();
-                self.history.search(query)
-                    .iter()
-                    .filter(|(_, cmd)| {
-                        match self.path2cwd.get(*cmd) {
-                            Some(path) if *path == cwd => true,
-                            Some(path) => {info!("path='{}' {}", path.display(), cwd.display()); false}
-                            _ => false,
-                        }
-                    })
-                    .cloned()
-                    .collect()
+            let cwd = std::env::current_dir().unwrap();
+            self.history
+                .search(query)
+                .iter()
+                .filter(|(_, cmd)| match self.path2cwd.get(*cmd) {
+                    Some(path) if *path == cwd => true,
+                    Some(path) => {
+                        info!("path='{}' {}", path.display(), cwd.display());
+                        false
+                    }
+                    _ => false,
+                })
+                .cloned()
+                .collect()
         } else {
             self.history.search(query)
         }
@@ -100,11 +102,12 @@ impl History {
                 .expect("failed to get the UNIX timestamp")
                 .as_secs() as usize;
             let dir = cwd.to_str().unwrap().to_owned();
-            file.write(format!("{}\t{}\t{}\n", time, dir, cmd).as_bytes()).ok();
+            file.write(format!("{}\t{}\t{}\n", time, dir, cmd).as_bytes())
+                .ok();
         }
 
         self.history.append(cmd.to_string());
-        self.path2cwd.insert(cmd.to_string(), cwd.to_owned());
+        self.path2cwd.insert(cmd.to_string(), cwd);
     }
 }
 

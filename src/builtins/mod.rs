@@ -1,8 +1,8 @@
 use crate::process::ExitStatus;
 use crate::shell::Shell;
 use crate::utils::FdFile;
-use std::io::Write;
 use phf::phf_map;
+use std::io::Write;
 
 mod alias;
 mod bg;
@@ -16,12 +16,12 @@ mod jobs;
 mod popd;
 mod pushd;
 mod read;
+mod rehash;
 mod set;
 mod shift;
 mod source;
 mod unset;
 mod wait;
-mod rehash;
 
 pub struct InternalCommandContext<'a> {
     pub argv: &'a [String],

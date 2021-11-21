@@ -9,7 +9,6 @@ use crate::process::*;
 use crate::shell::Shell;
 use crate::variable::Value;
 use failure::Error;
-use nix;
 use nix::unistd::{close, fork, pipe, setpgid, ForkResult, Pid};
 use std::fs::File;
 use std::io::prelude::*;
@@ -32,14 +31,14 @@ pub fn evaluate_expr(shell: &mut Shell, expr: &Expr) -> i32 {
     match expr {
         Expr::Expr(sub_expr) => evaluate_expr(shell, sub_expr),
         Expr::Literal(value) => *value,
-        Expr::Parameter { name } => shell.get_var_as_i32(&name).unwrap_or(0),
+        Expr::Parameter { name } => shell.get_var_as_i32(name).unwrap_or(0),
         Expr::Add(BinaryExpr { lhs, rhs }) => evaluate_expr(shell, lhs) + evaluate_expr(shell, rhs),
         Expr::Sub(BinaryExpr { lhs, rhs }) => evaluate_expr(shell, lhs) - evaluate_expr(shell, rhs),
         Expr::Mul(BinaryExpr { lhs, rhs }) => evaluate_expr(shell, lhs) * evaluate_expr(shell, rhs),
         Expr::Div(BinaryExpr { lhs, rhs }) => evaluate_expr(shell, lhs) / evaluate_expr(shell, rhs),
         Expr::Assign { name, rhs } => {
             let value = evaluate_expr(shell, rhs);
-            shell.assign(&name, Value::String(value.to_string()));
+            shell.assign(name, Value::String(value.to_string()));
             value
         }
         Expr::Eq(lhs, rhs) => bool_to_int!(evaluate_expr(shell, lhs) == evaluate_expr(shell, rhs)),
@@ -49,13 +48,13 @@ pub fn evaluate_expr(shell: &mut Shell, expr: &Expr) -> i32 {
         Expr::Gt(lhs, rhs) => bool_to_int!(evaluate_expr(shell, lhs) > evaluate_expr(shell, rhs)),
         Expr::Ge(lhs, rhs) => bool_to_int!(evaluate_expr(shell, lhs) >= evaluate_expr(shell, rhs)),
         Expr::Inc(name) => {
-            let value = shell.get_var_as_i32(&name).unwrap_or(0) + 1;
-            shell.assign(&name, Value::String(value.to_string()));
+            let value = shell.get_var_as_i32(name).unwrap_or(0) + 1;
+            shell.assign(name, Value::String(value.to_string()));
             value
         }
         Expr::Dec(name) => {
-            let value = shell.get_var_as_i32(&name).unwrap_or(0) - 1;
-            shell.assign(&name, Value::String(value.to_string()));
+            let value = shell.get_var_as_i32(name).unwrap_or(0) - 1;
+            shell.assign(name, Value::String(value.to_string()));
             value
         }
     }
@@ -76,7 +75,7 @@ pub fn evaluate_initializer(shell: &mut Shell, initializer: &Initializer) -> Res
         Initializer::Array(ref words) => {
             let elems = expand_words(shell, words)?;
             match (elems.len(), elems.get(0)) {
-                (1, Some(ref body)) if body.is_empty() => {
+                (1, Some(body)) if body.is_empty() => {
                     // Make `foo=()' an empty array.
                     Ok(Value::Array(vec![]))
                 }
@@ -128,9 +127,9 @@ fn call_function(
             }
 
             // $1, $2, ...
-            frame.set_args(&args);
+            frame.set_args(args);
 
-            let result = match run_command(shell, &body, ctx)? {
+            let result = match run_command(shell, body, ctx)? {
                 ExitStatus::Return => ExitStatus::ExitedWith(0),
                 result => result,
             };
@@ -180,7 +179,7 @@ fn run_simple_command(
     }
 
     // External commands
-    run_external_command(shell, &ctx, argv, redirects, assignments)
+    run_external_command(shell, ctx, argv, redirects, assignments)
 }
 
 fn run_local_command(
@@ -196,8 +195,8 @@ fn run_local_command(
                 LocalDeclaration::Assignment(Assignment {
                     name, initializer, ..
                 }) => {
-                    let value = evaluate_initializer(shell, &initializer)?;
-                    shell.set(&name, value, true)
+                    let value = evaluate_initializer(shell, initializer)?;
+                    shell.set(name, value, true)
                 }
                 LocalDeclaration::Name(name) => shell.define(name, true),
             }
@@ -253,7 +252,7 @@ fn run_case_command(
     let word = expand_word_into_string(shell, word)?;
     for case in cases {
         for pattern in &case.patterns {
-            let pattern = expand_into_single_pattern_word(shell, &pattern)?;
+            let pattern = expand_into_single_pattern_word(shell, pattern)?;
             if match_pattern(&pattern, &word) {
                 return Ok(run_terms(
                     shell, &case.body, ctx.stdin, ctx.stdout, ctx.stderr,
@@ -295,7 +294,7 @@ fn run_for_command(
         let expanded_words = expand_word_into_vec(shell, unexpanded_word, &shell.ifs())?;
         for pattern_word in expanded_words {
             for value in pattern_word.expand_glob()? {
-                shell.set(&var_name, Value::String(value), false);
+                shell.set(var_name, Value::String(value), false);
 
                 let result = run_terms(shell, body, ctx.stdin, ctx.stdout, ctx.stderr);
                 match result {
@@ -347,7 +346,7 @@ fn run_command(shell: &mut Shell, command: &parser::Command, ctx: &Context) -> R
             argv,
             redirects,
             assignments,
-        } => run_simple_command(shell, ctx, &argv, &redirects, &assignments)?,
+        } => run_simple_command(shell, ctx, argv, redirects, assignments)?,
         parser::Command::If {
             condition,
             then_part,
@@ -355,30 +354,24 @@ fn run_command(shell: &mut Shell, command: &parser::Command, ctx: &Context) -> R
             else_part,
             redirects,
         } => run_if_command(
-            shell,
-            ctx,
-            &condition,
-            &then_part,
-            &elif_parts,
-            &else_part,
-            &redirects,
+            shell, ctx, condition, then_part, elif_parts, else_part, redirects,
         )?,
         parser::Command::While { condition, body } => {
-            run_while_command(shell, ctx, &condition, &body)?
+            run_while_command(shell, ctx, condition, body)?
         }
-        parser::Command::Case { word, cases } => run_case_command(shell, ctx, &word, &cases)?,
+        parser::Command::Case { word, cases } => run_case_command(shell, ctx, word, cases)?,
         parser::Command::For {
             var_name,
             words,
             body,
-        } => run_for_command(shell, ctx, var_name, &words, &body)?,
+        } => run_for_command(shell, ctx, var_name, words, body)?,
         parser::Command::ArithFor {
             init,
             cond,
             update,
             body,
-        } => run_arith_for_command(shell, ctx, init, cond, update, &body)?,
-        parser::Command::LocalDef { declarations } => run_local_command(shell, &declarations)?,
+        } => run_arith_for_command(shell, ctx, init, cond, update, body)?,
+        parser::Command::LocalDef { declarations } => run_local_command(shell, declarations)?,
         parser::Command::FunctionDef { name, body } => {
             shell.set(name, Value::Function(body.clone()), true);
             ExitStatus::ExitedWith(0)

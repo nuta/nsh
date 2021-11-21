@@ -56,10 +56,7 @@ impl Variable {
     }
 
     pub fn is_function(&self) -> bool {
-        match &self.value {
-            Some(Value::Function(_)) => true,
-            _ => false,
-        }
+        matches!(&self.value, Some(Value::Function(_)))
     }
 }
 

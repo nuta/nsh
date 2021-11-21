@@ -65,10 +65,10 @@ pub enum Span {
 }
 
 fn is_word_separator(span: &Span) -> bool {
-    match span {
-        Span::Space(_) | Span::CommandSep(_) | Span::CmdSubstStart => true,
-        _ => false,
-    }
+    matches!(
+        span,
+        Span::Space(_) | Span::CommandSep(_) | Span::CmdSubstStart
+    )
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
@@ -155,11 +155,11 @@ impl ContextParser {
     // and character passed in as an argument represents the ending character
     // of that quoted string
     fn is_end_of_quote(&self, c: char) -> bool {
-        return match self.in_quote {
+        match self.in_quote {
             Some(QuoteType::Single) => c == '\'',
             Some(QuoteType::Double) => c == '"',
             None => false,
-        };
+        }
     }
 
     fn consume_span(&mut self) -> (State, Span) {
@@ -202,7 +202,7 @@ impl ContextParser {
         }
 
         // Whitespaces.
-        if let Some(ch) = s.chars().nth(0) {
+        if let Some(ch) = s.chars().next() {
             if is_whitespace(ch) {
                 let mut sep = String::new();
                 for ch in s.chars().take_while(|ch| is_whitespace(*ch)) {
@@ -286,7 +286,7 @@ impl ContextParser {
         }
 
         // Quoted strings.
-        match s.chars().nth(0) {
+        match s.chars().next() {
             Some(ch @ '"') | Some(ch @ '\'') => {
                 let quote_type = if ch == '"' {
                     QuoteType::Double
@@ -466,8 +466,7 @@ impl ContextParser {
         // If the cursor is at end of input, add a empty span for completion.
         if self.cursor == self.input.len() {
             match spans.last() {
-                Some(Span::Literal(s)) | Some(Span::Argv0(s))
-                    if !s.ends_with('=') => {}
+                Some(Span::Literal(s)) | Some(Span::Argv0(s)) if !s.ends_with('=') => {}
                 _ => {
                     if self.cursor == 0 {
                         spans.push(Span::Argv0("".to_owned()));
@@ -480,8 +479,12 @@ impl ContextParser {
             }
         }
 
-        trace!("words={:?}, current_word={}, spans={:?}",
-               words, words[current_word_index], spans);
+        trace!(
+            "words={:?}, current_word={}, spans={:?}",
+            words,
+            words[current_word_index],
+            spans
+        );
 
         InputContext {
             words,
@@ -513,9 +516,7 @@ mod tests {
         assert_eq!(
             parse(&input, cursor),
             InputContext {
-                spans: vec![
-                    Span::Argv0("".to_owned()),
-                ],
+                spans: vec![Span::Argv0("".to_owned()),],
                 nested: vec![],
                 current_literal: Some(0..0),
                 input,
@@ -531,9 +532,7 @@ mod tests {
         assert_eq!(
             parse(&input, cursor),
             InputContext {
-                spans: vec![
-                    Span::Argv0("git".to_owned()),
-                ],
+                spans: vec![Span::Argv0("git".to_owned()),],
                 nested: vec![],
                 current_literal: Some(0..3),
                 input,
@@ -762,10 +761,7 @@ mod tests {
                 cursor,
                 nested: vec![],
                 current_literal: Some(21..21),
-                words: vec![
-                    "./configure".to_owned(),
-                    "--prefix=".to_owned(),
-                ],
+                words: vec!["./configure".to_owned(), "--prefix=".to_owned(),],
                 current_word: 1,
                 current_span: Some(3),
             }
@@ -786,10 +782,7 @@ mod tests {
                 cursor,
                 nested: vec![],
                 current_literal: Some(21..26),
-                words: vec![
-                    "./configure".to_owned(),
-                    "--prefix=~/dev".to_owned(),
-                ],
+                words: vec!["./configure".to_owned(), "--prefix=~/dev".to_owned(),],
                 current_word: 1,
                 current_span: Some(3),
             }
