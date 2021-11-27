@@ -278,7 +278,7 @@ impl Shell {
         &mut self.jobs
     }
 
-    #[warn(clippy::mutable_key_type)]
+    #[allow(clippy::mutable_key_type)]
     pub fn background_jobs_mut(&mut self) -> &mut HashSet<Rc<Job>> {
         &mut self.background_jobs
     }
