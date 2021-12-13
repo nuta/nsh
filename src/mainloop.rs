@@ -1001,7 +1001,7 @@ impl UserInput {
     }
 
     pub fn replace_range(&mut self, range: Range<usize>, replace_with: &str) {
-        let cursor = range.start + replace_with.len();
+        let cursor = range.start + replace_with.chars().count();
         self.input.replace_range(range, replace_with);
         self.update_indices();
         self.cursor = cursor;
