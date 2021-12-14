@@ -9,7 +9,7 @@ pub fn command(ctx: &mut InternalCommandContext) -> ExitStatus {
         let command = match CString::new(command.as_bytes()) {
             Ok(args) => args,
             Err(_) => {
-                writeln!(ctx.stderr, "nsh: exec: nul found in inputs").ok();
+                writeln!(ctx.stderr, "nsh: exec: invalid command (perhaps it includes a NUL character?)").ok();
                 return ExitStatus::Return;
             }
         };
