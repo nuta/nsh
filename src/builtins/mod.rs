@@ -9,6 +9,7 @@ mod bg;
 mod cd;
 mod echo;
 mod eval;
+mod exec;
 mod exit;
 mod export;
 mod fg;
@@ -55,6 +56,7 @@ pub static INTERNAL_COMMANDS: phf::Map<&'static str, InternalCommand> = phf_map!
     "cd" => crate::builtins::cd::command,
     "source" => crate::builtins::source::command,
     "exit" => crate::builtins::exit::command,
+    "exec" => crate::builtins::exec::command,
     "export" => crate::builtins::export::command,
     "set" => crate::builtins::set::command,
     "fg" => crate::builtins::fg::command,
