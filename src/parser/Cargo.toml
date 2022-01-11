@@ -1,0 +1,9 @@
+[package]
+name = "nsh_parser"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
