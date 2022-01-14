@@ -1,8 +1,3 @@
-use std::pin::Pin;
-
-use async_recursion::async_recursion;
-use futures::{Stream, StreamExt};
-
 /// A fragment of a word.
 #[derive(Debug, PartialEq)]
 pub enum Span {
@@ -41,42 +36,24 @@ pub enum LexerError {
     NoMatchingRightParen,
 }
 
-pub struct Lexer {
-    input: Pin<Box<dyn Stream<Item = char>>>,
+pub struct Lexer<I: Iterator<Item = char>> {
+    input: I,
     push_back_stack: Vec<char>,
 }
 
-impl Lexer {
-    pub fn new(input: impl Stream<Item = char> + 'static) -> Lexer {
+impl<I: Iterator<Item = char>> Lexer<I> {
+    pub fn new(input: I) -> Lexer<I> {
         Lexer {
-            input: Box::pin(input),
+            input,
             push_back_stack: Vec::new(),
         }
     }
 
-    pub fn into_stream(mut self) -> impl Stream<Item = Result<Token, Lexer>> {
-        async_stream::stream! {
-            while let Some(token) = self.next().await? {
-                yield token;
-            }
-        }
-    }
-
-    #[cfg(test)]
-    pub async fn tokenize(input: &'static str) -> Result<Vec<Token>, LexerError> {
-        let mut tokens = Vec::new();
-        for token in Lexer::new(tokio_stream::iter(input.chars())).into_stream() {
-            tokens.push(token.await?);
-        }
-        token
-    }
-
     /// Returns the next token, just like `Iterator::next()`.
-    #[async_recursion(?Send)]
-    async fn next(&mut self) -> Result<Option<Token>, LexerError> {
+    fn next(&mut self) -> Result<Option<Token>, LexerError> {
         // Skip whitespace characters.
         loop {
-            let c = match self.pop().await {
+            let c = match self.pop() {
                 Some(c) => c,
                 None => return Ok(None),
             };
@@ -86,11 +63,11 @@ impl Lexer {
             }
         }
 
-        let first = match self.pop().await {
+        let first = match self.pop() {
             Some(c) => c,
             None => return Ok(None),
         };
-        let second = self.peek().await;
+        let second = self.peek();
         let token = match (first, second) {
             ('\n', _) => Token::Newline,
             ('|', Some('|')) => Token::DoubleOr,
@@ -106,7 +83,7 @@ impl Lexer {
                 loop {
                     // If the comment is in the last line and there's no newline
                     // at EOF, return None from the `?` operator.
-                    let c = match self.pop().await {
+                    let c = match self.pop() {
                         Some(c) => c,
                         None => return Ok(None),
                     };
@@ -129,7 +106,7 @@ impl Lexer {
                         }
                         // Escaped character.
                         '\\' => {
-                            plain.push(self.pop().await.unwrap_or('\\' /* backslash at EOF */));
+                            plain.push(self.pop().unwrap_or('\\' /* backslash at EOF */));
                         }
                         '$' => {
                             if !plain.is_empty() {
@@ -137,14 +114,14 @@ impl Lexer {
                                 plain = String::new();
                             }
 
-                            spans.push(self.parse_variable_exp().await?);
+                            spans.push(self.parse_variable_exp()?);
                         }
                         _ => {
                             plain.push(c);
                         }
                     }
 
-                    c = match self.pop().await {
+                    c = match self.pop() {
                         Some(c) => c,
                         None => break,
                     };
@@ -162,13 +139,13 @@ impl Lexer {
     }
 
     /// Parse a variable expansion (after `$`).
-    async fn parse_variable_exp(&mut self) -> Result<Span, LexerError> {
-        let span = match self.pop().await {
+    fn parse_variable_exp(&mut self) -> Result<Span, LexerError> {
+        let span = match self.pop() {
             // `$(echo foo)`
             Some('(') => {
                 let mut tokens = Vec::new();
                 loop {
-                    let token = self.next().await?.ok_or(LexerError::NoMatchingRightParen)?;
+                    let token = self.next()?.ok_or(LexerError::NoMatchingRightParen)?;
                     if token == Token::RightParen {
                         break;
                     }
@@ -179,7 +156,7 @@ impl Lexer {
             Some(c) if is_identifier_char(c) => {
                 let mut plain = String::new();
                 plain.push(c);
-                while let Some(c) = self.pop().await {
+                while let Some(c) = self.pop() {
                     if !is_identifier_char(c) {
                         self.push_back(c);
                         break;
@@ -205,22 +182,22 @@ impl Lexer {
     /// Pops a character from the input stream without consuming the character,
     /// that is, the same character will be returned next time `pop` or `peek`
     /// is called.
-    async fn peek(&mut self) -> Option<char> {
+    fn peek(&mut self) -> Option<char> {
         if let Some(c) = self.push_back_stack.pop() {
             Some(c)
         } else {
-            let c = self.input.next().await?;
+            let c = self.input.next()?;
             self.push_back(c);
             Some(c)
         }
     }
 
     /// Consumes a character from the input stream.
-    async fn pop(&mut self) -> Option<char> {
+    fn pop(&mut self) -> Option<char> {
         if let Some(c) = self.push_back_stack.pop() {
             Some(c)
         } else {
-            self.input.next().await
+            self.input.next()
         }
     }
 
@@ -239,9 +216,13 @@ fn is_identifier_char(c: char) -> bool {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn simple_command() {
+    fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
+        todo!()
+    }
+
+    #[test]
+    fn simple_command() {
         let input = "if true then";
-        assert_eq!(Lexer::tokenize(input).await, vec![Token::Newline]);
+        assert_eq!(lex(input), Ok(vec![Token::Newline]));
     }
 }

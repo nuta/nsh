@@ -7,8 +7,3 @@ edition = "2021"
 path = "lib.rs"
 
 [dependencies]
-futures = "0"
-tokio = { version = "1", features = ["full"] }
-async-stream = "0"
-tokio-stream = "0"
-async-recursion = "1"
