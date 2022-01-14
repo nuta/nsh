@@ -49,95 +49,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         }
     }
 
-    /// Returns the next token, just like `Iterator::next()`.
-    fn next(&mut self) -> Result<Option<Token>, LexerError> {
-        // Skip whitespace characters.
-        loop {
-            let c = match self.pop() {
-                Some(c) => c,
-                None => return Ok(None),
-            };
-            if !matches!(c, ' ' | '\t') {
-                self.push_back(c);
-                break;
-            }
-        }
-
-        let first = match self.pop() {
-            Some(c) => c,
-            None => return Ok(None),
-        };
-        let second = self.peek();
-        let token = match (first, second) {
-            ('\n', _) => Token::Newline,
-            ('|', Some('|')) => Token::DoubleOr,
-            ('|', _) => Token::Or,
-            ('&', Some('&')) => Token::DoubleAnd,
-            ('&', _) => Token::And,
-            (';', Some(';')) => Token::DoubleSemi,
-            (';', _) => Token::Semi,
-            (')', _) => Token::RightParen,
-            // Comment.
-            ('#', _) => {
-                // Skip until the end of the line or EOF.
-                loop {
-                    // If the comment is in the last line and there's no newline
-                    // at EOF, return None from the `?` operator.
-                    let c = match self.pop() {
-                        Some(c) => c,
-                        None => return Ok(None),
-                    };
-
-                    if c == '\n' {
-                        break Token::Newline;
-                    }
-                }
-            }
-            // Word.
-            _ => {
-                let mut c = first;
-                let mut spans = Vec::new();
-                let mut plain = String::new();
-                loop {
-                    match c {
-                        ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' => {
-                            self.push_back(c);
-                            break;
-                        }
-                        // Escaped character.
-                        '\\' => {
-                            plain.push(self.pop().unwrap_or('\\' /* backslash at EOF */));
-                        }
-                        '$' => {
-                            if !plain.is_empty() {
-                                spans.push(Span::Plain(plain));
-                                plain = String::new();
-                            }
-
-                            spans.push(self.parse_variable_exp()?);
-                        }
-                        _ => {
-                            plain.push(c);
-                        }
-                    }
-
-                    c = match self.pop() {
-                        Some(c) => c,
-                        None => break,
-                    };
-                }
-
-                if !plain.is_empty() {
-                    spans.push(Span::Plain(plain));
-                    plain = String::new();
-                }
-                Token::Word(spans)
-            }
-        };
-
-        Ok(Some(token))
-    }
-
     /// Parse a variable expansion (after `$`).
     fn parse_variable_exp(&mut self) -> Result<Span, LexerError> {
         let span = match self.pop() {
@@ -145,7 +56,12 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             Some('(') => {
                 let mut tokens = Vec::new();
                 loop {
-                    let token = self.next()?.ok_or(LexerError::NoMatchingRightParen)?;
+                    let token = match self.next() {
+                        Some(Ok(token)) => token,
+                        Some(Err(err)) => return Err(err),
+                        None => return Err(LexerError::NoMatchingRightParen),
+                    };
+
                     if token == Token::RightParen {
                         break;
                     }
@@ -205,6 +121,103 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     /// returned next time `pop` or `peek` is called.
     fn push_back(&mut self, c: char) {
         self.push_back_stack.push(c);
+    }
+}
+
+impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
+    type Item = Result<Token, LexerError>;
+
+    /// Returns the next token.
+    fn next(&mut self) -> Option<Result<Token, LexerError>> {
+        // Skip whitespace characters.
+        loop {
+            let c = match self.pop() {
+                Some(c) => c,
+                None => return None,
+            };
+            if !matches!(c, ' ' | '\t') {
+                self.push_back(c);
+                break;
+            }
+        }
+
+        let first = match self.pop() {
+            Some(c) => c,
+            None => return None,
+        };
+        let second = self.peek();
+        let token = match (first, second) {
+            ('\n', _) => Token::Newline,
+            ('|', Some('|')) => Token::DoubleOr,
+            ('|', _) => Token::Or,
+            ('&', Some('&')) => Token::DoubleAnd,
+            ('&', _) => Token::And,
+            (';', Some(';')) => Token::DoubleSemi,
+            (';', _) => Token::Semi,
+            (')', _) => Token::RightParen,
+            // Comment.
+            ('#', _) => {
+                // Skip until the end of the line or EOF.
+                loop {
+                    // If the comment is in the last line and there's no newline
+                    // at EOF, return None from the `?` operator.
+                    let c = match self.pop() {
+                        Some(c) => c,
+                        None => return None,
+                    };
+
+                    if c == '\n' {
+                        break Token::Newline;
+                    }
+                }
+            }
+            // Word.
+            _ => {
+                let mut c = first;
+                let mut spans = Vec::new();
+                let mut plain = String::new();
+                loop {
+                    match c {
+                        ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' => {
+                            self.push_back(c);
+                            break;
+                        }
+                        // Escaped character.
+                        '\\' => {
+                            plain.push(self.pop().unwrap_or('\\' /* backslash at EOF */));
+                        }
+                        '$' => {
+                            if !plain.is_empty() {
+                                spans.push(Span::Plain(plain));
+                                plain = String::new();
+                            }
+
+                            let span = match self.parse_variable_exp() {
+                                Ok(span) => span,
+                                Err(err) => return Some(Err(err)),
+                            };
+                            spans.push(span);
+                        }
+                        _ => {
+                            plain.push(c);
+                        }
+                    }
+
+                    c = match self.pop() {
+                        Some(c) => c,
+                        None => break,
+                    };
+                }
+
+                if !plain.is_empty() {
+                    spans.push(Span::Plain(plain));
+                    plain = String::new();
+                }
+                Token::Word(spans)
+            }
+        };
+
+        Some(Ok(token))
     }
 }
 
