@@ -86,6 +86,8 @@ impl Lexer {
             ('#', _) => {
                 // Skip until the end of the line or EOF.
                 loop {
+                    // If the comment is in the last line and there's no newline
+                    // at EOF, return None from the `?` operator.
                     let c = self.pop().await?;
                     if c == '\n' {
                         break Token::Newline;
@@ -105,7 +107,7 @@ impl Lexer {
                         }
                         // Escaped character.
                         '\\' => {
-                            plain.push(self.pop().await?);
+                            plain.push(self.pop().await.unwrap_or('\\' /* backslash at EOF */));
                         }
                         '$' => {
                             if !plain.is_empty() {
@@ -144,8 +146,7 @@ impl Lexer {
             c if is_identifier_char(c) => {
                 let mut plain = String::new();
                 plain.push(c);
-                loop {
-                    let c = self.pop().await?;
+                while let Some(c) = self.pop().await {
                     if !is_identifier_char(c) {
                         self.push_back(c);
                         break;
