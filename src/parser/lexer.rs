@@ -13,7 +13,21 @@ pub enum Span {
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
+    /// A newline (`\n`).
     Newline,
+    /// `|`
+    Or,
+    /// `&`.
+    And,
+    /// `;`
+    Semi,
+    /// `&&`
+    DoubleAnd,
+    /// `||`
+    DoubleOr,
+    /// `;;`
+    DoubleSemi,
+    /// A word.
     Word(Vec<Span>),
 }
 
@@ -56,10 +70,19 @@ impl Lexer {
             }
         }
 
-        let token = match self.pop().await? {
-            '\n' => Token::Newline,
-            // Word.
-            mut c => {
+        let first = self.pop().await?;
+        let second = self.peek().await;
+        let token = match (first, second) {
+            ('\n', _) => Token::Newline,
+            ('|', Some('|')) => Token::DoubleOr,
+            ('|', _) => Token::Or,
+            ('&', Some('&')) => Token::DoubleAnd,
+            ('&', _) => Token::And,
+            (';', Some(';')) => Token::DoubleSemi,
+            (';', _) => Token::Semi,
+            // A word.
+            _ => {
+                let mut c = first;
                 let mut spans = Vec::new();
                 let mut plain = String::new();
                 loop {
