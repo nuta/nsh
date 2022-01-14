@@ -1,5 +1,6 @@
 use std::pin::Pin;
 
+use async_recursion::async_recursion;
 use futures::{Stream, StreamExt};
 
 /// A fragment of a word.
@@ -29,8 +30,15 @@ pub enum Token {
     DoubleOr,
     /// `;;`
     DoubleSemi,
+    /// `)`
+    RightParen,
     /// A word.
     Word(Vec<Span>),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum LexerError {
+    NoMatchingRightParen,
 }
 
 pub struct Lexer {
@@ -46,34 +54,42 @@ impl Lexer {
         }
     }
 
-    pub fn into_stream(mut self) -> impl Stream<Item = Token> {
+    pub fn into_stream(mut self) -> impl Stream<Item = Result<Token, Lexer>> {
         async_stream::stream! {
-            while let Some(token) = self.next().await {
+            while let Some(token) = self.next().await? {
                 yield token;
             }
         }
     }
 
     #[cfg(test)]
-    pub async fn tokenize(input: &'static str) -> Vec<Token> {
-        Lexer::new(tokio_stream::iter(input.chars()))
-            .into_stream()
-            .collect::<Vec<Token>>()
-            .await
+    pub async fn tokenize(input: &'static str) -> Result<Vec<Token>, LexerError> {
+        let mut tokens = Vec::new();
+        for token in Lexer::new(tokio_stream::iter(input.chars())).into_stream() {
+            tokens.push(token.await?);
+        }
+        token
     }
 
     /// Returns the next token, just like `Iterator::next()`.
-    async fn next(&mut self) -> Option<Token> {
+    #[async_recursion(?Send)]
+    async fn next(&mut self) -> Result<Option<Token>, LexerError> {
         // Skip whitespace characters.
         loop {
-            let c = self.pop().await?;
+            let c = match self.pop().await {
+                Some(c) => c,
+                None => return Ok(None),
+            };
             if !matches!(c, ' ' | '\t') {
                 self.push_back(c);
                 break;
             }
         }
 
-        let first = self.pop().await?;
+        let first = match self.pop().await {
+            Some(c) => c,
+            None => return Ok(None),
+        };
         let second = self.peek().await;
         let token = match (first, second) {
             ('\n', _) => Token::Newline,
@@ -83,13 +99,18 @@ impl Lexer {
             ('&', _) => Token::And,
             (';', Some(';')) => Token::DoubleSemi,
             (';', _) => Token::Semi,
+            (')', _) => Token::RightParen,
             // Comment.
             ('#', _) => {
                 // Skip until the end of the line or EOF.
                 loop {
                     // If the comment is in the last line and there's no newline
                     // at EOF, return None from the `?` operator.
-                    let c = self.pop().await?;
+                    let c = match self.pop().await {
+                        Some(c) => c,
+                        None => return Ok(None),
+                    };
+
                     if c == '\n' {
                         break Token::Newline;
                     }
@@ -116,7 +137,7 @@ impl Lexer {
                                 plain = String::new();
                             }
 
-                            spans.push(self.parse_variable_exp().await);
+                            spans.push(self.parse_variable_exp().await?);
                         }
                         _ => {
                             plain.push(c);
@@ -137,12 +158,23 @@ impl Lexer {
             }
         };
 
-        Some(token)
+        Ok(Some(token))
     }
 
     /// Parse a variable expansion (after `$`).
-    async fn parse_variable_exp(&mut self) -> Span {
-        match self.pop().await {
+    async fn parse_variable_exp(&mut self) -> Result<Span, LexerError> {
+        let span = match self.pop().await {
+            // `$(echo foo)`
+            Some('(') => {
+                let mut tokens = Vec::new();
+                loop {
+                    let token = self.next().await?.ok_or(LexerError::NoMatchingRightParen)?;
+                    if token == Token::RightParen {
+                        break;
+                    }
+                }
+                Span::Command(tokens)
+            }
             // `$foo`
             Some(c) if is_identifier_char(c) => {
                 let mut plain = String::new();
@@ -165,7 +197,9 @@ impl Lexer {
                 // `$` at EOF. Treat it as a plain `$`.
                 Span::Plain("$".to_owned())
             }
-        }
+        };
+
+        Ok(span)
     }
 
     /// Pops a character from the input stream without consuming the character,
