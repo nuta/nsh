@@ -131,20 +131,14 @@ impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
     fn next(&mut self) -> Option<Result<Token, LexerError>> {
         // Skip whitespace characters.
         loop {
-            let c = match self.pop() {
-                Some(c) => c,
-                None => return None,
-            };
+            let c = self.pop()?;
             if !matches!(c, ' ' | '\t') {
                 self.push_back(c);
                 break;
             }
         }
 
-        let first = match self.pop() {
-            Some(c) => c,
-            None => return None,
-        };
+        let first = self.pop()?;
         let second = self.peek();
         let token = match (first, second) {
             ('\n', _) => Token::Newline,
@@ -161,12 +155,7 @@ impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
                 loop {
                     // If the comment is in the last line and there's no newline
                     // at EOF, return None from the `?` operator.
-                    let c = match self.pop() {
-                        Some(c) => c,
-                        None => return None,
-                    };
-
-                    if c == '\n' {
+                    if self.pop()? == '\n' {
                         break Token::Newline;
                     }
                 }
@@ -192,7 +181,7 @@ impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
                                 plain = String::new();
                             }
 
-                            let span = match self.parse_variable_exp() {
+                            let span = match self.parse_variable_exp().map_err(Some) {
                                 Ok(span) => span,
                                 Err(err) => return Some(Err(err)),
                             };
