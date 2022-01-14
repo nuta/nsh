@@ -7,6 +7,8 @@ use futures::{Stream, StreamExt};
 pub enum Span {
     /// A plain text.
     Plain(String),
+    /// A variable substitution, e.g. `$foo`.
+    Variable(String),
     /// A command substitution, e.g. `$(echo "hi")`.
     Command(Vec<Token>),
 }
@@ -74,23 +76,23 @@ impl Lexer {
         let second = self.peek().await;
         let token = match (first, second) {
             ('\n', _) => Token::Newline,
-            ('#', _) => {
-                // Skip until the end of the line or EOF.
-                loop {
-                    let c = self.pop().await?;
-                    if c == '\n' {
-                        self.push_back(c);
-                        break Token::Newline;
-                    }
-                }
-            }
             ('|', Some('|')) => Token::DoubleOr,
             ('|', _) => Token::Or,
             ('&', Some('&')) => Token::DoubleAnd,
             ('&', _) => Token::And,
             (';', Some(';')) => Token::DoubleSemi,
             (';', _) => Token::Semi,
-            // A word.
+            // Comment.
+            ('#', _) => {
+                // Skip until the end of the line or EOF.
+                loop {
+                    let c = self.pop().await?;
+                    if c == '\n' {
+                        break Token::Newline;
+                    }
+                }
+            }
+            // Word.
             _ => {
                 let mut c = first;
                 let mut spans = Vec::new();
@@ -100,6 +102,10 @@ impl Lexer {
                         ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' => {
                             self.push_back(c);
                             break;
+                        }
+                        // Escaped character.
+                        '\\' => {
+                            plain.push(self.pop().await?);
                         }
                         '$' => {
                             if !plain.is_empty() {
@@ -133,7 +139,26 @@ impl Lexer {
 
     /// Parse a variable expansion (after `$`).
     async fn parse_variable_exp(&mut self) -> Option<Span> {
-        None
+        let span = match self.pop().await? {
+            // `$foo`
+            c if is_identifier_char(c) => {
+                let mut plain = String::new();
+                plain.push(c);
+                loop {
+                    let c = self.pop().await?;
+                    if !is_identifier_char(c) {
+                        self.push_back(c);
+                        break;
+                    }
+                    plain.push(c);
+                }
+                Span::Variable(plain)
+            }
+            // Not a variable expansion. Handle it as a plain `$`.
+            _ => Span::Plain("$".to_owned()),
+        };
+
+        Some(span)
     }
 
     async fn peek(&mut self) -> Option<char> {
@@ -157,6 +182,10 @@ impl Lexer {
     fn push_back(&mut self, c: char) {
         self.push_back_stack.push(c);
     }
+}
+
+fn is_identifier_char(c: char) -> bool {
+    matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')
 }
 
 #[cfg(test)]
