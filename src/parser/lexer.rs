@@ -115,7 +115,7 @@ impl Lexer {
                                 plain = String::new();
                             }
 
-                            spans.push(self.parse_variable_exp().await?);
+                            spans.push(self.parse_variable_exp().await);
                         }
                         _ => {
                             plain.push(c);
@@ -140,10 +140,10 @@ impl Lexer {
     }
 
     /// Parse a variable expansion (after `$`).
-    async fn parse_variable_exp(&mut self) -> Option<Span> {
-        let span = match self.pop().await? {
+    async fn parse_variable_exp(&mut self) -> Span {
+        match self.pop().await {
             // `$foo`
-            c if is_identifier_char(c) => {
+            Some(c) if is_identifier_char(c) => {
                 let mut plain = String::new();
                 plain.push(c);
                 while let Some(c) = self.pop().await {
@@ -156,10 +156,15 @@ impl Lexer {
                 Span::Variable(plain)
             }
             // Not a variable expansion. Handle it as a plain `$`.
-            _ => Span::Plain("$".to_owned()),
-        };
-
-        Some(span)
+            Some(c) => {
+                self.push_back(c);
+                Span::Plain("$".to_owned())
+            }
+            None => {
+                // `$` at EOF. Treat it as a plain `$`.
+                Span::Plain("$".to_owned())
+            }
+        }
     }
 
     async fn peek(&mut self) -> Option<char> {
