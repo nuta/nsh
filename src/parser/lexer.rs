@@ -46,20 +46,20 @@ impl Lexer {
         }
     }
 
-    #[cfg(test)]
-    pub async fn tokenize(input: &'static str) -> Vec<Token> {
-        Lexer::new(tokio_stream::iter(input.chars()))
-            .into_stream()
-            .collect::<Vec<Token>>()
-            .await
-    }
-
     pub fn into_stream(mut self) -> impl Stream<Item = Token> {
         async_stream::stream! {
             while let Some(token) = self.next().await {
                 yield token;
             }
         }
+    }
+
+    #[cfg(test)]
+    pub async fn tokenize(input: &'static str) -> Vec<Token> {
+        Lexer::new(tokio_stream::iter(input.chars()))
+            .into_stream()
+            .collect::<Vec<Token>>()
+            .await
     }
 
     /// Returns the next token, just like `Iterator::next()`.
