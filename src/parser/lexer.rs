@@ -62,7 +62,8 @@ impl Lexer {
         }
     }
 
-    pub async fn next(&mut self) -> Option<Token> {
+    /// Returns the next token, just like `Iterator::next()`.
+    async fn next(&mut self) -> Option<Token> {
         // Skip whitespace characters.
         loop {
             let c = self.pop().await?;
@@ -167,6 +168,9 @@ impl Lexer {
         }
     }
 
+    /// Pops a character from the input stream without consuming the character,
+    /// that is, the same character will be returned next time `pop` or `peek`
+    /// is called.
     async fn peek(&mut self) -> Option<char> {
         if let Some(c) = self.push_back_stack.pop() {
             Some(c)
@@ -177,6 +181,7 @@ impl Lexer {
         }
     }
 
+    /// Consumes a character from the input stream.
     async fn pop(&mut self) -> Option<char> {
         if let Some(c) = self.push_back_stack.pop() {
             Some(c)
@@ -185,6 +190,8 @@ impl Lexer {
         }
     }
 
+    /// Pushes a character back to the input stream. The character will be
+    /// returned next time `pop` or `peek` is called.
     fn push_back(&mut self, c: char) {
         self.push_back_stack.push(c);
     }
