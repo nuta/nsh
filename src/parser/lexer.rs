@@ -74,6 +74,16 @@ impl Lexer {
         let second = self.peek().await;
         let token = match (first, second) {
             ('\n', _) => Token::Newline,
+            ('#', _) => {
+                // Skip until the end of the line or EOF.
+                loop {
+                    let c = self.pop().await?;
+                    if c == '\n' {
+                        self.push_back(c);
+                        break Token::Newline;
+                    }
+                }
+            }
             ('|', Some('|')) => Token::DoubleOr,
             ('|', _) => Token::Or,
             ('&', Some('&')) => Token::DoubleAnd,
