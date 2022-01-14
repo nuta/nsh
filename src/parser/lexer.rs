@@ -181,7 +181,7 @@ impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
                                 plain = String::new();
                             }
 
-                            let span = match self.parse_variable_exp().map_err(Some) {
+                            let span = match self.parse_variable_exp() {
                                 Ok(span) => span,
                                 Err(err) => return Some(Err(err)),
                             };
