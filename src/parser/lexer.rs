@@ -393,12 +393,17 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     /// Consumes a character from the input stream.
     fn consume_next_char(&mut self) -> Option<char> {
-        self.char_offset += 1;
-        if let Some(c) = self.push_back_stack.pop() {
+        let ret = if let Some(c) = self.push_back_stack.pop() {
             Some(c)
         } else {
             self.input.next()
+        };
+
+        if ret.is_some() {
+            self.char_offset += 1;
         }
+
+        ret
     }
 
     /// Pushes a character back to the input stream. The character will be
