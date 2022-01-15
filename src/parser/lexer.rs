@@ -29,7 +29,7 @@ pub enum Token {
     RightParen,
     /// `}`
     RightBrace,
-    /// ```
+    /// `\``
     ClosingBackTick,
     /// A word.
     Word(Vec<Span>),
@@ -107,7 +107,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
         let first = self.consume_next_char().ok_or(LexerError::Eof)?;
         let second = self.peek_next_char();
-        dbg!(first, second);
         let token = match (first, second) {
             ('\n', _) => Token::Newline,
             ('|', Some('|')) => Token::DoubleOr,
@@ -395,6 +394,22 @@ mod tests {
                 Token::Word(vec![Span::Command(vec![
                     Token::Word(vec![plain_span("ls")]),
                     Token::Word(vec![plain_span("/")])
+                ])])
+            ])
+        );
+
+        let input = "echo $(grep $(ls /foo*) bar)";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                Token::Word(vec![plain_span("echo")]),
+                Token::Word(vec![Span::Command(vec![
+                    Token::Word(vec![plain_span("grep")]),
+                    Token::Word(vec![Span::Command(vec![
+                        Token::Word(vec![plain_span("ls")]),
+                        Token::Word(vec![plain_span("/foo*")]),
+                    ])]),
+                    Token::Word(vec![plain_span("bar")]),
                 ])])
             ])
         );
