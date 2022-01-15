@@ -39,6 +39,10 @@ impl Word {
 pub struct HereDoc(Vec<Vec<Span>>);
 
 impl HereDoc {
+    pub fn new(lines: Vec<Vec<Span>>) -> HereDoc {
+        HereDoc(lines)
+    }
+
     pub fn lines(&self) -> &[Vec<Span>] {
         &self.0
     }
@@ -123,6 +127,7 @@ pub enum LexerError {
     NoMatchingClosingBackTick,
     NoMatchingHereDocQuote,
     ExpectedHereDocMarker,
+    UnclosedHereDoc,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -236,6 +241,10 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         &self.heredocs[index]
     }
 
+    pub fn heredocs(&self) -> &[HereDoc] {
+        &self.heredocs
+    }
+
     /// Returns the next token.
     fn next_token(&mut self) -> Result<Token, LexerError> {
         if self.halted {
@@ -283,6 +292,9 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 })
             }
             (Some('<'), Some('<')) => {
+                // Skip the second '<'.
+                self.input.consume();
+
                 let heredoc = self.visit_heredoc_marker()?;
                 Token::Redirection(Redirection {
                     kind: RedirectionKind::Input,
@@ -586,7 +598,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 // Read the marker string.
                 let mut s = String::new();
                 while let Some(c) = self.input.consume() {
-                    if is_valid_marker_char(c) {
+                    if !is_valid_marker_char(c) {
                         break;
                     }
                     s.push(c);
@@ -613,7 +625,12 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     let mut plain = String::new();
                     let mut lines = Vec::new();
                     let mut current_line = Vec::new();
-                    while let Some(c) = self.input.consume() {
+                    loop {
+                        let c = match self.input.consume() {
+                            Some(c) => c,
+                            None => return Err(LexerError::UnclosedHereDoc),
+                        };
+
                         match c {
                             '\n' => {
                                 if current_line.is_empty() && plain == eos {
@@ -657,7 +674,12 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     let mut plain = String::new();
                     let mut lines = Vec::new();
                     let mut current_line = Vec::new();
-                    while let Some(c) = self.input.consume() {
+                    loop {
+                        let c = match self.input.consume() {
+                            Some(c) => c,
+                            None => return Err(LexerError::UnclosedHereDoc),
+                        };
+
                         match c {
                             '\n' => {
                                 if current_line.is_empty() && plain == eos {

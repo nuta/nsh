@@ -1,3 +1,5 @@
+use std::str::Chars;
+
 use nsh_parser::highlight::*;
 use nsh_parser::lexer::*;
 
@@ -28,6 +30,21 @@ fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
         }
     }
     Ok(tokens)
+}
+
+fn lex_with_heredocs(input: &str) -> Result<(Vec<Token>, Vec<HereDoc>), LexerError> {
+    let mut lexer = Lexer::new(input.chars());
+    let mut tokens = Vec::new();
+    loop {
+        match lexer.next() {
+            Some(Ok(token)) => tokens.push(token),
+            Some(Err(err)) => return Err(err),
+            None => break,
+        }
+    }
+
+    let mut heredocs = lexer.heredocs().to_vec();
+    Ok((tokens, heredocs))
 }
 
 fn highlight(input: &str) -> Vec<HighlightSpan> {
@@ -285,5 +302,28 @@ fn nested_highlighting() {
                 char_range: 22..23
             },
         ]
+    );
+}
+
+#[test]
+fn heredoc() {
+    assert_eq!(
+        lex_with_heredocs(concat!("cat <<EOF\n", "foo\n", "bar\n", "baz\n", "EOF\n",)),
+        Ok((
+            (vec![
+                single_plain_word("cat"),
+                Token::Redirection(Redirection {
+                    kind: RedirectionKind::Input,
+                    target: RedirectionTarget::HereDoc(0),
+                    fd: 0
+                }),
+                Token::Newline,
+            ]),
+            (vec![HereDoc::new(vec![vec![
+                plain_span("foo"),
+                plain_span("bar"),
+                plain_span("baz")
+            ]])])
+        ))
     );
 }
