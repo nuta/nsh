@@ -1,4 +1,6 @@
-use std::{ops::Range, os::unix::prelude::RawFd};
+use std::os::unix::prelude::RawFd;
+
+use crate::highlight::{HighlightKind, HighlightSpan};
 
 /// A fragment of a word.
 #[derive(Clone, Debug, PartialEq)]
@@ -110,30 +112,6 @@ pub enum Context {
     DoubleQuote,
     /// Single quoted string (e.g. `'foo'`).
     SingleQuote,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum HighlightKind {
-    /// A plain text.
-    Plain,
-    /// A variable substitution, e.g. `$foo`.
-    Variable { name: String },
-    /// A quoted string (e.g. `"foo"` and `'foo'`).
-    QuotedString,
-    /// A command substitution symbols, e.g. `$(` and `)` in `$(foo)`.
-    CommandSymbol,
-    /// An escaped sequence (e.g. `\"`).
-    EscSeq,
-    /// A command (e.g. "ls" in "ls /var").
-    Argv0,
-    /// A keyword.
-    Keyword,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct HighlightSpan {
-    pub kind: HighlightKind,
-    pub char_range: Range<usize>,
 }
 
 struct HighlighterContext {
