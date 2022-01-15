@@ -307,7 +307,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 let first = self.input.consume().ok_or(LexerError::Eof)?;
                 let second = self.input.peek();
                 match (first, second) {
-                    ('\n', _) => Token::Newline,
                     ('|', Some('|')) => Token::DoubleOr,
                     ('|', _) => Token::Or,
                     ('&', Some('&')) => Token::DoubleAnd,
@@ -328,6 +327,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                                 break Token::Newline;
                             }
                         }
+                    }
+                    ('\n', _) => {
+                        if !self.unclosed_heredoc_markers.is_empty() {
+                            self.visit_heredoc_body()?;
+                        }
+
+                        Token::Newline
                     }
                     _ => {
                         self.input.unconsume(first);
@@ -574,6 +580,23 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         let index = self.next_heredoc_index;
         self.next_heredoc_index += 1;
         Ok(index)
+    }
+
+    fn visit_heredoc_body(&mut self) -> Result<(), LexerError> {
+        while let Some(marker) = self.unclosed_heredoc_markers.pop_front() {
+            let heredoc = match marker {
+                HereDocMarker::Normal(eos) => {
+                    todo!()
+                }
+                HereDocMarker::Plain(eos) => {
+                    todo!()
+                }
+            };
+
+            self.heredocs.push(heredoc);
+        }
+
+        Ok(())
     }
 
     /// Skip whitespace characters.
