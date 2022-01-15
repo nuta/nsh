@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 /// A fragment of a word.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Span {
@@ -82,6 +84,31 @@ pub enum Context {
     SingleQuote,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum HighlightKind {
+    /// A variable substitution, e.g. `$foo`.
+    Variable,
+    /// A quoted string (e.g. `"foo"` and `'foo'`).
+    QuotedString,
+    /// An escaped sequence (e.g. `\"`).
+    EscapedSeq,
+    /// A command (e.g. "ls" in "ls /var").
+    Argv0,
+    /// A keyword.
+    Keyword,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HighlightSpan {
+    pub kind: HighlightKind,
+    pub char_range: Range<usize>,
+}
+
+struct HighlighterContext {
+    kind: HighlightKind,
+    char_offset_start: usize,
+}
+
 /// A lexer.
 ///
 /// This is NOT await-ready: the iterator should block the thread until the next
@@ -90,9 +117,11 @@ pub enum Context {
 pub struct Lexer<I: Iterator<Item = char>> {
     halted: bool,
     input: I,
+    char_offset: usize,
     push_back_stack: Vec<char>,
     in_backtick: bool,
     unclosed_context_stack: Vec<Context>,
+    highlight_spans: Vec<HighlightSpan>,
 }
 
 impl<I: Iterator<Item = char>> Lexer<I> {
@@ -100,10 +129,16 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         Lexer {
             halted: false,
             input,
+            char_offset: 0,
             push_back_stack: Vec::new(),
             in_backtick: false,
             unclosed_context_stack: Vec::new(),
+            highlight_spans: Vec::new(),
         }
+    }
+
+    pub fn highlight_spans(&self) -> &[HighlightSpan] {
+        &self.highlight_spans
     }
 
     /// Returns the next token.
@@ -262,6 +297,8 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 Span::Command(tokens)
             }
             Some('{') => {
+                let hctx = self.enter_highlight(HighlightKind::Variable, 2 /* len("${") */);
+
                 // Read its name.
                 let mut name = String::new();
                 self.enter_context(Context::BraceParam);
@@ -280,10 +317,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     LexerError::NoMatchingRightBrace,
                 )?;
 
+                self.leave_highlight(hctx);
                 Span::Variable { name }
             }
             // `$foo`
             Some(c) if is_identifier_char(c) => {
+                let hctx = self.enter_highlight(HighlightKind::Variable, 2 /* len("$" + c) */);
+
                 let mut name = String::new();
                 name.push(c);
                 while let Some(c) = self.consume_next_char() {
@@ -293,6 +333,8 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     }
                     name.push(c);
                 }
+
+                self.leave_highlight(hctx);
                 Span::Variable { name }
             }
             // Not a variable expansion. Handle it as a plain `$`.
@@ -344,13 +386,14 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             Some(c)
         } else {
             let c = self.input.next()?;
-            self.unconsume_char(c);
+            self.push_back_stack.push(c);
             Some(c)
         }
     }
 
     /// Consumes a character from the input stream.
     fn consume_next_char(&mut self) -> Option<char> {
+        self.char_offset += 1;
         if let Some(c) = self.push_back_stack.pop() {
             Some(c)
         } else {
@@ -362,6 +405,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     /// returned next time `pop` or `peek` is called.
     fn unconsume_char(&mut self, c: char) {
         self.push_back_stack.push(c);
+        self.char_offset -= 1;
     }
 
     fn enter_context(&mut self, context: Context) {
@@ -370,6 +414,20 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     fn leave_context(&mut self, context: Context) {
         debug_assert_eq!(self.unclosed_context_stack.pop().unwrap(), context);
+    }
+
+    fn enter_highlight(&mut self, kind: HighlightKind, diff: usize) -> HighlighterContext {
+        HighlighterContext {
+            kind,
+            char_offset_start: self.char_offset - diff,
+        }
+    }
+
+    fn leave_highlight(&mut self, hctx: HighlighterContext) {
+        self.highlight_spans.push(HighlightSpan {
+            kind: hctx.kind,
+            char_range: hctx.char_offset_start..self.char_offset,
+        });
     }
 }
 
@@ -577,6 +635,27 @@ mod tests {
                 single_plain_word("c"),
                 single_plain_word("d e"),
             ])
+        );
+    }
+
+    #[test]
+    fn highlighting() {
+        let input = "$foo 123 $bar";
+        let mut lexer = Lexer::new(input.chars());
+        while lexer.next().is_some() {}
+
+        assert_eq!(
+            lexer.highlight_spans(),
+            vec![
+                HighlightSpan {
+                    char_range: 0..4,
+                    kind: HighlightKind::Variable,
+                },
+                HighlightSpan {
+                    char_range: 9..13,
+                    kind: HighlightKind::Variable,
+                },
+            ]
         );
     }
 }
