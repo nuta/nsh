@@ -1,5 +1,7 @@
 use std::{collections::VecDeque, os::unix::prelude::RawFd};
 
+use thiserror::Error;
+
 use crate::highlight::{HighlightKind, HighlightSpan};
 
 /// A fragment of a word.
@@ -114,19 +116,24 @@ pub enum Token {
     Word(Word),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq)]
 pub enum LexerError {
     /// Indicates the lexer has already returned an error. If you see this,
     /// it's a bug because you should not call `lexer.next()` after an error.
+    #[error("Lexer is already halted in an error state (BUG).")]
     Halted,
     /// Indicates the lexer has reached the end of the input.
+    #[error("Reached the end of the input.")]
     Eof,
-    Unimplemented(&'static str),
+    #[error("No matching right parenthesis `)'.")]
     NoMatchingRightParen,
+    #[error("No matching right brace `}}'.")]
     NoMatchingRightBrace,
+    #[error("No closing backtick '`'.")]
     NoMatchingClosingBackTick,
-    NoMatchingHereDocQuote,
+    #[error("Expected here document marker.")]
     ExpectedHereDocMarker,
+    #[error("Unclosed here document.")]
     UnclosedHereDoc,
 }
 

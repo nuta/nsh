@@ -7,3 +7,5 @@ edition = "2021"
 path = "lib.rs"
 
 [dependencies]
+thiserror = "1"
+
