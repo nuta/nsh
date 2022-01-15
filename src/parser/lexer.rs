@@ -1,5 +1,7 @@
+use std::{os::unix::prelude::RawFd, path::PathBuf};
+
 /// A fragment of a word.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Span {
     /// A plain text.
     Plain(String),
@@ -9,7 +11,44 @@ pub enum Span {
     Command(Vec<Token>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
+pub struct Word(Vec<Span>);
+
+impl Word {
+    pub fn spans(&self) -> &[Span] {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RedirectionDirection {
+    /// `cat < foo.txt` or here document.
+    Input,
+    /// `cat > foo.txt`.
+    Output,
+    /// `cat >> foo.txt`.
+    Append,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum RedirectionType {
+    File(Word),
+    Fd(RawFd),
+    HereDoc(HereDoc),
+}
+
+/// Contains heredoc body. The outer Vec represents lines and
+/// `Vec<Word>` represents the contents of a line.
+#[derive(Debug, PartialEq, Clone)]
+pub struct HereDoc(Vec<Vec<Word>>);
+
+impl HereDoc {
+    pub fn lines(&self) -> &[Vec<Word>] {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     /// Whitespaces (space and tab).
     Spaces(String),
@@ -33,8 +72,16 @@ pub enum Token {
     RightBrace,
     /// `\``
     ClosingBackTick,
+    /// `echo > foo.log` or `echo >> foo.log`.
+    Redirection {
+        direction: RedirectionDirection,
+        fd: isize,
+        path: PathBuf,
+        /// True if `>>` is used.
+        append: bool,
+    },
     /// A word.
-    Word(Vec<Span>),
+    Word(Word),
 }
 
 #[derive(Debug, PartialEq)]
@@ -130,6 +177,10 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             (';', _) => Token::Semi,
             (')', _) => Token::RightParen,
             ('}', _) => Token::RightBrace,
+            // ('<', '<') => Token::LeftBracket,
+            // ('>', '>') => Token::LeftBracket,
+            // ('<', _) => Token::LeftBracket,
+            // ('>', _) => Token::RightBracket,
             // The end of A command substitution.
             ('`', _) if self.in_backtick => Token::ClosingBackTick,
             // Comment.
@@ -157,7 +208,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         let mut in_single_quotes = false;
         loop {
             match c {
-                ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')'
+                ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')' | '<' | '>'
                     if !in_double_quotes && !in_single_quotes =>
                 {
                     self.unconsume_char(c);
@@ -230,7 +281,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             spans.push(Span::Plain(plain));
         }
 
-        Ok(Token::Word(spans))
+        Ok(Token::Word(Word(spans)))
     }
 
     /// Parses a variable expansion (after `$`).
@@ -385,8 +436,12 @@ mod tests {
         Span::Plain(string(s))
     }
 
+    fn word(spans: Vec<Span>) -> Token {
+        Token::Word(Word(spans))
+    }
+
     fn single_plain_word(s: &str) -> Token {
-        Token::Word(vec![plain_span(s)])
+        word(vec![plain_span(s)])
     }
 
     fn spaces(s: &str) -> Token {
@@ -443,7 +498,7 @@ mod tests {
             Ok(vec![
                 single_plain_word("echo"),
                 spaces(" "),
-                Token::Word(vec![Span::Command(vec![
+                word(vec![Span::Command(vec![
                     single_plain_word("ls"),
                     spaces(" "),
                     single_plain_word("/")
@@ -457,10 +512,10 @@ mod tests {
             Ok(vec![
                 single_plain_word("echo"),
                 spaces(" "),
-                Token::Word(vec![Span::Command(vec![
+                word(vec![Span::Command(vec![
                     single_plain_word("grep"),
                     spaces(" "),
-                    Token::Word(vec![Span::Command(vec![
+                    word(vec![Span::Command(vec![
                         single_plain_word("ls"),
                         spaces(" "),
                         single_plain_word("/foo*"),
@@ -480,7 +535,7 @@ mod tests {
             Ok(vec![
                 single_plain_word("echo"),
                 spaces(" "),
-                Token::Word(vec![
+                word(vec![
                     plain_span("a"),
                     Span::Variable { name: string("b") },
                     plain_span("c"),
@@ -527,7 +582,7 @@ mod tests {
             Ok(vec![
                 single_plain_word("echo"),
                 spaces(" "),
-                Token::Word(vec![
+                word(vec![
                     plain_span("a "),
                     Span::Variable { name: string("b") },
                     plain_span(" c"),
