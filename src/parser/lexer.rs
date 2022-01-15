@@ -59,6 +59,8 @@ pub enum Context {
     BraceParam,
     /// Double quoted string (e.g. `"foo"`).
     DoubleQuote,
+    /// Single quoted string (e.g. `'foo'`).
+    SingleQuote,
 }
 
 /// A lexer.
@@ -152,19 +154,30 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         let mut spans = Vec::new();
         let mut plain = String::new();
         let mut in_double_quotes = false;
+        let mut in_single_quotes = false;
         loop {
             match c {
-                ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')' if !in_double_quotes => {
+                ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')'
+                    if !in_double_quotes && !in_single_quotes =>
+                {
                     self.unconsume_char(c);
                     break;
                 }
-                '"' if in_double_quotes => {
-                    in_double_quotes = true;
+                '"' if in_double_quotes && !in_single_quotes => {
+                    in_double_quotes = false;
                     self.leave_context(Context::DoubleQuote);
                 }
-                '"' if !in_double_quotes => {
+                '"' if !in_single_quotes => {
                     in_double_quotes = true;
                     self.enter_context(Context::DoubleQuote);
+                }
+                '\'' if in_single_quotes && !in_double_quotes => {
+                    in_single_quotes = false;
+                    self.leave_context(Context::SingleQuote);
+                }
+                '\'' if !in_double_quotes => {
+                    in_single_quotes = true;
+                    self.enter_context(Context::SingleQuote);
                 }
                 '`' if self.in_backtick => {
                     // Unconsume to return Token::ClosingBackTick.
@@ -172,7 +185,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     break;
                 }
                 // The beginning of A command substitution.
-                '`' => {
+                '`' if !in_single_quotes => {
                     if !plain.is_empty() {
                         spans.push(Span::Plain(plain));
                         plain = String::new();
@@ -187,7 +200,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     self.in_backtick = false;
                     spans.push(Span::Command(tokens));
                 }
-                '$' => {
+                '$' if !in_single_quotes => {
                     if !plain.is_empty() {
                         spans.push(Span::Plain(plain));
                         plain = String::new();
