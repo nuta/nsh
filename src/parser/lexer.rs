@@ -342,8 +342,16 @@ fn is_identifier_char(c: char) -> bool {
 mod tests {
     use super::*;
 
+    fn string(s: &str) -> String {
+        s.to_owned()
+    }
+
     fn plain_span(s: &str) -> Span {
-        Span::Plain(s.to_owned())
+        Span::Plain(string(s))
+    }
+
+    fn single_plain_word(s: &str) -> Token {
+        Token::Word(vec![plain_span(s)])
     }
 
     fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
@@ -364,22 +372,19 @@ mod tests {
         let input = "echo hello";
         assert_eq!(
             lex(input),
-            Ok(vec![
-                Token::Word(vec![plain_span("echo")]),
-                Token::Word(vec![plain_span("hello")])
-            ])
+            Ok(vec![single_plain_word("echo"), single_plain_word("hello")])
         );
 
         let input = "echo | cat|grep foo";
         assert_eq!(
             lex(input),
             Ok(vec![
-                Token::Word(vec![plain_span("echo")]),
+                single_plain_word("echo"),
                 Token::Or,
-                Token::Word(vec![plain_span("cat")]),
+                single_plain_word("cat"),
                 Token::Or,
-                Token::Word(vec![plain_span("grep")]),
-                Token::Word(vec![plain_span("foo")])
+                single_plain_word("grep"),
+                single_plain_word("foo")
             ])
         );
     }
@@ -390,10 +395,10 @@ mod tests {
         assert_eq!(
             lex(input),
             Ok(vec![
-                Token::Word(vec![plain_span("echo")]),
+                single_plain_word("echo"),
                 Token::Word(vec![Span::Command(vec![
-                    Token::Word(vec![plain_span("ls")]),
-                    Token::Word(vec![plain_span("/")])
+                    single_plain_word("ls"),
+                    single_plain_word("/")
                 ])])
             ])
         );
@@ -402,16 +407,41 @@ mod tests {
         assert_eq!(
             lex(input),
             Ok(vec![
-                Token::Word(vec![plain_span("echo")]),
+                single_plain_word("echo"),
                 Token::Word(vec![Span::Command(vec![
-                    Token::Word(vec![plain_span("grep")]),
+                    single_plain_word("grep"),
                     Token::Word(vec![Span::Command(vec![
-                        Token::Word(vec![plain_span("ls")]),
-                        Token::Word(vec![plain_span("/foo*")]),
+                        single_plain_word("ls"),
+                        single_plain_word("/foo*"),
                     ])]),
-                    Token::Word(vec![plain_span("bar")]),
+                    single_plain_word("bar"),
                 ])])
             ])
+        );
+    }
+
+    #[test]
+    fn variable_expansion() {
+        let input = "echo a${b}c";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                single_plain_word("echo"),
+                Token::Word(vec![
+                    plain_span("a"),
+                    Span::Variable { name: string("b") },
+                    plain_span("c"),
+                ])
+            ])
+        );
+    }
+
+    #[test]
+    fn double_quotes() {
+        let input = "echo \"a b c\"";
+        assert_eq!(
+            lex(input),
+            Ok(vec![single_plain_word("echo"), single_plain_word("a b c"),])
         );
     }
 }
