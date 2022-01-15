@@ -141,84 +141,83 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     }
                 }
             }
-            // Word.
-            _ => {
-                let mut c = first;
-                let mut spans = Vec::new();
-                let mut plain = String::new();
-                let mut in_double_quotes = false;
-                loop {
-                    match c {
-                        ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')'
-                            if !in_double_quotes =>
-                        {
-                            self.unconsume_char(c);
-                            break;
-                        }
-                        '"' if in_double_quotes => {
-                            in_double_quotes = true;
-                            self.leave_context(Context::DoubleQuote);
-                        }
-                        '"' if !in_double_quotes => {
-                            in_double_quotes = true;
-                            self.enter_context(Context::DoubleQuote);
-                        }
-                        '`' if self.in_backtick => {
-                            // Unconsume to return Token::ClosingBackTick.
-                            self.unconsume_char(c);
-                            break;
-                        }
-                        // The beginning of A command substitution.
-                        '`' => {
-                            if !plain.is_empty() {
-                                spans.push(Span::Plain(plain));
-                                plain = String::new();
-                            }
-
-                            self.in_backtick = true;
-                            let tokens = self.consume_tokens_until(
-                                Context::BackTick,
-                                Token::ClosingBackTick,
-                                LexerError::NoMatchingClosingBackTick,
-                            )?;
-                            self.in_backtick = false;
-                            spans.push(Span::Command(tokens));
-                        }
-                        '$' => {
-                            if !plain.is_empty() {
-                                spans.push(Span::Plain(plain));
-                                plain = String::new();
-                            }
-
-                            spans.push(self.parse_variable_exp()?);
-                        }
-                        // Escaped character.
-                        '\\' => {
-                            plain.push(
-                                self.consume_next_char()
-                                    .unwrap_or('\\' /* backslash at EOF */),
-                            );
-                        }
-                        _ => {
-                            plain.push(c);
-                        }
-                    }
-
-                    c = match self.consume_next_char() {
-                        Some(c) => c,
-                        None => break,
-                    };
-                }
-
-                if !plain.is_empty() {
-                    spans.push(Span::Plain(plain));
-                    plain = String::new();
-                }
-                Token::Word(spans)
-            }
+            _ => self.parse_word(first)?,
         };
 
         Ok(token)
+    }
+
+    fn parse_word(&mut self, first_char: char) -> Result<Token, LexerError> {
+        let mut c = first_char;
+        let mut spans = Vec::new();
+        let mut plain = String::new();
+        let mut in_double_quotes = false;
+        loop {
+            match c {
+                ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')' if !in_double_quotes => {
+                    self.unconsume_char(c);
+                    break;
+                }
+                '"' if in_double_quotes => {
+                    in_double_quotes = true;
+                    self.leave_context(Context::DoubleQuote);
+                }
+                '"' if !in_double_quotes => {
+                    in_double_quotes = true;
+                    self.enter_context(Context::DoubleQuote);
+                }
+                '`' if self.in_backtick => {
+                    // Unconsume to return Token::ClosingBackTick.
+                    self.unconsume_char(c);
+                    break;
+                }
+                // The beginning of A command substitution.
+                '`' => {
+                    if !plain.is_empty() {
+                        spans.push(Span::Plain(plain));
+                        plain = String::new();
+                    }
+
+                    self.in_backtick = true;
+                    let tokens = self.consume_tokens_until(
+                        Context::BackTick,
+                        Token::ClosingBackTick,
+                        LexerError::NoMatchingClosingBackTick,
+                    )?;
+                    self.in_backtick = false;
+                    spans.push(Span::Command(tokens));
+                }
+                '$' => {
+                    if !plain.is_empty() {
+                        spans.push(Span::Plain(plain));
+                        plain = String::new();
+                    }
+
+                    spans.push(self.parse_variable_exp()?);
+                }
+                // Escaped character.
+                '\\' => {
+                    plain.push(
+                        self.consume_next_char()
+                            .unwrap_or('\\' /* backslash at EOF */),
+                    );
+                }
+                _ => {
+                    plain.push(c);
+                }
+            }
+
+            c = match self.consume_next_char() {
+                Some(c) => c,
+                None => break,
+            };
+        }
+
+        if !plain.is_empty() {
+            spans.push(Span::Plain(plain));
+        }
+
+        Ok(Token::Word(spans))
     }
 
     /// Parses a variable expansion (after `$`).
