@@ -114,7 +114,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             spaces.push(c);
         }
 
-        if spaces.len() > 0 {
+        if !spaces.is_empty() {
             return Ok(Token::Spaces(spaces));
         }
 
