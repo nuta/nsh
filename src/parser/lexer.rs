@@ -268,6 +268,22 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             Some(digits.parse::<usize>().unwrap())
         };
         let token = match (first, second) {
+            (Some('>'), Some('>')) => {
+                let word = self.visit_word()?;
+                Token::Redirection(Redirection {
+                    kind: RedirectionKind::Append,
+                    target: RedirectionTarget::File(word),
+                    fd: n.unwrap_or(1 /* stdout */),
+                })
+            }
+            (Some('<'), Some('<')) => {
+                let heredoc = self.visit_heredoc()?;
+                Token::Redirection(Redirection {
+                    kind: RedirectionKind::Input,
+                    target: RedirectionTarget::HereDoc(heredoc),
+                    fd: n.unwrap_or(0 /* stdin */),
+                })
+            }
             (Some('<'), _) => {
                 let word = self.visit_word()?;
                 Token::Redirection(Redirection {
@@ -281,23 +297,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 Token::Redirection(Redirection {
                     kind: RedirectionKind::Output,
                     target: RedirectionTarget::File(word),
-                    fd: n.unwrap_or(0 /* stdout */),
-                })
-            }
-            (Some('>'), Some('>')) => {
-                let word = self.visit_word()?;
-                Token::Redirection(Redirection {
-                    kind: RedirectionKind::Append,
-                    target: RedirectionTarget::File(word),
-                    fd: n.unwrap_or(0 /* stdin */),
-                })
-            }
-            (Some('<'), Some('<')) => {
-                let heredoc = self.visit_heredoc()?;
-                Token::Redirection(Redirection {
-                    kind: RedirectionKind::Input,
-                    target: RedirectionTarget::HereDoc(heredoc),
-                    fd: n.unwrap_or(0 /* stdin */),
+                    fd: n.unwrap_or(1 /* stdout */),
                 })
             }
             _ => {
@@ -702,7 +702,6 @@ mod tests {
         );
     }
 
-    /*
     #[test]
     fn command_substituion() {
         let input = "echo $(ls /)";
@@ -911,5 +910,4 @@ mod tests {
             ]
         );
     }
-    */
 }
