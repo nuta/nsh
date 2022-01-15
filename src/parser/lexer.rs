@@ -24,6 +24,13 @@ impl Word {
     pub fn spans(&self) -> &[Span] {
         &self.0
     }
+
+    /// Returns true if the word is a single plain text.
+    ///
+    /// It's useful for checking if a word is a keyword.
+    pub fn equals(&self, text: &str) -> bool {
+        self.0.len() == 1 && matches!(self.0[0], Span::Plain(ref s) if s == text)
+    }
 }
 
 /// Contains heredoc body. The outer Vec represents lines and
