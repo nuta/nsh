@@ -1,4 +1,4 @@
-use std::os::unix::prelude::RawFd;
+use std::{collections::VecDeque, os::unix::prelude::RawFd};
 
 use crate::highlight::{HighlightKind, HighlightSpan};
 
@@ -35,6 +35,13 @@ pub enum RedirectionKind {
     Append,
 }
 
+enum HereDocMarker {
+    /// `<< EOS`
+    Normal(String),
+    /// `<< "EOS"`
+    Plain(String),
+}
+
 /// Contains heredoc body. The outer Vec represents lines and
 /// `Vec<Word>` represents the contents of a line.
 #[derive(Debug, PartialEq, Clone)]
@@ -52,8 +59,8 @@ pub enum RedirectionTarget {
     File(Word),
     /// `1` in `2>&1`.
     Fd(RawFd),
-    /// A here document.
-    HereDoc(HereDoc),
+    /// A here document. Contains the index for [`Lexer::sheredoc`].
+    HereDoc(usize),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -102,6 +109,8 @@ pub enum LexerError {
     NoMatchingRightParen,
     NoMatchingRightBrace,
     NoMatchingClosingBackTick,
+    NoMatchingHereDocQuote,
+    ExpectedHereDocMarker,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -188,6 +197,9 @@ pub struct Lexer<I: Iterator<Item = char>> {
     in_backtick: bool,
     unclosed_context_stack: Vec<Context>,
     highlight_spans: Vec<HighlightSpan>,
+    heredocs: Vec<HereDoc>,
+    next_heredoc_index: usize,
+    unclosed_heredoc_markers: VecDeque<HereDocMarker>,
 }
 
 impl<I: Iterator<Item = char>> Lexer<I> {
@@ -198,11 +210,18 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             in_backtick: false,
             unclosed_context_stack: Vec::new(),
             highlight_spans: Vec::new(),
+            heredocs: Vec::new(),
+            next_heredoc_index: 0,
+            unclosed_heredoc_markers: VecDeque::new(),
         }
     }
 
     pub fn highlight_spans(&self) -> &[HighlightSpan] {
         &self.highlight_spans
+    }
+
+    pub fn heredoc(&self, index: usize) -> &HereDoc {
+        &self.heredocs[index]
     }
 
     /// Returns the next token.
@@ -220,14 +239,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     }
 
     fn do_next_token(&mut self) -> Result<Token, LexerError> {
-        // Skip whitespace characters.
-        loop {
-            let c = self.input.consume().ok_or(LexerError::Eof)?;
-            if !matches!(c, ' ' | '\t') {
-                self.input.unconsume(c);
-                break;
-            }
-        }
+        self.skip_whitespaces();
 
         // Read digits. It sounds a bit weird, but we need to handle the case
         // a redirection with the fd number.
@@ -259,7 +271,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 })
             }
             (Some('<'), Some('<')) => {
-                let heredoc = self.visit_heredoc()?;
+                let heredoc = self.visit_heredoc_marker()?;
                 Token::Redirection(Redirection {
                     kind: RedirectionKind::Input,
                     target: RedirectionTarget::HereDoc(heredoc),
@@ -510,11 +522,68 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         Ok(span)
     }
 
-    /// Visits a here document. `self.input` should be positioned at the first
-    /// character next to the here document marker `<<`.
-    fn visit_heredoc(&mut self) -> Result<HereDoc, LexerError> {
-        // TODO:
-        Err(LexerError::Unimplemented("here document"))
+    /// Visits a here document makrer. `self.input` should be positioned at the
+    /// first character next to the here document marker `<<`.
+    ///
+    /// Returns a heredoc index.
+    fn visit_heredoc_marker(&mut self) -> Result<usize, LexerError> {
+        self.skip_whitespaces();
+
+        let marker = match self.input.peek() {
+            // << "EOS"
+            Some(quote) if quote == '"' || quote == '\'' => {
+                // Skip the left-side '"' or '\'' (what quote holds).
+                self.input.consume();
+
+                // Read the marker string.
+                let mut s = String::new();
+                while let Some(c) = self.input.consume() {
+                    if c == quote || c == '\n' {
+                        break;
+                    }
+                    s.push(c);
+                }
+
+                // Skip the right-side '"' or '\''.
+                if self.input.consume() != Some(quote) {
+                    return Err(LexerError::NoMatchingHereDocQuote);
+                }
+
+                HereDocMarker::Plain(s)
+            }
+            // << EOS
+            Some(c) if is_valid_marker_char(c) => {
+                // Read the marker string.
+                let mut s = String::new();
+                while let Some(c) = self.input.consume() {
+                    if is_valid_marker_char(c) {
+                        break;
+                    }
+                    s.push(c);
+                }
+
+                HereDocMarker::Normal(s)
+            }
+            _ => {
+                return Err(LexerError::ExpectedHereDocMarker);
+            }
+        };
+
+        self.unclosed_heredoc_markers.push_back(marker);
+
+        let index = self.next_heredoc_index;
+        self.next_heredoc_index += 1;
+        Ok(index)
+    }
+
+    /// Skip whitespace characters.
+    fn skip_whitespaces(&mut self) {
+        while let Some(c) = self.input.consume() {
+            if !matches!(c, ' ' | '\t') {
+                self.input.unconsume(c);
+                break;
+            }
+        }
     }
 
     fn consume_tokens_until(
@@ -588,6 +657,10 @@ impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
 
 fn is_identifier_char(c: char) -> bool {
     matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')
+}
+
+fn is_valid_marker_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
 }
 
 #[cfg(test)]
