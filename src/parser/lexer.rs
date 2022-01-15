@@ -389,6 +389,11 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     quote_hctx = Some(self.enter_highlight(1 /* len('"') */));
                 }
                 '`' if self.in_backtick => {
+                    if !plain.is_empty() {
+                        spans.push(Span::Plain(plain));
+                        plain = String::new();
+                    }
+
                     // Unconsume to return Token::ClosingBackTick.
                     self.input.unconsume(c);
                     break;

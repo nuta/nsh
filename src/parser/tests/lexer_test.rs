@@ -65,7 +65,7 @@ fn simple_command() {
 }
 
 #[test]
-fn command_substituion() {
+fn command_substituion_1() {
     let input = "echo $(ls /)";
     assert_eq!(
         lex(input),
@@ -90,6 +90,21 @@ fn command_substituion() {
                     single_plain_word("/foo*"),
                 ])]),
                 single_plain_word("bar"),
+            ])])
+        ])
+    );
+}
+
+#[test]
+fn command_substituion_2() {
+    let input = "echo `ls /`";
+    assert_eq!(
+        lex(input),
+        Ok(vec![
+            single_plain_word("echo"),
+            word(vec![Span::Command(vec![
+                single_plain_word("ls"),
+                single_plain_word("/")
             ])])
         ])
     );
