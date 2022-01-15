@@ -11,6 +11,8 @@ pub enum Span {
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
+    /// Whitespaces (space and tab).
+    Spaces(String),
     /// A newline (`\n`).
     Newline,
     /// `|`
@@ -99,12 +101,19 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     fn do_next_token(&mut self) -> Result<Token, LexerError> {
         // Skip whitespace characters.
+        let mut spaces = String::new();
         loop {
             let c = self.consume_next_char().ok_or(LexerError::Eof)?;
             if !matches!(c, ' ' | '\t') {
                 self.unconsume_char(c);
                 break;
             }
+
+            spaces.push(c);
+        }
+
+        if spaces.len() > 0 {
+            return Ok(Token::Spaces(spaces));
         }
 
         let first = self.consume_next_char().ok_or(LexerError::Eof)?;
@@ -368,6 +377,10 @@ mod tests {
         Token::Word(vec![plain_span(s)])
     }
 
+    fn spaces(s: &str) -> Token {
+        Token::Spaces(string(s))
+    }
+
     fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
         let mut lexer = Lexer::new(input.chars());
         let mut tokens = Vec::new();
@@ -386,7 +399,11 @@ mod tests {
         let input = "echo hello";
         assert_eq!(
             lex(input),
-            Ok(vec![single_plain_word("echo"), single_plain_word("hello")])
+            Ok(vec![
+                single_plain_word("echo"),
+                spaces(" "),
+                single_plain_word("hello")
+            ])
         );
 
         let input = "echo | cat|grep foo";
@@ -394,10 +411,13 @@ mod tests {
             lex(input),
             Ok(vec![
                 single_plain_word("echo"),
+                spaces(" "),
                 Token::Or,
+                spaces(" "),
                 single_plain_word("cat"),
                 Token::Or,
                 single_plain_word("grep"),
+                spaces(" "),
                 single_plain_word("foo")
             ])
         );
@@ -410,8 +430,10 @@ mod tests {
             lex(input),
             Ok(vec![
                 single_plain_word("echo"),
+                spaces(" "),
                 Token::Word(vec![Span::Command(vec![
                     single_plain_word("ls"),
+                    spaces(" "),
                     single_plain_word("/")
                 ])])
             ])
@@ -422,12 +444,16 @@ mod tests {
             lex(input),
             Ok(vec![
                 single_plain_word("echo"),
+                spaces(" "),
                 Token::Word(vec![Span::Command(vec![
                     single_plain_word("grep"),
+                    spaces(" "),
                     Token::Word(vec![Span::Command(vec![
                         single_plain_word("ls"),
+                        spaces(" "),
                         single_plain_word("/foo*"),
                     ])]),
+                    spaces(" "),
                     single_plain_word("bar"),
                 ])])
             ])
@@ -441,6 +467,7 @@ mod tests {
             lex(input),
             Ok(vec![
                 single_plain_word("echo"),
+                spaces(" "),
                 Token::Word(vec![
                     plain_span("a"),
                     Span::Variable { name: string("b") },
@@ -455,7 +482,11 @@ mod tests {
         let input = "echo \"a b c\"";
         assert_eq!(
             lex(input),
-            Ok(vec![single_plain_word("echo"), single_plain_word("a b c"),])
+            Ok(vec![
+                single_plain_word("echo"),
+                spaces(" "),
+                single_plain_word("a b c"),
+            ])
         );
 
         let input = "echo X\"a b c\"X";
@@ -463,6 +494,7 @@ mod tests {
             lex(input),
             Ok(vec![
                 single_plain_word("echo"),
+                spaces(" "),
                 single_plain_word("Xa b cX"),
             ])
         );
