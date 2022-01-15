@@ -48,6 +48,15 @@ impl HereDoc {
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct Redirection {
+    direction: RedirectionDirection,
+    fd: isize,
+    path: PathBuf,
+    /// True if `>>` is used.
+    append: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     /// Whitespaces (space and tab).
@@ -73,13 +82,7 @@ pub enum Token {
     /// `\``
     ClosingBackTick,
     /// `echo > foo.log` or `echo >> foo.log`.
-    Redirection {
-        direction: RedirectionDirection,
-        fd: isize,
-        path: PathBuf,
-        /// True if `>>` is used.
-        append: bool,
-    },
+    Redirection(Redirection),
     /// A word.
     Word(Word),
 }
