@@ -131,7 +131,7 @@ pub enum LexerError {
     NoMatchingRightBrace,
     #[error("No closing backtick '`'.")]
     NoMatchingClosingBackTick,
-    #[error("Expected here document marker.")]
+    #[error("Expected here document marker (e.g. \"EOF\" in \"cat << EOF\").")]
     ExpectedHereDocMarker,
     #[error("Unclosed here document.")]
     UnclosedHereDoc,
