@@ -4,7 +4,7 @@ pub enum Span {
     /// A plain text.
     Plain(String),
     /// A variable substitution, e.g. `$foo`.
-    Variable(String),
+    Variable { name: String },
     /// A command substitution, e.g. `$(echo "hi")`.
     Command(Vec<Token>),
 }
@@ -27,6 +27,8 @@ pub enum Token {
     DoubleSemi,
     /// `)`
     RightParen,
+    /// `}`
+    RightBrace,
     /// ```
     ClosingBackTick,
     /// A word.
@@ -35,39 +37,77 @@ pub enum Token {
 
 #[derive(Debug, PartialEq)]
 pub enum LexerError {
+    /// Indicates the lexer has already returned an error. If you see this,
+    /// it's a bug because you should not call `lexer.next()` after an error.
+    Halted,
+    /// Indicates the lexer has reached the end of the input.
     Eof,
     NoMatchingRightParen,
+    NoMatchingRightBrace,
     NoMatchingClosingBackTick,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Context {
+    /// A command substitution (e.g. `\`foo\``).
+    BackTick,
+    /// A command substitution (e.g. `$(foo)`).
+    Command,
+    /// A variable substitution (e.g. `${foo}`).
+    BraceParam,
+}
+
+/// A lexer.
+///
+/// This is NOT await-ready: the iterator should block the thread until the next
+/// character gets available. This is because the lexer in async seemed to be
+/// unnecessarily complicated.
 pub struct Lexer<I: Iterator<Item = char>> {
+    halted: bool,
     input: I,
     push_back_stack: Vec<char>,
     in_backtick: bool,
+    unclosed_context_stack: Vec<Context>,
 }
 
 impl<I: Iterator<Item = char>> Lexer<I> {
     pub fn new(input: I) -> Lexer<I> {
         Lexer {
+            halted: false,
             input,
             push_back_stack: Vec::new(),
             in_backtick: false,
+            unclosed_context_stack: Vec::new(),
         }
     }
 
     /// Returns the next token.
     fn next_token(&mut self) -> Result<Token, LexerError> {
+        if self.halted {
+            return Err(LexerError::Halted);
+        }
+
+        let ret = self.do_next_token();
+        if ret.is_err() {
+            self.halted = true;
+        }
+
+        ret
+    }
+
+    fn do_next_token(&mut self) -> Result<Token, LexerError> {
         // Skip whitespace characters.
         loop {
-            let c = self.pop().ok_or(LexerError::Eof)?;
+            let c = self.consume_next_char().ok_or(LexerError::Eof)?;
             if !matches!(c, ' ' | '\t') {
-                self.push_back(c);
+                self.unconsume_char(c);
                 break;
             }
         }
 
-        let first = self.pop().ok_or(LexerError::Eof)?;
-        let second = self.peek();
+        let first = self.consume_next_char().ok_or(LexerError::Eof)?;
+        let second = self.peek_next_char();
+        dbg!(first, second);
         let token = match (first, second) {
             ('\n', _) => Token::Newline,
             ('|', Some('|')) => Token::DoubleOr,
@@ -77,6 +117,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             (';', Some(';')) => Token::DoubleSemi,
             (';', _) => Token::Semi,
             (')', _) => Token::RightParen,
+            ('}', _) => Token::RightBrace,
             // The end of A command substitution.
             ('`', _) if self.in_backtick => Token::ClosingBackTick,
             // Comment.
@@ -85,7 +126,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 loop {
                     // If the comment is in the last line and there's no newline
                     // at EOF, return None from the `?` operator.
-                    if self.pop().ok_or(LexerError::Eof)? == '\n' {
+                    if self.consume_next_char().ok_or(LexerError::Eof)? == '\n' {
                         break Token::Newline;
                     }
                 }
@@ -97,12 +138,12 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 let mut plain = String::new();
                 loop {
                     match c {
-                        ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' => {
-                            self.push_back(c);
+                        ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')' => {
+                            self.unconsume_char(c);
                             break;
                         }
                         '`' if self.in_backtick => {
-                            self.push_back(c);
+                            self.unconsume_char(c);
                             break;
                         }
                         // The beginning of A command substitution.
@@ -114,6 +155,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
                             self.in_backtick = true;
                             let tokens = self.consume_tokens_until(
+                                Context::BackTick,
                                 Token::ClosingBackTick,
                                 LexerError::NoMatchingClosingBackTick,
                             )?;
@@ -130,14 +172,17 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                         }
                         // Escaped character.
                         '\\' => {
-                            plain.push(self.pop().unwrap_or('\\' /* backslash at EOF */));
+                            plain.push(
+                                self.consume_next_char()
+                                    .unwrap_or('\\' /* backslash at EOF */),
+                            );
                         }
                         _ => {
                             plain.push(c);
                         }
                     }
 
-                    c = match self.pop() {
+                    c = match self.consume_next_char() {
                         Some(c) => c,
                         None => break,
                     };
@@ -156,27 +201,53 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     /// Parses a variable expansion (after `$`).
     fn parse_variable_exp(&mut self) -> Result<Span, LexerError> {
-        let span = match self.pop() {
+        let span = match self.consume_next_char() {
             // `$(echo foo)`
-            Some('(') => Span::Command(
-                self.consume_tokens_until(Token::RightParen, LexerError::NoMatchingRightParen)?,
-            ),
-            // `$foo`
-            Some(c) if is_identifier_char(c) => {
-                let mut plain = String::new();
-                plain.push(c);
-                while let Some(c) = self.pop() {
+            Some('(') => {
+                let tokens = self.consume_tokens_until(
+                    Context::Command,
+                    Token::RightParen,
+                    LexerError::NoMatchingRightParen,
+                )?;
+                Span::Command(tokens)
+            }
+            Some('{') => {
+                // Read its name.
+                let mut name = String::new();
+                self.enter_context(Context::BraceParam);
+                while let Some(c) = self.consume_next_char() {
                     if !is_identifier_char(c) {
-                        self.push_back(c);
+                        self.unconsume_char(c);
                         break;
                     }
-                    plain.push(c);
+                    name.push(c);
                 }
-                Span::Variable(plain)
+
+                // TODO:
+                let _tokens = self.consume_tokens_until(
+                    Context::BraceParam,
+                    Token::RightBrace,
+                    LexerError::NoMatchingRightBrace,
+                )?;
+
+                Span::Variable { name }
+            }
+            // `$foo`
+            Some(c) if is_identifier_char(c) => {
+                let mut name = String::new();
+                name.push(c);
+                while let Some(c) = self.consume_next_char() {
+                    if !is_identifier_char(c) {
+                        self.unconsume_char(c);
+                        break;
+                    }
+                    name.push(c);
+                }
+                Span::Variable { name }
             }
             // Not a variable expansion. Handle it as a plain `$`.
             Some(c) => {
-                self.push_back(c);
+                self.unconsume_char(c);
                 Span::Plain("$".to_owned())
             }
             None => {
@@ -190,10 +261,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     fn consume_tokens_until(
         &mut self,
+        context: Context,
         end_marker: Token,
         err_on_eof: LexerError,
     ) -> Result<Vec<Token>, LexerError> {
         let mut tokens = Vec::new();
+        self.enter_context(context);
+
         loop {
             let token = match self.next_token() {
                 Ok(token) => token,
@@ -204,26 +278,29 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             if token == end_marker {
                 break;
             }
+
+            tokens.push(token);
         }
 
+        self.leave_context(context);
         Ok(tokens)
     }
 
     /// Pops a character from the input stream without consuming the character,
     /// that is, the same character will be returned next time `pop` or `peek`
     /// is called.
-    fn peek(&mut self) -> Option<char> {
+    fn peek_next_char(&mut self) -> Option<char> {
         if let Some(c) = self.push_back_stack.pop() {
             Some(c)
         } else {
             let c = self.input.next()?;
-            self.push_back(c);
+            self.unconsume_char(c);
             Some(c)
         }
     }
 
     /// Consumes a character from the input stream.
-    fn pop(&mut self) -> Option<char> {
+    fn consume_next_char(&mut self) -> Option<char> {
         if let Some(c) = self.push_back_stack.pop() {
             Some(c)
         } else {
@@ -233,8 +310,16 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     /// Pushes a character back to the input stream. The character will be
     /// returned next time `pop` or `peek` is called.
-    fn push_back(&mut self, c: char) {
+    fn unconsume_char(&mut self, c: char) {
         self.push_back_stack.push(c);
+    }
+
+    fn enter_context(&mut self, context: Context) {
+        self.unclosed_context_stack.push(context);
+    }
+
+    fn leave_context(&mut self, context: Context) {
+        debug_assert_eq!(self.unclosed_context_stack.pop().unwrap(), context);
     }
 }
 
@@ -258,6 +343,10 @@ fn is_identifier_char(c: char) -> bool {
 mod tests {
     use super::*;
 
+    fn plain_span(s: &str) -> Span {
+        Span::Plain(s.to_owned())
+    }
+
     fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
         let mut lexer = Lexer::new(input.chars());
         let mut tokens = Vec::new();
@@ -273,7 +362,41 @@ mod tests {
 
     #[test]
     fn simple_command() {
-        let input = "if true then";
-        assert_eq!(lex(input), Ok(vec![Token::Newline]));
+        let input = "echo hello";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                Token::Word(vec![plain_span("echo")]),
+                Token::Word(vec![plain_span("hello")])
+            ])
+        );
+
+        let input = "echo | cat|grep foo";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                Token::Word(vec![plain_span("echo")]),
+                Token::Or,
+                Token::Word(vec![plain_span("cat")]),
+                Token::Or,
+                Token::Word(vec![plain_span("grep")]),
+                Token::Word(vec![plain_span("foo")])
+            ])
+        );
+    }
+
+    #[test]
+    fn command_substituion() {
+        let input = "echo $(ls /)";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                Token::Word(vec![plain_span("echo")]),
+                Token::Word(vec![Span::Command(vec![
+                    Token::Word(vec![plain_span("ls")]),
+                    Token::Word(vec![plain_span("/")])
+                ])])
+            ])
+        );
     }
 }
