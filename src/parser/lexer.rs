@@ -197,13 +197,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     }
                 }
             }
-            _ => self.parse_word(first)?,
+            _ => self.visit_word(first)?,
         };
 
         Ok(token)
     }
 
-    fn parse_word(&mut self, first_char: char) -> Result<Token, LexerError> {
+    fn visit_word(&mut self, first_char: char) -> Result<Token, LexerError> {
         let mut c = first_char;
         let mut spans = Vec::new();
         let mut plain = String::new();
@@ -251,7 +251,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     self.unconsume_char(c);
                     break;
                 }
-                // The beginning of A command substitution.
+                // The beginning of a command substitution.
                 '`' if !in_single_quotes => {
                     if !plain.is_empty() {
                         spans.push(Span::Plain(plain));
@@ -284,7 +284,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                         plain = String::new();
                     }
 
-                    spans.push(self.parse_variable_exp()?);
+                    spans.push(self.visit_variable_exp()?);
                 }
                 // Escaped character.
                 '\\' => {
@@ -316,7 +316,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     }
 
     /// Parses a variable expansion (after `$`).
-    fn parse_variable_exp(&mut self) -> Result<Span, LexerError> {
+    fn visit_variable_exp(&mut self) -> Result<Span, LexerError> {
         let span = match self.consume_next_char() {
             // `$(echo foo)`
             Some('(') => {
