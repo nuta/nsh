@@ -1,4 +1,4 @@
-use std::{os::unix::prelude::RawFd, path::PathBuf};
+use std::os::unix::prelude::RawFd;
 
 /// A fragment of a word.
 #[derive(Clone, Debug, PartialEq)]
@@ -21,40 +21,13 @@ impl Word {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum RedirectionDirection {
+pub enum Redirection {
     /// `cat < foo.txt` or here document.
     Input,
     /// `cat > foo.txt`.
     Output,
     /// `cat >> foo.txt`.
     Append,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum RedirectionType {
-    File(Word),
-    Fd(RawFd),
-    HereDoc(HereDoc),
-}
-
-/// Contains heredoc body. The outer Vec represents lines and
-/// `Vec<Word>` represents the contents of a line.
-#[derive(Debug, PartialEq, Clone)]
-pub struct HereDoc(Vec<Vec<Word>>);
-
-impl HereDoc {
-    pub fn lines(&self) -> &[Vec<Word>] {
-        &self.0
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Redirection {
-    direction: RedirectionDirection,
-    fd: isize,
-    path: PathBuf,
-    /// True if `>>` is used.
-    append: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
