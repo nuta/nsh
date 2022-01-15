@@ -85,7 +85,7 @@ pub enum Token {
     RightBrace,
     /// `\``
     ClosingBackTick,
-    /// `echo > foo.log` or `echo >> foo.log`.
+    /// A redirection like `echo > foo.log`.
     Redirection(Redirection),
     /// A word.
     Word(Word),
