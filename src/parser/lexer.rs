@@ -400,25 +400,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                         plain = String::new();
                     }
 
-                    self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
-                    let inner_htx = self.enter_highlight(0);
-
-                    self.in_backtick = true;
-                    let tokens = self.consume_tokens_until(
-                        Context::BackTick,
-                        Token::ClosingBackTick,
-                        LexerError::NoMatchingClosingBackTick,
-                    )?;
-                    self.in_backtick = false;
-
-                    self.leave_highlight(
-                        inner_htx,
-                        HighlightKind::Plain,
-                        1, /* not to include the right backtick */
-                    );
-                    self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
-
-                    spans.push(Span::Command(tokens));
+                    spans.push(self.visit_backtick_exp()?);
                 }
                 '$' if !in_single_quotes => {
                     if !plain.is_empty() {
@@ -526,6 +508,29 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         };
 
         Ok(span)
+    }
+
+    /// Parses a backtick substitution (after `\``).
+    fn visit_backtick_exp(&mut self) -> Result<Span, LexerError> {
+        self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
+        let inner_htx = self.enter_highlight(0);
+
+        self.in_backtick = true;
+        let tokens = self.consume_tokens_until(
+            Context::BackTick,
+            Token::ClosingBackTick,
+            LexerError::NoMatchingClosingBackTick,
+        )?;
+        self.in_backtick = false;
+
+        self.leave_highlight(
+            inner_htx,
+            HighlightKind::Plain,
+            1, /* not to include the right backtick */
+        );
+        self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
+
+        Ok(Span::Command(tokens))
     }
 
     /// Visits a here document makrer. `self.input` should be positioned at the
