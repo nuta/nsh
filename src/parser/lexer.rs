@@ -87,8 +87,12 @@ pub enum Token {
     DoubleOr,
     /// `;;`
     DoubleSemi,
+    /// `(`
+    LeftParen,
     /// `)`
     RightParen,
+    /// `{`
+    LeftBrace,
     /// `}`
     RightBrace,
     /// `\``
@@ -314,7 +318,9 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     ('&', _) => Token::And,
                     (';', Some(';')) => Token::DoubleSemi,
                     (';', _) => Token::Semi,
+                    ('(', _) => Token::LeftParen,
                     (')', _) => Token::RightParen,
+                    ('{', _) => Token::LeftBrace,
                     ('}', _) => Token::RightBrace,
                     // The end of A command substitution.
                     ('`', _) if self.in_backtick => Token::ClosingBackTick,
