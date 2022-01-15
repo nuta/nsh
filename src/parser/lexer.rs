@@ -71,7 +71,7 @@ pub enum RedirectionTarget {
     File(Word),
     /// `1` in `2>&1`.
     Fd(RawFd),
-    /// A here document. Contains the index for [`Lexer::sheredoc`].
+    /// A here document. Contains the index for [`Lexer::heredoc`].
     HereDoc(usize),
 }
 
@@ -319,8 +319,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 })
             }
             _ => {
-                // It's not a redirection. Go back before the digits we've read
-                // above.
+                // Not a redirection. Go back before the digits we've read above.
                 if let Some(c) = first {
                     self.input.unconsume(c);
                 }
