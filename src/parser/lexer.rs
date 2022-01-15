@@ -501,6 +501,16 @@ mod tests {
             ])
         );
 
+        let input = "echo \"a\\\"b\"";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                single_plain_word("echo"),
+                spaces(" "),
+                single_plain_word("a\"b"),
+            ])
+        );
+
         let input = "echo X\"a b c\"X";
         assert_eq!(
             lex(input),
@@ -508,6 +518,91 @@ mod tests {
                 single_plain_word("echo"),
                 spaces(" "),
                 single_plain_word("Xa b cX"),
+            ])
+        );
+
+        let input = "echo \"a $b c\"";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                single_plain_word("echo"),
+                spaces(" "),
+                Token::Word(vec![
+                    plain_span("a "),
+                    Span::Variable { name: string("b") },
+                    plain_span(" c"),
+                ])
+            ])
+        );
+
+        let input = "echo \"a b\" c \"d e\"";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                single_plain_word("echo"),
+                spaces(" "),
+                single_plain_word("a b"),
+                spaces(" "),
+                single_plain_word("c"),
+                spaces(" "),
+                single_plain_word("d e"),
+            ])
+        );
+    }
+
+    #[test]
+    fn single_quotes() {
+        let input = "echo 'a b c'";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                single_plain_word("echo"),
+                spaces(" "),
+                single_plain_word("a b c"),
+            ])
+        );
+
+        let input = "echo 'a\\'b'";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                single_plain_word("echo"),
+                spaces(" "),
+                single_plain_word("a'b"),
+            ])
+        );
+
+        let input = "echo X'a b c'X";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                single_plain_word("echo"),
+                spaces(" "),
+                single_plain_word("Xa b cX"),
+            ])
+        );
+
+        let input = "echo 'a $b c'";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                single_plain_word("echo"),
+                spaces(" "),
+                single_plain_word("a $b c"),
+            ])
+        );
+
+        let input = "echo 'a b' c 'd e'";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                single_plain_word("echo"),
+                spaces(" "),
+                single_plain_word("a b"),
+                spaces(" "),
+                single_plain_word("c"),
+                spaces(" "),
+                single_plain_word("d e"),
             ])
         );
     }
