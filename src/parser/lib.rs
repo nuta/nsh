@@ -1,3 +1,1 @@
-#![allow(unused)]
-
 mod lexer;
