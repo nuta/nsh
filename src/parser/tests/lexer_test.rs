@@ -308,7 +308,13 @@ fn nested_highlighting() {
 #[test]
 fn normal_heredocs() {
     assert_eq!(
-        lex_with_heredocs(concat!("cat <<EOF\n", "foo\n", "bar\n", "baz\n", "EOF\n",)),
+        lex_with_heredocs(concat!(
+            "cat <<EOF xyz\n",
+            "foo\n",
+            "bar\n",
+            "baz\n",
+            "EOF\n",
+        )),
         Ok((
             (vec![
                 single_plain_word("cat"),
@@ -317,6 +323,7 @@ fn normal_heredocs() {
                     target: RedirectionTarget::HereDoc(0),
                     fd: 0
                 }),
+                single_plain_word("xyz"),
                 Token::Newline,
             ]),
             (vec![HereDoc::new(vec![
@@ -367,7 +374,13 @@ fn normal_heredocs() {
 #[test]
 fn quoted_heredocs() {
     assert_eq!(
-        lex_with_heredocs(concat!("cat <<'EOF'\n", "foo\n", "bar\n", "baz\n", "EOF\n",)),
+        lex_with_heredocs(concat!(
+            "cat <<'EOF' xyz\n",
+            "foo\n",
+            "bar\n",
+            "baz\n",
+            "EOF\n",
+        )),
         Ok((
             (vec![
                 single_plain_word("cat"),
@@ -376,6 +389,7 @@ fn quoted_heredocs() {
                     target: RedirectionTarget::HereDoc(0),
                     fd: 0
                 }),
+                single_plain_word("xyz"),
                 Token::Newline,
             ]),
             (vec![HereDoc::new(vec![
