@@ -55,6 +55,8 @@ pub enum Context {
     Command,
     /// A variable substitution (e.g. `${foo}`).
     BraceParam,
+    /// Double quoted string (e.g. `"foo"`).
+    DoubleQuote,
 }
 
 /// A lexer.
@@ -135,13 +137,25 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 let mut c = first;
                 let mut spans = Vec::new();
                 let mut plain = String::new();
+                let mut in_double_quotes = false;
                 loop {
                     match c {
-                        ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')' => {
+                        ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')'
+                            if !in_double_quotes =>
+                        {
                             self.unconsume_char(c);
                             break;
                         }
+                        '"' if in_double_quotes => {
+                            in_double_quotes = true;
+                            self.leave_context(Context::DoubleQuote);
+                        }
+                        '"' if !in_double_quotes => {
+                            in_double_quotes = true;
+                            self.enter_context(Context::DoubleQuote);
+                        }
                         '`' if self.in_backtick => {
+                            // Unconsume to return Token::ClosingBackTick.
                             self.unconsume_char(c);
                             break;
                         }
@@ -442,6 +456,15 @@ mod tests {
         assert_eq!(
             lex(input),
             Ok(vec![single_plain_word("echo"), single_plain_word("a b c"),])
+        );
+
+        let input = "echo X\"a b c\"X";
+        assert_eq!(
+            lex(input),
+            Ok(vec![
+                single_plain_word("echo"),
+                single_plain_word("Xa b cX"),
+            ])
         );
     }
 }
