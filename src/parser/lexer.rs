@@ -87,7 +87,7 @@ pub enum Context {
 #[derive(Clone, Debug, PartialEq)]
 pub enum HighlightKind {
     /// A variable substitution, e.g. `$foo`.
-    Variable,
+    Variable { name: String },
     /// A quoted string (e.g. `"foo"` and `'foo'`).
     QuotedString,
     /// An escaped sequence (e.g. `\"`).
@@ -105,7 +105,6 @@ pub struct HighlightSpan {
 }
 
 struct HighlighterContext {
-    kind: HighlightKind,
     char_offset_start: usize,
 }
 
@@ -297,7 +296,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 Span::Command(tokens)
             }
             Some('{') => {
-                let hctx = self.enter_highlight(HighlightKind::Variable, 2 /* len("${") */);
+                let hctx = self.enter_highlight(2 /* len("${") */);
 
                 // Read its name.
                 let mut name = String::new();
@@ -317,12 +316,12 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     LexerError::NoMatchingRightBrace,
                 )?;
 
-                self.leave_highlight(hctx);
+                self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() });
                 Span::Variable { name }
             }
             // `$foo`
             Some(c) if is_identifier_char(c) => {
-                let hctx = self.enter_highlight(HighlightKind::Variable, 2 /* len("$" + c) */);
+                let hctx = self.enter_highlight(2 /* len("$" + c) */);
 
                 let mut name = String::new();
                 name.push(c);
@@ -334,7 +333,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     name.push(c);
                 }
 
-                self.leave_highlight(hctx);
+                self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() });
                 Span::Variable { name }
             }
             // Not a variable expansion. Handle it as a plain `$`.
@@ -421,16 +420,15 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         debug_assert_eq!(self.unclosed_context_stack.pop().unwrap(), context);
     }
 
-    fn enter_highlight(&mut self, kind: HighlightKind, diff: usize) -> HighlighterContext {
+    fn enter_highlight(&mut self, diff: usize) -> HighlighterContext {
         HighlighterContext {
-            kind,
             char_offset_start: self.char_offset - diff,
         }
     }
 
-    fn leave_highlight(&mut self, hctx: HighlighterContext) {
+    fn leave_highlight(&mut self, hctx: HighlighterContext, kind: HighlightKind) {
         self.highlight_spans.push(HighlightSpan {
-            kind: hctx.kind,
+            kind,
             char_range: hctx.char_offset_start..self.char_offset,
         });
     }
@@ -645,7 +643,7 @@ mod tests {
 
     #[test]
     fn highlighting() {
-        let input = "$foo 123 $bar";
+        let input = "$foo 123 ${bar}";
         let mut lexer = Lexer::new(input.chars());
         while lexer.next().is_some() {}
 
@@ -654,11 +652,15 @@ mod tests {
             vec![
                 HighlightSpan {
                     char_range: 0..4,
-                    kind: HighlightKind::Variable,
+                    kind: HighlightKind::Variable {
+                        name: string("foo"),
+                    },
                 },
                 HighlightSpan {
-                    char_range: 9..13,
-                    kind: HighlightKind::Variable,
+                    char_range: 9..15,
+                    kind: HighlightKind::Variable {
+                        name: string("bar"),
+                    },
                 },
             ]
         );
