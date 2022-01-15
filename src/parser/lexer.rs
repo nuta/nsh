@@ -92,6 +92,7 @@ pub enum LexerError {
     Halted,
     /// Indicates the lexer has reached the end of the input.
     Eof,
+    Unimplemented(&'static str),
     NoMatchingRightParen,
     NoMatchingRightBrace,
     NoMatchingClosingBackTick,
@@ -530,7 +531,8 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     /// Visits a here document. `self.input` should be positioned at the first
     /// character next to the here document marker `<<`.
     fn visit_heredoc(&mut self) -> Result<HereDoc, LexerError> {
-        todo!()
+        // TODO:
+        Err(LexerError::Unimplemented("here document"))
     }
 
     fn consume_tokens_until(
