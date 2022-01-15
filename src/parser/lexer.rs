@@ -91,7 +91,7 @@ pub enum HighlightKind {
     /// A quoted string (e.g. `"foo"` and `'foo'`).
     QuotedString,
     /// An escaped sequence (e.g. `\"`).
-    EscapedSeq,
+    EscSeq,
     /// A command (e.g. "ls" in "ls /var").
     Argv0,
     /// A keyword.
@@ -205,6 +205,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         let mut plain = String::new();
         let mut in_double_quotes = false;
         let mut in_single_quotes = false;
+        let mut hctx = None;
         loop {
             match c {
                 ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')' | '<' | '>'
@@ -216,18 +217,22 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 '"' if in_double_quotes && !in_single_quotes => {
                     in_double_quotes = false;
                     self.leave_context(Context::DoubleQuote);
+                    self.leave_highlight(hctx.take().unwrap(), HighlightKind::QuotedString);
                 }
                 '"' if !in_single_quotes => {
                     in_double_quotes = true;
                     self.enter_context(Context::DoubleQuote);
+                    hctx = Some(self.enter_highlight(1 /* len('"') */));
                 }
                 '\'' if in_single_quotes && !in_double_quotes => {
                     in_single_quotes = false;
                     self.leave_context(Context::SingleQuote);
+                    self.leave_highlight(hctx.take().unwrap(), HighlightKind::QuotedString);
                 }
                 '\'' if !in_double_quotes => {
                     in_single_quotes = true;
                     self.enter_context(Context::SingleQuote);
+                    hctx = Some(self.enter_highlight(1 /* len('"') */));
                 }
                 '`' if self.in_backtick => {
                     // Unconsume to return Token::ClosingBackTick.
@@ -260,10 +265,14 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 }
                 // Escaped character.
                 '\\' => {
-                    plain.push(
-                        self.consume_next_char()
-                            .unwrap_or('\\' /* backslash at EOF */),
-                    );
+                    let hctx = self.enter_highlight(1 /* len("\\") */);
+
+                    let ch = self
+                        .consume_next_char()
+                        .unwrap_or('\\' /* backslash at EOF */);
+                    plain.push(ch);
+
+                    self.leave_highlight(hctx, HighlightKind::EscSeq);
                 }
                 _ => {
                     plain.push(c);
@@ -483,6 +492,15 @@ mod tests {
         Ok(tokens)
     }
 
+    fn highlight(input: &str) -> Vec<HighlightSpan> {
+        let mut lexer = Lexer::new(input.chars());
+        while lexer.next().is_some() {}
+
+        let mut spans = lexer.highlight_spans.to_vec();
+        spans.sort_by_key(|span| span.char_range.start);
+        spans
+    }
+
     #[test]
     fn simple_command() {
         let input = "echo hello";
@@ -643,12 +661,8 @@ mod tests {
 
     #[test]
     fn highlighting() {
-        let input = "$foo 123 ${bar}";
-        let mut lexer = Lexer::new(input.chars());
-        while lexer.next().is_some() {}
-
         assert_eq!(
-            lexer.highlight_spans(),
+            highlight("$foo 123 ${bar}"),
             vec![
                 HighlightSpan {
                     char_range: 0..4,
@@ -661,6 +675,29 @@ mod tests {
                     kind: HighlightKind::Variable {
                         name: string("bar"),
                     },
+                },
+            ]
+        );
+
+        assert_eq!(
+            highlight("echo \"abc\"def"),
+            vec![HighlightSpan {
+                char_range: 5..10,
+                kind: HighlightKind::QuotedString,
+            },]
+        );
+
+        assert_eq!(
+            // echo "a\"b"c
+            highlight("echo \"a\\\"b\"c"),
+            vec![
+                HighlightSpan {
+                    char_range: 5..11,
+                    kind: HighlightKind::QuotedString,
+                },
+                HighlightSpan {
+                    char_range: 7..9,
+                    kind: HighlightKind::EscSeq,
                 },
             ]
         );
