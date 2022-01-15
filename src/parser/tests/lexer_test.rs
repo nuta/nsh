@@ -319,11 +319,11 @@ fn heredoc() {
                 }),
                 Token::Newline,
             ]),
-            (vec![HereDoc::new(vec![vec![
-                plain_span("foo"),
-                plain_span("bar"),
-                plain_span("baz")
-            ]])])
+            (vec![HereDoc::new(vec![
+                vec![plain_span("foo")],
+                vec![plain_span("bar")],
+                vec![plain_span("baz")]
+            ])])
         ))
     );
 }

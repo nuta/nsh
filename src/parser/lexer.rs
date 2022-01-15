@@ -580,15 +580,10 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 // Read the marker string.
                 let mut s = String::new();
                 while let Some(c) = self.input.consume() {
-                    if c == quote || c == '\n' {
+                    if c == quote {
                         break;
                     }
                     s.push(c);
-                }
-
-                // Skip the right-side '"' or '\''.
-                if self.input.consume() != Some(quote) {
-                    return Err(LexerError::NoMatchingHereDocQuote);
                 }
 
                 HereDocMarker::Plain(s)
@@ -599,6 +594,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 let mut s = String::new();
                 while let Some(c) = self.input.consume() {
                     if !is_valid_marker_char(c) {
+                        self.input.unconsume(c);
                         break;
                     }
                     s.push(c);
