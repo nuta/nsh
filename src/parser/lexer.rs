@@ -86,10 +86,14 @@ pub enum Context {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum HighlightKind {
+    /// A plain text.
+    Plain,
     /// A variable substitution, e.g. `$foo`.
     Variable { name: String },
     /// A quoted string (e.g. `"foo"` and `'foo'`).
     QuotedString,
+    /// A command substitution symbols, e.g. `$(` and `)` in `$(foo)`.
+    CommandSymbol,
     /// An escaped sequence (e.g. `\"`).
     EscSeq,
     /// A command (e.g. "ls" in "ls /var").
@@ -205,7 +209,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         let mut plain = String::new();
         let mut in_double_quotes = false;
         let mut in_single_quotes = false;
-        let mut hctx = None;
+        let mut quote_hctx = None;
         loop {
             match c {
                 ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')' | '<' | '>'
@@ -217,22 +221,30 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 '"' if in_double_quotes && !in_single_quotes => {
                     in_double_quotes = false;
                     self.leave_context(Context::DoubleQuote);
-                    self.leave_highlight(hctx.take().unwrap(), HighlightKind::QuotedString);
+                    self.leave_highlight(
+                        quote_hctx.take().unwrap(),
+                        HighlightKind::QuotedString,
+                        0,
+                    );
                 }
                 '"' if !in_single_quotes => {
                     in_double_quotes = true;
                     self.enter_context(Context::DoubleQuote);
-                    hctx = Some(self.enter_highlight(1 /* len('"') */));
+                    quote_hctx = Some(self.enter_highlight(1 /* len('"') */));
                 }
                 '\'' if in_single_quotes && !in_double_quotes => {
                     in_single_quotes = false;
                     self.leave_context(Context::SingleQuote);
-                    self.leave_highlight(hctx.take().unwrap(), HighlightKind::QuotedString);
+                    self.leave_highlight(
+                        quote_hctx.take().unwrap(),
+                        HighlightKind::QuotedString,
+                        0,
+                    );
                 }
                 '\'' if !in_double_quotes => {
                     in_single_quotes = true;
                     self.enter_context(Context::SingleQuote);
-                    hctx = Some(self.enter_highlight(1 /* len('"') */));
+                    quote_hctx = Some(self.enter_highlight(1 /* len('"') */));
                 }
                 '`' if self.in_backtick => {
                     // Unconsume to return Token::ClosingBackTick.
@@ -246,6 +258,9 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                         plain = String::new();
                     }
 
+                    self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
+                    let inner_htx = self.enter_highlight(0);
+
                     self.in_backtick = true;
                     let tokens = self.consume_tokens_until(
                         Context::BackTick,
@@ -253,6 +268,14 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                         LexerError::NoMatchingClosingBackTick,
                     )?;
                     self.in_backtick = false;
+
+                    self.leave_highlight(
+                        inner_htx,
+                        HighlightKind::Plain,
+                        1, /* not to include the right backtick */
+                    );
+                    self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
+
                     spans.push(Span::Command(tokens));
                 }
                 '$' if !in_single_quotes => {
@@ -272,7 +295,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                         .unwrap_or('\\' /* backslash at EOF */);
                     plain.push(ch);
 
-                    self.leave_highlight(hctx, HighlightKind::EscSeq);
+                    self.leave_highlight(hctx, HighlightKind::EscSeq, 0);
                 }
                 _ => {
                     plain.push(c);
@@ -297,11 +320,22 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         let span = match self.consume_next_char() {
             // `$(echo foo)`
             Some('(') => {
+                self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
+                let inner_htx = self.enter_highlight(0);
+
                 let tokens = self.consume_tokens_until(
                     Context::Command,
                     Token::RightParen,
                     LexerError::NoMatchingRightParen,
                 )?;
+
+                self.leave_highlight(
+                    inner_htx,
+                    HighlightKind::Plain,
+                    1, /* not to include the right parenthesis */
+                );
+                self.add_highlight(HighlightKind::CommandSymbol, 1 /* len(')') */);
+
                 Span::Command(tokens)
             }
             Some('{') => {
@@ -325,7 +359,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     LexerError::NoMatchingRightBrace,
                 )?;
 
-                self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() });
+                self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() }, 0);
                 Span::Variable { name }
             }
             // `$foo`
@@ -342,7 +376,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     name.push(c);
                 }
 
-                self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() });
+                self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() }, 0);
                 Span::Variable { name }
             }
             // Not a variable expansion. Handle it as a plain `$`.
@@ -435,10 +469,18 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         }
     }
 
-    fn leave_highlight(&mut self, hctx: HighlighterContext, kind: HighlightKind) {
+    fn leave_highlight(&mut self, hctx: HighlighterContext, kind: HighlightKind, diff: usize) {
         self.highlight_spans.push(HighlightSpan {
             kind,
-            char_range: hctx.char_offset_start..self.char_offset,
+            char_range: hctx.char_offset_start..(self.char_offset - diff),
+        });
+    }
+
+    /// Highlights last `len` characters.
+    fn add_highlight(&mut self, kind: HighlightKind, len: usize) {
+        self.highlight_spans.push(HighlightSpan {
+            kind,
+            char_range: (self.char_offset - len)..self.char_offset,
         });
     }
 }
@@ -660,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn highlighting() {
+    fn simple_highlighting() {
         assert_eq!(
             highlight("$foo 123 ${bar}"),
             vec![
@@ -698,6 +740,35 @@ mod tests {
                 HighlightSpan {
                     char_range: 7..9,
                     kind: HighlightKind::EscSeq,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn nested_highlighting() {
+        assert_eq!(
+            highlight("grep \"$(echo \"foo\" bar)\""),
+            vec![
+                HighlightSpan {
+                    kind: HighlightKind::QuotedString,
+                    char_range: 5..24
+                },
+                HighlightSpan {
+                    kind: HighlightKind::CommandSymbol,
+                    char_range: 7..8
+                },
+                HighlightSpan {
+                    kind: HighlightKind::Plain,
+                    char_range: 8..22
+                },
+                HighlightSpan {
+                    kind: HighlightKind::QuotedString,
+                    char_range: 13..18
+                },
+                HighlightSpan {
+                    kind: HighlightKind::CommandSymbol,
+                    char_range: 22..23
                 },
             ]
         );
