@@ -25,6 +25,18 @@ impl Word {
         &self.0
     }
 }
+
+/// Contains heredoc body. The outer Vec represents lines and
+/// `Vec<Word>` represents the contents of a line.
+#[derive(Debug, PartialEq, Clone)]
+pub struct HereDoc(Vec<Vec<Span>>);
+
+impl HereDoc {
+    pub fn lines(&self) -> &[Vec<Span>] {
+        &self.0
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum RedirectionKind {
     /// `cat < foo.txt` or here document.
@@ -40,17 +52,6 @@ enum HereDocMarker {
     Normal(String),
     /// `<< "EOS"`
     Plain(String),
-}
-
-/// Contains heredoc body. The outer Vec represents lines and
-/// `Vec<Word>` represents the contents of a line.
-#[derive(Debug, PartialEq, Clone)]
-pub struct HereDoc(Vec<Vec<Word>>);
-
-impl HereDoc {
-    pub fn lines(&self) -> &[Vec<Word>] {
-        &self.0
-    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -596,10 +597,75 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         while let Some(marker) = self.unclosed_heredoc_markers.pop_front() {
             let heredoc = match marker {
                 HereDocMarker::Normal(eos) => {
-                    todo!()
+                    let mut plain = String::new();
+                    let mut lines = Vec::new();
+                    let mut current_line = Vec::new();
+                    while let Some(c) = self.input.consume() {
+                        match c {
+                            '\n' => {
+                                if current_line.is_empty() && plain == eos {
+                                    break;
+                                }
+
+                                if !plain.is_empty() {
+                                    current_line.push(Span::Plain(plain));
+                                    plain = String::new();
+                                }
+
+                                lines.push(current_line);
+                                current_line = Vec::new();
+                            }
+                            '`' => {
+                                if !plain.is_empty() {
+                                    current_line.push(Span::Plain(plain));
+                                    plain = String::new();
+                                }
+
+                                current_line.push(self.visit_backtick_exp()?);
+                            }
+                            '$' => {
+                                if !plain.is_empty() {
+                                    current_line.push(Span::Plain(plain));
+                                    plain = String::new();
+                                }
+
+                                current_line.push(self.visit_variable_exp()?);
+                            }
+
+                            _ => {
+                                plain.push(c);
+                            }
+                        }
+                    }
+
+                    HereDoc(lines)
                 }
                 HereDocMarker::Plain(eos) => {
-                    todo!()
+                    let mut plain = String::new();
+                    let mut lines = Vec::new();
+                    let mut current_line = Vec::new();
+                    while let Some(c) = self.input.consume() {
+                        match c {
+                            '\n' => {
+                                if current_line.is_empty() && plain == eos {
+                                    break;
+                                }
+
+                                if !plain.is_empty() {
+                                    current_line.push(Span::Plain(plain));
+                                    plain = String::new();
+                                }
+
+                                lines.push(current_line);
+                                current_line = Vec::new();
+                            }
+                            _ => {
+                                plain.push(c);
+                            }
+                        }
+                    }
+
+                    HereDoc(lines)
                 }
             };
 
