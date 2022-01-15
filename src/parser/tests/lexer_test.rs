@@ -1,4 +1,4 @@
-use std::str::Chars;
+
 
 use nsh_parser::highlight::*;
 use nsh_parser::lexer::*;
@@ -43,7 +43,7 @@ fn lex_with_heredocs(input: &str) -> Result<(Vec<Token>, Vec<HereDoc>), LexerErr
         }
     }
 
-    let mut heredocs = lexer.heredocs().to_vec();
+    let heredocs = lexer.heredocs().to_vec();
     Ok((tokens, heredocs))
 }
 
