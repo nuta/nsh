@@ -326,4 +326,35 @@ fn heredoc() {
             ])])
         ))
     );
+
+    assert_eq!(
+        lex_with_heredocs(concat!(
+            "cat <<EOF1 << EOF2\n",
+            "foo\n",
+            "bar\n",
+            "EOF1\n",
+            "baz\n",
+            "EOF2\n",
+        )),
+        Ok((
+            (vec![
+                single_plain_word("cat"),
+                Token::Redirection(Redirection {
+                    kind: RedirectionKind::Input,
+                    target: RedirectionTarget::HereDoc(0),
+                    fd: 0
+                }),
+                Token::Redirection(Redirection {
+                    kind: RedirectionKind::Input,
+                    target: RedirectionTarget::HereDoc(1),
+                    fd: 0
+                }),
+                Token::Newline,
+            ]),
+            (vec![
+                HereDoc::new(vec![vec![plain_span("foo")], vec![plain_span("bar")],]),
+                HereDoc::new(vec![vec![plain_span("baz")]]),
+            ])
+        ))
+    );
 }
