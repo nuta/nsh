@@ -407,7 +407,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     fd: n.unwrap_or(0 /* stdin */),
                 })
             }
-            (Some('<'), _) => {
+            (Some('<'), Some(c)) if c != '(' => {
                 let word = self.visit_word()?;
                 Token::Redirection(Redirection {
                     kind: RedirectionKind::Input,
@@ -415,7 +415,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     fd: n.unwrap_or(0 /* stdin */),
                 })
             }
-            (Some('>'), _) => {
+            (Some('>'), Some(c)) if c != '(' => {
                 let word = self.visit_word()?;
                 Token::Redirection(Redirection {
                     kind: RedirectionKind::Output,

@@ -136,6 +136,21 @@ fn command_substituion_2() {
 }
 
 #[test]
+fn process_substituion() {
+    let input = "echo <(ls /) >(grep usr)";
+    assert_eq!(
+        lex(input),
+        Ok(vec![
+            single_plain_word("echo"),
+            word(vec![Span::Command(vec![
+                single_plain_word("ls"),
+                single_plain_word("/")
+            ])])
+        ])
+    );
+}
+
+#[test]
 fn variable_expansion() {
     let input = "echo a${b}c";
     assert_eq!(
