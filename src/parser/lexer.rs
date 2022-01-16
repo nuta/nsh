@@ -13,16 +13,24 @@ pub enum Tilde {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub enum Sequence {
+    Integer {
+        /// The beginning of the range. Inclusive.
+        start: isize,
+        /// The end of the range. Exclusive.
+        end: isize,
+        /// The minimum number of digits (used for padding). For example `001`
+        /// has 3 digits.
+        num_digits: usize,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum BraceExpansion {
     /// `foo`.
     Word(Word),
     /// `0..8`.
-    Sequence {
-        /// The beginning of the range. Inclusive.
-        start: String,
-        /// The end of the range. Exclusive.
-        end: String,
-    },
+    Sequence(Sequence),
     // `{0..5},{10..15}` or `{}` if the inner Vec is empty.
     List(Vec<BraceExpansion>),
 }
@@ -197,6 +205,8 @@ pub enum LexerError {
     ExpectedHereDocMarker,
     #[error("Unclosed here document.")]
     UnclosedHereDoc,
+    #[error("Unclosed brace expansion.")]
+    UnclosedBraceExp,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -615,9 +625,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     self.input.unconsume(c);
                     break;
                 }
-                '{' if !in_double_quotes && !in_single_quotes => {
-                    spans.push(Span::Brace(self.visit_brace_exp()?));
-                }
                 '"' if in_double_quotes && !in_single_quotes => {
                     in_double_quotes = false;
                     self.leave_context(Context::DoubleQuote);
@@ -645,6 +652,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     in_single_quotes = true;
                     self.enter_context(Context::SingleQuote);
                     quote_hctx = Some(self.enter_highlight(1 /* len('"') */));
+                }
+                '{' if !in_double_quotes && !in_single_quotes => {
+                    if !plain.is_empty() {
+                        spans.push(Span::Plain(plain));
+                        plain = String::new();
+                    }
+                    spans.push(Span::Brace(self.visit_brace_exp()?));
                 }
                 '`' if self.in_backtick => {
                     if !plain.is_empty() {
@@ -700,7 +714,10 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         let mut list = Vec::new();
         loop {
             match self.input.consume() {
-                None | Some('}') => {
+                None => {
+                    return Err(LexerError::UnclosedBraceExp);
+                }
+                Some('}') => {
                     break;
                 }
                 Some(',') => {
@@ -768,6 +785,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         };
 
         if abort {
+            // It's not a sequence. Revert the reader state.
             for c in start.chars().rev() {
                 self.input.unconsume(c);
             }
@@ -784,9 +802,9 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             end.push(c);
         }
 
-        let next_ch = self.input.consume();
+        let next_ch = self.input.peek();
         if next_ch != Some('}') && next_ch != Some(',') {
-            // It's not a sequence.
+            // It's not a sequence. Revert the reader state.
             for c in end.chars().rev() {
                 self.input.unconsume(c);
             }
@@ -797,7 +815,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             }
         }
 
-        return Some(BraceExpansion::Sequence { start, end });
+        // SAFETY: `start` and `end` are guaranteed to be valid integers
+        //         by `is_ascii_digit`.
+        Some(BraceExpansion::Sequence(Sequence::Integer {
+            start: start.parse().unwrap(),
+            end: end.parse().unwrap(),
+            num_digits: start.chars().count(),
+        }))
     }
 
     /// Visits a variable expansion (after `$`).

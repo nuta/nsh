@@ -537,17 +537,67 @@ fn tilde() {
 #[test]
 fn brace_expansion() {
     assert_eq!(
-        lex("echo x{a,b}y"),
+        lex("echo {a,b}"),
         Ok(vec![
             single_plain_word("echo"),
-            single_plain_word("x{a,b}y"),
+            Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
+                BraceExpansion::Word(Word::new(vec![plain_span("a")])),
+                BraceExpansion::Word(Word::new(vec![plain_span("b")])),
+            ])),]))
         ])
     );
 
     assert_eq!(
-        lex("echo {a,b}y"),
-        Ok(vec![single_plain_word("echo"), single_plain_word("{a,b}y"),])
+        lex("echo x{a,b}y"),
+        Ok(vec![
+            single_plain_word("echo"),
+            Token::Word(Word::new(vec![
+                plain_span("x"),
+                Span::Brace(BraceExpansion::List(vec![
+                    BraceExpansion::Word(Word::new(vec![plain_span("a")])),
+                    BraceExpansion::Word(Word::new(vec![plain_span("b")])),
+                ])),
+                plain_span("y"),
+            ]))
+        ])
+    );
+}
+
+#[test]
+fn sequence_brace_expansion() {
+    assert_eq!(
+        lex("echo {0..10}"),
+        Ok(vec![
+            single_plain_word("echo"),
+            Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
+                BraceExpansion::Sequence(Sequence::Integer {
+                    start: 0,
+                    end: 10,
+                    num_digits: 1
+                })
+            ])),]))
+        ])
     );
 
-    assert_eq!(lex("{a,b}y"), Ok(vec![single_plain_word("{a,b}y"),]));
+    assert_eq!(
+        lex("echo {001..100}"),
+        Ok(vec![
+            single_plain_word("echo"),
+            Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
+                BraceExpansion::Sequence(Sequence::Integer {
+                    start: 1,
+                    end: 100,
+                    num_digits: 3
+                })
+            ])),]))
+        ])
+    );
+}
+
+#[test]
+fn not_brace_expansion() {
+    assert_eq!(
+        lex("echo a,b"),
+        Ok(vec![single_plain_word("echo"), single_plain_word("a,b")])
+    );
 }
