@@ -227,7 +227,6 @@ struct HighlighterContext {
     char_offset_start: usize,
 }
 
-#[derive(Clone)]
 struct InputReader<I: Iterator<Item = char>> {
     input: I,
     char_offset: usize,
