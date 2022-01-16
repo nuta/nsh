@@ -388,11 +388,12 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     // Handling curly braces is a bit tricky. In a shell script,
                     // they're used in:
                     //
-                    // - A parameter expansion (brace_param_level). Note that
-                    //   the beginning of it `{` is handled in `visit_word()`.
                     // - A command grouping (argv0_mode).
                     // - A function body (brace_as_token_mode).
                     // - A brace expansion in non-argv0 words (!argv0_mode).
+                    //   It's handled in `visit_word()`.
+                    // - A parameter expansion (brace_param_level). Note that
+                    //   the beginning of it `{` is handled in `visit_word()`.
                     ('{', _) if self.argv0_mode || self.brace_as_token_mode => Token::LeftBrace,
                     ('}', _)
                         if self.argv0_mode
