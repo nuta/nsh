@@ -694,3 +694,12 @@ fn arithmetic_expansion() {
         ])
     );
 }
+
+#[test]
+fn syntax_errors() {
+    assert_eq!(lex("echo $(ls "), Err(LexerError::NoMatchingRightParen));
+    assert_eq!(lex("echo {"), Err(LexerError::UnclosedBraceExp));
+    assert_eq!(lex("echo ${"), Err(LexerError::NoMatchingRightBrace));
+    assert_eq!(lex("echo $(("), Err(LexerError::NoMatchingRightParen));
+    assert_eq!(lex("echo $((("), Err(LexerError::NoMatchingRightParen));
+}
