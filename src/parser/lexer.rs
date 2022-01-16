@@ -328,7 +328,6 @@ pub struct Lexer<I: Iterator<Item = char>> {
     halted: bool,
     in_backtick: bool,
     argv0_mode: bool,
-    brace_as_token_mode: bool,
     unclosed_braces: Vec<UnclosedBrace>,
     unclosed_parens: Vec<UnclosedParen>,
     unclosed_context_stack: Vec<Context>,
@@ -345,7 +344,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             input: InputReader::new(input),
             in_backtick: false,
             argv0_mode: false,
-            brace_as_token_mode: false,
             unclosed_braces: Vec::new(),
             unclosed_parens: Vec::new(),
             unclosed_context_stack: Vec::new(),
@@ -358,10 +356,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     pub fn set_argv0_mode(&mut self, enable: bool) {
         self.argv0_mode = enable;
-    }
-
-    pub fn set_brace_as_token_mode(&mut self, enable: bool) {
-        self.brace_as_token_mode = enable;
     }
 
     pub fn highlight_spans(&self) -> &[HighlightSpan] {
@@ -473,15 +467,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     // they're used in:
                     //
                     // - A command grouping (argv0_mode).
-                    // - A function body (brace_as_token_mode).
                     // - A brace expansion in non-argv0 words (!argv0_mode).
                     //   It's handled in `visit_word()`.
                     // - A parameter expansion (brace_param_level). Note that
                     //   the beginning of it `{` is handled in `visit_word()`.
-                    ('{', _) if self.argv0_mode || self.brace_as_token_mode => Token::LeftBrace,
+                    ('{', _) if self.argv0_mode => Token::LeftBrace,
                     ('}', _)
                         if self.argv0_mode
-                            || self.brace_as_token_mode
                             || matches!(
                                 self.unclosed_braces.last(),
                                 Some(UnclosedBrace::Variable)
