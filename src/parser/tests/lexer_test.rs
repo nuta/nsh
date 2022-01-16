@@ -653,3 +653,44 @@ fn not_brace_expansion() {
         Ok(vec![single_plain_word("echo"), single_plain_word("a,b")])
     );
 }
+
+#[test]
+fn arithmetic_expansion() {
+    assert_eq!(
+        lex("echo $((1 + 2 - 3 * 4 / 5 % 6))"),
+        Ok(vec![
+            single_plain_word("echo"),
+            Token::Word(Word::new(vec![Span::Arith(Word::new(vec![
+                plain_span("1"),
+                plain_span("+"),
+                plain_span("2"),
+                plain_span("-"),
+                plain_span("3"),
+                plain_span("*"),
+                plain_span("4"),
+                plain_span("/"),
+                plain_span("5"),
+                plain_span("%"),
+                plain_span("6"),
+            ]))]))
+        ])
+    );
+
+    assert_eq!(
+        lex("echo $((1 + (2 + ( 3 + 4 ))  ))"),
+        Ok(vec![
+            single_plain_word("echo"),
+            Token::Word(Word::new(vec![Span::Arith(Word::new(vec![
+                plain_span("1"),
+                plain_span("+"),
+                plain_span("(2"),
+                plain_span("+"),
+                plain_span("("),
+                plain_span("3"),
+                plain_span("+"),
+                plain_span("4"),
+                plain_span("))"),
+            ]))]))
+        ])
+    );
+}

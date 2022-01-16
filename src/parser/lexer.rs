@@ -58,6 +58,8 @@ pub enum Span {
     /// It'll be substituted with a file path (`/dev/fd/<n>`) writable from the
     /// command.
     ProcessWritable(Vec<Token>),
+    /// An arithmetic expression, e.g. `$((1 + 2))`.
+    Arith(Word),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -217,6 +219,10 @@ pub enum LexerError {
     UnclosedHereDoc,
     #[error("Unclosed brace expansion.")]
     UnclosedBraceExp,
+    #[error("Inconsistent parenthesis (perhaps some ')' needs to be added?).")]
+    InconsistentParenthesis,
+    #[error("Invalid word found in an arithmetic expansion.")]
+    InvalidTokenInArith,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -225,6 +231,8 @@ pub enum Context {
     BackTick,
     /// A command substitution (e.g. `$(foo)`).
     Command,
+    /// A arithmetic expansion (e.g. `$(( n + 1 ))`).
+    Arith,
     /// A variable substitution (e.g. `${foo}`).
     BraceParam,
     /// Double quoted string (e.g. `"foo"`).
@@ -305,6 +313,8 @@ pub struct Lexer<I: Iterator<Item = char>> {
     brace_as_token_mode: bool,
     brace_param_level: usize,
     brace_exp_level: usize,
+    arith_exp_level: usize,
+    arith_paren_level: usize,
     unclosed_context_stack: Vec<Context>,
     highlight_spans: Vec<HighlightSpan>,
     heredocs: Vec<HereDoc>,
@@ -322,6 +332,8 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             brace_as_token_mode: false,
             brace_param_level: 0,
             brace_exp_level: 0,
+            arith_exp_level: 0,
+            arith_paren_level: 0,
             unclosed_context_stack: Vec::new(),
             highlight_spans: Vec::new(),
             heredocs: Vec::new(),
@@ -441,8 +453,8 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     ('&', _) => Token::And,
                     (';', Some(';')) => Token::DoubleSemi,
                     (';', _) => Token::Semi,
-                    ('(', _) => Token::LeftParen,
-                    (')', _) => Token::RightParen,
+                    ('(', _) if self.arith_exp_level == 0 => Token::LeftParen,
+                    (')', _) if self.arith_paren_level == 0 => Token::RightParen,
                     // Handling curly braces is a bit tricky. In a shell script,
                     // they're used in:
                     //
@@ -631,6 +643,14 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     self.input.unconsume(c);
                     spans.push(self.visit_process_sub()?);
                 }
+                '(' if self.arith_exp_level > 0 && !in_double_quotes && !in_single_quotes => {
+                    plain.push(c);
+                    self.arith_paren_level += 1;
+                }
+                ')' if self.arith_paren_level > 0 && !in_double_quotes && !in_single_quotes => {
+                    plain.push(c);
+                    self.arith_paren_level -= 1;
+                }
                 ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | ')' | '<' | '>'
                     if !in_double_quotes && !in_single_quotes =>
                 {
@@ -730,7 +750,15 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     /// Visits a variable expansion (after `$`).
     fn visit_variable_exp(&mut self) -> Result<Span, LexerError> {
-        let span = match self.input.consume() {
+        let c = self.input.consume();
+        let next = self.input.peek();
+        let span = match c {
+            // `$(( n + 1 ))`
+            Some('(') if next == Some('(') => {
+                // Skip the second '('.
+                self.input.consume();
+                self.visit_arith_exp()?
+            }
             // `$(echo foo)`
             Some('(') => {
                 self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
@@ -806,6 +834,44 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         };
 
         Ok(span)
+    }
+
+    /// Visits an arithmetic expression (after `$((`).
+    fn visit_arith_exp(&mut self) -> Result<Span, LexerError> {
+        self.arith_exp_level += 1;
+
+        let tokens = self.consume_tokens_until(
+            Context::Arith,
+            Token::RightParen,
+            LexerError::NoMatchingRightParen,
+        )?;
+
+        // A arithmetic expression should be terminated by `))`.
+        if self.input.consume() != Some(')') {
+            return Err(LexerError::InconsistentParenthesis);
+        }
+
+        let mut merged_spans = Vec::new();
+        for token in tokens {
+            match token {
+                Token::Word(Word(spans)) => {
+                    merged_spans.extend(spans);
+                }
+                Token::LeftParen => {
+                    merged_spans.push(Span::Plain("(".to_owned()));
+                }
+                Token::RightParen => {
+                    merged_spans.push(Span::Plain(")".to_owned()));
+                }
+                _ => {
+                    return Err(LexerError::InvalidTokenInArith);
+                }
+            }
+        }
+
+        self.arith_exp_level -= 1;
+
+        Ok(Span::Arith(Word(merged_spans)))
     }
 
     /// Visits a backtick substitution (after `\``).
