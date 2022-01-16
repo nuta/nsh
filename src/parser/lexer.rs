@@ -48,6 +48,16 @@ pub enum Span {
     Tilde(Tilde),
     /// A brace expansion, e.g. `a{b,c}d`.
     Brace(BraceExpansion),
+    /// A process substitution, e.g. `<(echo "hi")`.
+    ///
+    /// It'll be substituted with a file path (`/dev/fd/<n>`) readable from the
+    /// command.
+    ProcessReadable(Vec<Token>),
+    /// A process substitution, e.g. `>(grep foo)`.
+    ///
+    /// It'll be substituted with a file path (`/dev/fd/<n>`) writable from the
+    /// command.
+    ProcessWritable(Vec<Token>),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -610,6 +620,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         let mut in_single_quotes = false;
         let mut quote_hctx = None;
         while let Some(c) = self.input.consume() {
+            let next_c = self.input.peek();
             match c {
                 ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | ')' | '<' | '>'
                     if !in_double_quotes && !in_single_quotes =>
@@ -660,6 +671,15 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     }
                     spans.push(Span::Brace(self.visit_brace_exp()?));
                 }
+                '<' | '>' if next_c == Some('(') && !in_double_quotes && !in_single_quotes => {
+                    if !plain.is_empty() {
+                        spans.push(Span::Plain(plain));
+                        plain = String::new();
+                    }
+
+                    self.input.unconsume(c);
+                    spans.push(self.visit_process_sub()?);
+                }
                 '`' if self.in_backtick => {
                     if !plain.is_empty() {
                         spans.push(Span::Plain(plain));
@@ -670,7 +690,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     self.input.unconsume(c);
                     break;
                 }
-                // The beginning of a command substitution.
                 '`' if !in_single_quotes => {
                     if !plain.is_empty() {
                         spans.push(Span::Plain(plain));
@@ -707,127 +726,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         }
 
         Ok(Word(spans))
-    }
-
-    /// Visits a brace expansion (after `{`).
-    fn visit_brace_exp(&mut self) -> Result<BraceExpansion, LexerError> {
-        let mut list = Vec::new();
-        loop {
-            match self.input.consume() {
-                None => {
-                    return Err(LexerError::UnclosedBraceExp);
-                }
-                Some('}') => {
-                    break;
-                }
-                Some(',') => {
-                    continue;
-                }
-                // A nested brace expansion.
-                Some('{') => {
-                    self.input.consume();
-                    list.push(self.visit_brace_exp()?);
-                }
-                Some(c) => {
-                    // BraceExpansion::Word or BraceExpansion::Sequence.
-                    self.input.unconsume(c);
-
-                    // First, try parsing as a sequence and then fall back to a word
-                    // if failed.
-                    match self.visit_sequence_brace_exp() {
-                        Some(exp) => {
-                            list.push(exp);
-                        }
-                        None => {
-                            self.brace_exp_level += 1;
-                            let word = self.visit_word()?;
-                            self.brace_exp_level -= 1;
-                            list.push(BraceExpansion::Word(word));
-                        }
-                    }
-                }
-            }
-        }
-
-        Ok(BraceExpansion::List(list))
-    }
-
-    /// Visits a sequence brace expansion like `{0..10}` (after `{`).
-    ///
-    /// We only support (positive) integer sequences.
-    fn visit_sequence_brace_exp(&mut self) -> Option<BraceExpansion> {
-        let mut start = String::new();
-        while let Some(c) = self.input.consume() {
-            if !c.is_ascii_digit() {
-                self.input.unconsume(c);
-                break;
-            }
-
-            start.push(c);
-        }
-
-        if start.is_empty() {
-            // It's not a sequence.
-            return None;
-        }
-
-        // After an integer, ".." should come next if it's a sequence.
-        let abort = match (self.input.consume(), self.input.consume()) {
-            (Some('.'), Some('.')) => false,
-            (Some(c1), Some(c2)) => {
-                self.input.unconsume(c2);
-                self.input.unconsume(c1);
-                true
-            }
-            (Some(c1), None) => {
-                self.input.unconsume(c1);
-                true
-            }
-            (None, None) => true,
-            (None, Some(_)) => {
-                unreachable!()
-            }
-        };
-
-        if abort {
-            // It's not a sequence. Revert the reader state.
-            for c in start.chars().rev() {
-                self.input.unconsume(c);
-            }
-            return None;
-        }
-
-        let mut end = String::new();
-        while let Some(c) = self.input.consume() {
-            if !c.is_ascii_digit() {
-                self.input.unconsume(c);
-                break;
-            }
-
-            end.push(c);
-        }
-
-        let next_ch = self.input.peek();
-        if (next_ch != Some('}') && next_ch != Some(',')) || end.is_empty() {
-            // It's not a sequence. Revert the reader state.
-            for c in end.chars().rev() {
-                self.input.unconsume(c);
-            }
-            self.input.unconsume('.');
-            self.input.unconsume('.');
-            for c in start.chars().rev() {
-                self.input.unconsume(c);
-            }
-            return None;
-        }
-
-        // SAFETY: `start` and `end` are guaranteed to be valid integers
-        //         by `is_ascii_digit`.
-        Some(BraceExpansion::Sequence(Sequence::Integer {
-            start: start.parse().unwrap(),
-            end: end.parse().unwrap(),
-            num_digits: start.chars().count(),
-        }))
     }
 
     /// Visits a variable expansion (after `$`).
@@ -931,6 +829,33 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
 
         Ok(Span::Command(tokens))
+    }
+
+    /// Visits a process substitution (reader is at before `>` or `<`).
+    fn visit_process_sub(&mut self) -> Result<Span, LexerError> {
+        let ctor = match self.input.consume() {
+            Some('>') => Span::ProcessReadable,
+            Some('<') => Span::ProcessWritable,
+            _ => unreachable!(),
+        };
+
+        self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
+        let inner_htx = self.enter_highlight(0);
+
+        let tokens = self.consume_tokens_until(
+            Context::Command,
+            Token::RightParen,
+            LexerError::NoMatchingRightParen,
+        )?;
+
+        self.leave_highlight(
+            inner_htx,
+            HighlightKind::Plain,
+            1, /* not to include the right parenthesis */
+        );
+        self.add_highlight(HighlightKind::CommandSymbol, 1 /* len(')') */);
+
+        Ok(ctor(tokens))
     }
 
     /// Visits a here document makrer. `self.input` should be positioned at the
@@ -1073,6 +998,127 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         }
 
         Ok(())
+    }
+
+    /// Visits a brace expansion (after `{`).
+    fn visit_brace_exp(&mut self) -> Result<BraceExpansion, LexerError> {
+        let mut list = Vec::new();
+        loop {
+            match self.input.consume() {
+                None => {
+                    return Err(LexerError::UnclosedBraceExp);
+                }
+                Some('}') => {
+                    break;
+                }
+                Some(',') => {
+                    continue;
+                }
+                // A nested brace expansion.
+                Some('{') => {
+                    self.input.consume();
+                    list.push(self.visit_brace_exp()?);
+                }
+                Some(c) => {
+                    // BraceExpansion::Word or BraceExpansion::Sequence.
+                    self.input.unconsume(c);
+
+                    // First, try parsing as a sequence and then fall back to a word
+                    // if failed.
+                    match self.visit_sequence_brace_exp() {
+                        Some(exp) => {
+                            list.push(exp);
+                        }
+                        None => {
+                            self.brace_exp_level += 1;
+                            let word = self.visit_word()?;
+                            self.brace_exp_level -= 1;
+                            list.push(BraceExpansion::Word(word));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(BraceExpansion::List(list))
+    }
+
+    /// Visits a sequence brace expansion like `{0..10}` (after `{`).
+    ///
+    /// We only support (positive) integer sequences.
+    fn visit_sequence_brace_exp(&mut self) -> Option<BraceExpansion> {
+        let mut start = String::new();
+        while let Some(c) = self.input.consume() {
+            if !c.is_ascii_digit() {
+                self.input.unconsume(c);
+                break;
+            }
+
+            start.push(c);
+        }
+
+        if start.is_empty() {
+            // It's not a sequence.
+            return None;
+        }
+
+        // After an integer, ".." should come next if it's a sequence.
+        let abort = match (self.input.consume(), self.input.consume()) {
+            (Some('.'), Some('.')) => false,
+            (Some(c1), Some(c2)) => {
+                self.input.unconsume(c2);
+                self.input.unconsume(c1);
+                true
+            }
+            (Some(c1), None) => {
+                self.input.unconsume(c1);
+                true
+            }
+            (None, None) => true,
+            (None, Some(_)) => {
+                unreachable!()
+            }
+        };
+
+        if abort {
+            // It's not a sequence. Revert the reader state.
+            for c in start.chars().rev() {
+                self.input.unconsume(c);
+            }
+            return None;
+        }
+
+        let mut end = String::new();
+        while let Some(c) = self.input.consume() {
+            if !c.is_ascii_digit() {
+                self.input.unconsume(c);
+                break;
+            }
+
+            end.push(c);
+        }
+
+        let next_ch = self.input.peek();
+        if (next_ch != Some('}') && next_ch != Some(',')) || end.is_empty() {
+            // It's not a sequence. Revert the reader state.
+            for c in end.chars().rev() {
+                self.input.unconsume(c);
+            }
+            self.input.unconsume('.');
+            self.input.unconsume('.');
+            for c in start.chars().rev() {
+                self.input.unconsume(c);
+            }
+            return None;
+        }
+
+        // SAFETY: `start` and `end` are guaranteed to be valid integers
+        //         by `is_ascii_digit`.
+        Some(BraceExpansion::Sequence(Sequence::Integer {
+            start: start.parse().unwrap(),
+            end: end.parse().unwrap(),
+            num_digits: start.chars().count(),
+        }))
     }
 
     /// Skip whitespace characters.
