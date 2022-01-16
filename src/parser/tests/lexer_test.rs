@@ -542,4 +542,12 @@ fn tilde() {
             ]))
         ])
     );
+
+    assert_eq!(
+        do_lex("FOO=~/foo/bar/baz", |l| l.set_argv0_mode(true)),
+        Ok(vec![Token::Assignment {
+            name: string("FOO"),
+            value: Word::new(vec![Span::Tilde(Tilde::Home), plain_span("/foo/bar/baz")]),
+        }])
+    );
 }
