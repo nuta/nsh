@@ -90,6 +90,39 @@ fn simple_command() {
 }
 
 #[test]
+fn redirection_markers_at_eof() {
+    assert_eq!(
+        lex("echo >"),
+        Ok(vec![single_plain_word("echo"), single_plain_word(">"),])
+    );
+
+    assert_eq!(
+        lex("echo > "),
+        Ok(vec![single_plain_word("echo"), single_plain_word(">"),])
+    );
+
+    assert_eq!(
+        lex("echo <"),
+        Ok(vec![single_plain_word("echo"), single_plain_word("<"),])
+    );
+
+    assert_eq!(
+        lex("echo < "),
+        Ok(vec![single_plain_word("echo"), single_plain_word("<"),])
+    );
+
+    assert_eq!(
+        lex("echo >>"),
+        Ok(vec![single_plain_word("echo"), single_plain_word(">>"),])
+    );
+
+    assert_eq!(
+        lex("echo >> "),
+        Ok(vec![single_plain_word("echo"), single_plain_word(">>"),])
+    );
+}
+
+#[test]
 fn command_substituion_1() {
     let input = "echo $(ls /)";
     assert_eq!(

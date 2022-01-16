@@ -409,12 +409,20 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         };
         let token = match (first, second) {
             (Some('>'), Some('>')) => {
+                // Skip the second '>'.
+                self.input.consume();
+
                 let word = self.visit_word()?;
-                Token::Redirection(Redirection {
-                    kind: RedirectionKind::Append,
-                    target: RedirectionTarget::File(word),
-                    fd: n.unwrap_or(1 /* stdout */),
-                })
+                if word.spans().is_empty() {
+                    // ">>" is at EOF. Handle it as plain text.
+                    Token::Word(Word(vec![Span::Plain(">>".to_owned())]))
+                } else {
+                    Token::Redirection(Redirection {
+                        kind: RedirectionKind::Append,
+                        target: RedirectionTarget::File(word),
+                        fd: n.unwrap_or(1 /* stdout */),
+                    })
+                }
             }
             (Some('<'), Some('<')) => {
                 // Skip the second '<'.
@@ -429,19 +437,37 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             }
             (Some('<'), Some(c)) if c != '(' => {
                 let word = self.visit_word()?;
-                Token::Redirection(Redirection {
-                    kind: RedirectionKind::Input,
-                    target: RedirectionTarget::File(word),
-                    fd: n.unwrap_or(0 /* stdin */),
-                })
+                if word.spans().is_empty() {
+                    // "<" is at EOF. Handle it as plain text.
+                    Token::Word(Word(vec![Span::Plain("<".to_owned())]))
+                } else {
+                    Token::Redirection(Redirection {
+                        kind: RedirectionKind::Input,
+                        target: RedirectionTarget::File(word),
+                        fd: n.unwrap_or(0 /* stdin */),
+                    })
+                }
             }
             (Some('>'), Some(c)) if c != '(' => {
                 let word = self.visit_word()?;
-                Token::Redirection(Redirection {
-                    kind: RedirectionKind::Output,
-                    target: RedirectionTarget::File(word),
-                    fd: n.unwrap_or(1 /* stdout */),
-                })
+                if word.spans().is_empty() {
+                    // ">" is at EOF. Handle it as plain text.
+                    Token::Word(Word(vec![Span::Plain(">".to_owned())]))
+                } else {
+                    Token::Redirection(Redirection {
+                        kind: RedirectionKind::Output,
+                        target: RedirectionTarget::File(word),
+                        fd: n.unwrap_or(1 /* stdout */),
+                    })
+                }
+            }
+            (Some('<'), None) => {
+                // Handle it as a plain text.
+                Token::Word(Word(vec![Span::Plain("<".to_owned())]))
+            }
+            (Some('>'), None) => {
+                // Handle it as a plain text.
+                Token::Word(Word(vec![Span::Plain(">".to_owned())]))
             }
             _ => {
                 // Not a redirection. Go back before the digits we've read above.
