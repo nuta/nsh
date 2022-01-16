@@ -84,22 +84,6 @@ pub struct Redirection {
     pub fd: usize,
 }
 
-const KEYWORDS: &[(&str, Token)] = &[
-    ("if", Token::If),
-    ("then", Token::Then),
-    ("elif", Token::ElIf),
-    ("else", Token::Else),
-    ("fi", Token::Fi),
-    ("while", Token::While),
-    ("for", Token::For),
-    ("in", Token::In),
-    ("do", Token::Do),
-    ("done", Token::Done),
-    ("case", Token::Case),
-    ("esac", Token::Esac),
-    ("function", Token::Function),
-];
-
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     /// A newline (`\n`).
@@ -130,6 +114,15 @@ pub enum Token {
     Redirection(Redirection),
     /// A word.
     Word(Word),
+    /// The argv0 word: contains a function or command name.
+    Argv0(Word),
+    /// An assignment (e.g. `FOO=bar`).
+    Assignment {
+        /// The name of the variable.
+        name: String,
+        /// The value of the variable.
+        value: Word,
+    },
     /// `if`
     If,
     /// `then`
@@ -438,18 +431,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
                         Token::Newline
                     }
+                    _ if self.argv0_mode => {
+                        self.input.unconsume(first);
+                        self.visit_argv0()?
+                    }
                     _ => {
                         self.input.unconsume(first);
-                        let hctx = self.enter_highlight(0);
-
-                        let word = self.visit_word()?;
-
-                        self.visit_keyword(&word)
-                            .map(|token| {
-                                self.leave_highlight(hctx, HighlightKind::Keyword, 0);
-                                token
-                            })
-                            .unwrap_or_else(|| Token::Word(word))
+                        Token::Word(self.visit_word()?)
                     }
                 }
             }
@@ -458,16 +446,63 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         Ok(token)
     }
 
-    fn visit_keyword(&mut self, word: &Word) -> Option<Token> {
-        if self.argv0_mode && word.spans().len() == 1 {
+    fn visit_argv0(&mut self) -> Result<Token, LexerError> {
+        const ARGV0_KEYWORDS: &[(&str, Token)] = &[
+            ("if", Token::If),
+            ("while", Token::While),
+            ("for", Token::For),
+            ("function", Token::Function),
+        ];
+
+        let hctx = self.enter_highlight(0);
+        let mut word = self.visit_word()?;
+
+        // Check if it's a assignment.
+        if let Some(Span::Plain(ref s)) = word.spans().get(0) {
+            let mut name = String::new();
+            let mut chars = s.chars();
+            while let Some(c) = chars.next() {
+                if !is_identifier_char(c) {
+                    if !name.is_empty() && c == '=' {
+                        // It looks like an assignment. Remove the plain text
+                        // until '='.
+                        let mut rest = String::new();
+                        for c in chars {
+                            rest.push(c);
+                        }
+
+                        let mut new_spans = vec![Span::Plain(rest)];
+                        for span in word.0.drain(1..) {
+                            new_spans.push(span);
+                        }
+
+                        return Ok(Token::Assignment {
+                            name,
+                            value: Word(new_spans),
+                        });
+                    }
+
+                    // Not an assignment.
+                    break;
+                }
+
+                name.push(c);
+            }
+        }
+
+        // Check if it's a keyword.
+        if word.spans().len() == 1 {
             if let Span::Plain(ref value) = word.spans()[0] {
-                if let Some((_, token)) = KEYWORDS.iter().find(|(k, _)| k == value) {
-                    return Some(token.clone());
+                if let Some((_, token)) = ARGV0_KEYWORDS.iter().find(|(k, _)| k == value) {
+                    self.leave_highlight(hctx, HighlightKind::Keyword, 0);
+                    return Ok(token.clone());
                 }
             }
         }
 
-        None
+        // A function or command name.
+        self.leave_highlight(hctx, HighlightKind::Argv0, 0);
+        Ok(Token::Argv0(word))
     }
 
     fn visit_word(&mut self) -> Result<Word, LexerError> {
