@@ -766,6 +766,11 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             start.push(c);
         }
 
+        if start.is_empty() {
+            // It's not a sequence.
+            return None;
+        }
+
         // After an integer, ".." should come next if it's a sequence.
         let abort = match (self.input.consume(), self.input.consume()) {
             (Some('.'), Some('.')) => false,
@@ -803,7 +808,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         }
 
         let next_ch = self.input.peek();
-        if next_ch != Some('}') && next_ch != Some(',') {
+        if (next_ch != Some('}') && next_ch != Some(',')) || end.is_empty() {
             // It's not a sequence. Revert the reader state.
             for c in end.chars().rev() {
                 self.input.unconsume(c);
@@ -813,6 +818,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             for c in start.chars().rev() {
                 self.input.unconsume(c);
             }
+            return None;
         }
 
         // SAFETY: `start` and `end` are guaranteed to be valid integers

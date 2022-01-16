@@ -595,6 +595,39 @@ fn sequence_brace_expansion() {
 }
 
 #[test]
+fn not_sequence_brace_expansion() {
+    assert_eq!(
+        lex("echo {123}"),
+        Ok(vec![
+            single_plain_word("echo"),
+            Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
+                BraceExpansion::Word(Word::new(vec![plain_span("123")]))
+            ])),]))
+        ])
+    );
+
+    assert_eq!(
+        lex("echo {123..}"),
+        Ok(vec![
+            single_plain_word("echo"),
+            Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
+                BraceExpansion::Word(Word::new(vec![plain_span("123..")]))
+            ])),]))
+        ])
+    );
+
+    assert_eq!(
+        lex("echo {0..x}"),
+        Ok(vec![
+            single_plain_word("echo"),
+            Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
+                BraceExpansion::Word(Word::new(vec![plain_span("0..x")]))
+            ])),]))
+        ])
+    );
+}
+
+#[test]
 fn not_brace_expansion() {
     assert_eq!(
         lex("echo a,b"),
