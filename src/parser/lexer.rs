@@ -12,6 +12,21 @@ pub enum Tilde {
     HomeOf(String),
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum BraceExpansion {
+    /// `foo`.
+    Word(Word),
+    /// `0..8`.
+    Sequence {
+        /// The beginning of the range. Inclusive.
+        start: String,
+        /// The end of the range. Exclusive.
+        end: String,
+    },
+    // `{0..5},{10..15}` or `{}` if the inner Vec is empty.
+    List(Vec<BraceExpansion>),
+}
+
 /// A fragment of a word.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Span {
@@ -23,6 +38,8 @@ pub enum Span {
     Command(Vec<Token>),
     /// A tilde expansion, e.g. `~`.
     Tilde(Tilde),
+    /// A brace expansion, e.g. `a{b,c}d`.
+    Brace(BraceExpansion),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -267,6 +284,7 @@ pub struct Lexer<I: Iterator<Item = char>> {
     argv0_mode: bool,
     brace_as_token_mode: bool,
     brace_param_level: usize,
+    brace_exp_level: usize,
     unclosed_context_stack: Vec<Context>,
     highlight_spans: Vec<HighlightSpan>,
     heredocs: Vec<HereDoc>,
@@ -283,6 +301,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             argv0_mode: false,
             brace_as_token_mode: false,
             brace_param_level: 0,
+            brace_exp_level: 0,
             unclosed_context_stack: Vec::new(),
             highlight_spans: Vec::new(),
             heredocs: Vec::new(),
@@ -592,6 +611,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     self.input.unconsume(c);
                     break;
                 }
+                '}' | ',' if self.brace_exp_level > 0 && !in_double_quotes && !in_single_quotes => {
+                    self.input.unconsume(c);
+                    break;
+                }
+                '{' if !in_double_quotes && !in_single_quotes => {
+                    spans.push(Span::Brace(self.visit_brace_exp()?));
+                }
                 '"' if in_double_quotes && !in_single_quotes => {
                     in_double_quotes = false;
                     self.leave_context(Context::DoubleQuote);
@@ -669,7 +695,112 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         Ok(Word(spans))
     }
 
-    /// Parses a variable expansion (after `$`).
+    /// Visits a brace expansion (after `{`).
+    fn visit_brace_exp(&mut self) -> Result<BraceExpansion, LexerError> {
+        let mut list = Vec::new();
+        loop {
+            match self.input.consume() {
+                None | Some('}') => {
+                    break;
+                }
+                Some(',') => {
+                    continue;
+                }
+                // A nested brace expansion.
+                Some('{') => {
+                    self.input.consume();
+                    list.push(self.visit_brace_exp()?);
+                }
+                Some(c) => {
+                    // BraceExpansion::Word or BraceExpansion::Sequence.
+                    self.input.unconsume(c);
+
+                    // First, try parsing as a sequence and then fall back to a word
+                    // if failed.
+                    match self.visit_sequence_brace_exp() {
+                        Some(exp) => {
+                            list.push(exp);
+                        }
+                        None => {
+                            self.brace_exp_level += 1;
+                            let word = self.visit_word()?;
+                            self.brace_exp_level -= 1;
+                            list.push(BraceExpansion::Word(word));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(BraceExpansion::List(list))
+    }
+
+    /// Visits a sequence brace expansion like `{0..10}` (after `{`).
+    ///
+    /// We only support (positive) integer sequences.
+    fn visit_sequence_brace_exp(&mut self) -> Option<BraceExpansion> {
+        let mut start = String::new();
+        while let Some(c) = self.input.consume() {
+            if !c.is_ascii_digit() {
+                self.input.unconsume(c);
+                break;
+            }
+
+            start.push(c);
+        }
+
+        // After an integer, ".." should come next if it's a sequence.
+        let abort = match (self.input.consume(), self.input.consume()) {
+            (Some('.'), Some('.')) => false,
+            (Some(c1), Some(c2)) => {
+                self.input.unconsume(c2);
+                self.input.unconsume(c1);
+                true
+            }
+            (Some(c1), None) => {
+                self.input.unconsume(c1);
+                true
+            }
+            (None, None) => true,
+            (None, Some(_)) => {
+                unreachable!()
+            }
+        };
+
+        if abort {
+            for c in start.chars().rev() {
+                self.input.unconsume(c);
+            }
+            return None;
+        }
+
+        let mut end = String::new();
+        while let Some(c) = self.input.consume() {
+            if !c.is_ascii_digit() {
+                self.input.unconsume(c);
+                break;
+            }
+
+            end.push(c);
+        }
+
+        let next_ch = self.input.consume();
+        if next_ch != Some('}') && next_ch != Some(',') {
+            // It's not a sequence.
+            for c in end.chars().rev() {
+                self.input.unconsume(c);
+            }
+            self.input.unconsume('.');
+            self.input.unconsume('.');
+            for c in start.chars().rev() {
+                self.input.unconsume(c);
+            }
+        }
+
+        return Some(BraceExpansion::Sequence { start, end });
+    }
+
+    /// Visits a variable expansion (after `$`).
     fn visit_variable_exp(&mut self) -> Result<Span, LexerError> {
         let span = match self.input.consume() {
             // `$(echo foo)`
@@ -749,7 +880,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         Ok(span)
     }
 
-    /// Parses a backtick substitution (after `\``).
+    /// Visits a backtick substitution (after `\``).
     fn visit_backtick_exp(&mut self) -> Result<Span, LexerError> {
         self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
         let inner_htx = self.enter_highlight(0);

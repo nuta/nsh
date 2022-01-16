@@ -441,24 +441,6 @@ fn quoted_heredocs() {
 }
 
 #[test]
-fn brace_expansion() {
-    assert_eq!(
-        lex("echo x{a,b}y"),
-        Ok(vec![
-            single_plain_word("echo"),
-            single_plain_word("x{a,b}y"),
-        ])
-    );
-
-    assert_eq!(
-        lex("echo {a,b}y"),
-        Ok(vec![single_plain_word("echo"), single_plain_word("{a,b}y"),])
-    );
-
-    assert_eq!(lex("{a,b}y"), Ok(vec![single_plain_word("{a,b}y"),]));
-}
-
-#[test]
 fn assignment() {
     assert_eq!(
         do_lex("FOO=123", |l| l.set_argv0_mode(true)),
@@ -550,4 +532,22 @@ fn tilde() {
             value: Word::new(vec![Span::Tilde(Tilde::Home), plain_span("/foo/bar/baz")]),
         }])
     );
+}
+
+#[test]
+fn brace_expansion() {
+    assert_eq!(
+        lex("echo x{a,b}y"),
+        Ok(vec![
+            single_plain_word("echo"),
+            single_plain_word("x{a,b}y"),
+        ])
+    );
+
+    assert_eq!(
+        lex("echo {a,b}y"),
+        Ok(vec![single_plain_word("echo"), single_plain_word("{a,b}y"),])
+    );
+
+    assert_eq!(lex("{a,b}y"), Ok(vec![single_plain_word("{a,b}y"),]));
 }
