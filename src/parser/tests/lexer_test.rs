@@ -677,7 +677,7 @@ fn arithmetic_expansion() {
     );
 
     assert_eq!(
-        lex("echo $((1 + (2 + ( 3 + 4 ))  ))"),
+        lex("echo $((1 + (2 + ( $(echo) + 4 ))  ))"),
         Ok(vec![
             single_plain_word("echo"),
             Token::Word(Word::new(vec![Span::Arith(Word::new(vec![
@@ -686,7 +686,7 @@ fn arithmetic_expansion() {
                 plain_span("(2"),
                 plain_span("+"),
                 plain_span("("),
-                plain_span("3"),
+                Span::Command(vec![single_plain_word("echo")]),
                 plain_span("+"),
                 plain_span("4"),
                 plain_span("))"),
