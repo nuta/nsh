@@ -142,10 +142,14 @@ fn process_substituion() {
         lex(input),
         Ok(vec![
             single_plain_word("echo"),
-            word(vec![Span::Command(vec![
+            word(vec![Span::ProcessReadable(vec![
                 single_plain_word("ls"),
                 single_plain_word("/")
-            ])])
+            ]),]),
+            word(vec![Span::ProcessWritable(vec![
+                single_plain_word("grep"),
+                single_plain_word("usr")
+            ]),])
         ])
     );
 }

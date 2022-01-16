@@ -622,6 +622,15 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         while let Some(c) = self.input.consume() {
             let next_c = self.input.peek();
             match c {
+                '<' | '>' if next_c == Some('(') && !in_double_quotes && !in_single_quotes => {
+                    if !plain.is_empty() {
+                        spans.push(Span::Plain(plain));
+                        plain = String::new();
+                    }
+
+                    self.input.unconsume(c);
+                    spans.push(self.visit_process_sub()?);
+                }
                 ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | ')' | '<' | '>'
                     if !in_double_quotes && !in_single_quotes =>
                 {
@@ -670,15 +679,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                         plain = String::new();
                     }
                     spans.push(Span::Brace(self.visit_brace_exp()?));
-                }
-                '<' | '>' if next_c == Some('(') && !in_double_quotes && !in_single_quotes => {
-                    if !plain.is_empty() {
-                        spans.push(Span::Plain(plain));
-                        plain = String::new();
-                    }
-
-                    self.input.unconsume(c);
-                    spans.push(self.visit_process_sub()?);
                 }
                 '`' if self.in_backtick => {
                     if !plain.is_empty() {
@@ -834,10 +834,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     /// Visits a process substitution (reader is at before `>` or `<`).
     fn visit_process_sub(&mut self) -> Result<Span, LexerError> {
         let ctor = match self.input.consume() {
-            Some('>') => Span::ProcessReadable,
-            Some('<') => Span::ProcessWritable,
+            Some('>') => Span::ProcessWritable,
+            Some('<') => Span::ProcessReadable,
             _ => unreachable!(),
         };
+
+        // Skip '('.
+        self.input.consume();
 
         self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
         let inner_htx = self.enter_highlight(0);
