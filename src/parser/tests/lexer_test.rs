@@ -696,7 +696,7 @@ fn arithmetic_expansion() {
 }
 
 #[test]
-fn syntax_errors() {
+fn unclosed_braces_and_parens() {
     assert_eq!(lex("echo $(ls "), Err(LexerError::NoMatchingRightParen));
     assert_eq!(lex("echo {"), Err(LexerError::UnclosedBraceExp));
     assert_eq!(lex("echo ${"), Err(LexerError::NoMatchingRightBrace));
