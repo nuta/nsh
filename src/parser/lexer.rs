@@ -480,6 +480,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     }
 
     fn visit_assignment(&mut self) -> Result<Option<Token>, LexerError> {
+        // An assignment looks like /^[a-zA-Z_]+=/.
         let mut name = String::new();
         while let Some(c) = self.input.consume() {
             if !is_identifier_char(c) {
