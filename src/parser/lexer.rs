@@ -114,6 +114,32 @@ pub enum Token {
     Redirection(Redirection),
     /// A word.
     Word(Word),
+    /// `if`
+    If,
+    /// `then`
+    Then,
+    /// `elif`
+    ElIf,
+    /// `else`
+    Else,
+    /// `fi`
+    Fi,
+    /// `while`
+    While,
+    /// `for`
+    For,
+    /// `in`
+    In,
+    /// `do`
+    Do,
+    /// `done`
+    Done,
+    /// `case`
+    Case,
+    /// `esac`
+    Esac,
+    /// `function`
+    Function,
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -220,6 +246,7 @@ pub struct Lexer<I: Iterator<Item = char>> {
     halted: bool,
     in_backtick: bool,
     argv0_mode: bool,
+    brace_as_token_mode: bool,
     brace_param_level: usize,
     unclosed_context_stack: Vec<Context>,
     highlight_spans: Vec<HighlightSpan>,
@@ -235,6 +262,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             input: InputReader::new(input),
             in_backtick: false,
             argv0_mode: false,
+            brace_as_token_mode: false,
             brace_param_level: 0,
             unclosed_context_stack: Vec::new(),
             highlight_spans: Vec::new(),
@@ -246,6 +274,10 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     pub fn set_argv0_mode(&mut self, enable: bool) {
         self.argv0_mode = enable;
+    }
+
+    pub fn set_brace_as_token_mode(&mut self, enable: bool) {
+        self.brace_as_token_mode = enable;
     }
 
     pub fn highlight_spans(&self) -> &[HighlightSpan] {
@@ -353,8 +385,22 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     (';', _) => Token::Semi,
                     ('(', _) => Token::LeftParen,
                     (')', _) => Token::RightParen,
-                    ('{', _) if self.argv0_mode => Token::LeftBrace,
-                    ('}', _) if self.argv0_mode || self.brace_param_level > 0 => Token::RightBrace,
+                    // Handling curly braces is a bit tricky. In a shell script,
+                    // they're used in:
+                    //
+                    // - A parameter expansion (brace_param_level). Note that
+                    //   the beginning of it `{` is handled in `visit_word()`.
+                    // - A command grouping (argv0_mode).
+                    // - A function body (brace_as_token_mode).
+                    // - A brace expansion in non-argv0 words (!argv0_mode).
+                    ('{', _) if self.argv0_mode || self.brace_as_token_mode => Token::LeftBrace,
+                    ('}', _)
+                        if self.argv0_mode
+                            || self.brace_as_token_mode
+                            || self.brace_param_level > 0 =>
+                    {
+                        Token::RightBrace
+                    }
                     // The end of A command substitution.
                     ('`', _) if self.in_backtick => Token::ClosingBackTick,
                     // Comment.
@@ -377,13 +423,32 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     }
                     _ => {
                         self.input.unconsume(first);
-                        Token::Word(self.visit_word()?)
+                        let word = self.visit_word()?;
+                        self.visit_keyword(&word)
+                            .unwrap_or_else(|| Token::Word(word))
                     }
                 }
             }
         };
 
         Ok(token)
+    }
+
+    fn visit_keyword(&mut self, word: &Word) -> Option<Token> {
+        let keywords = &[("if", Token::If)];
+
+        if self.argv0_mode && word.spans().len() == 1 {
+            if let Span::Plain(ref value) = word.spans()[0] {
+                if let Some((keyword, token)) =
+                    keywords.iter().find(|(keyword, _)| keyword == value)
+                {
+                    self.add_highlight(HighlightKind::Keyword, keyword.chars().count());
+                    return Some(token.clone());
+                }
+            }
+        }
+
+        None
     }
 
     fn visit_word(&mut self) -> Result<Word, LexerError> {
