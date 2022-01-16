@@ -4,6 +4,14 @@ use thiserror::Error;
 
 use crate::highlight::{HighlightKind, HighlightSpan};
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum Tilde {
+    /// `~`.
+    Home,
+    /// `~abc`.
+    HomeOf(String),
+}
+
 /// A fragment of a word.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Span {
@@ -13,6 +21,8 @@ pub enum Span {
     Variable { name: String },
     /// A command substitution, e.g. `$(echo "hi")`.
     Command(Vec<Token>),
+    /// A tilde expansion, e.g. `~`.
+    Tilde(Tilde),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -507,9 +517,66 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         Ok(None)
     }
 
+    fn visit_tilde_exp(&mut self) -> Result<Span, String> {
+        let is_valid_char_after_tilde_exp = |c: char| {
+            matches!(
+                c,
+                // A path separator.
+                '/' |
+                // A word terminator.
+                ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | ')' | '<' | '>'
+            )
+        };
+
+        let mut plain = String::new();
+        if Some('~') == self.input.peek() {
+            self.input.consume();
+            plain.push('~');
+
+            match self.input.peek() {
+                Some(c) if is_valid_username_char(c) => {
+                    // `~seiya`, `~seiya/`, or `~seiya/foo`.
+                    while let Some(c) = self.input.consume() {
+                        if !is_valid_username_char(c) {
+                            self.input.unconsume(c);
+                            break;
+                        }
+
+                        plain.push(c);
+                    }
+
+                    let name = plain[1..].to_owned();
+                    return Ok(Span::Tilde(Tilde::HomeOf(name)));
+                }
+                Some(c) if is_valid_char_after_tilde_exp(c) => {
+                    // `~`, `~/`, or `~/foo`.
+                    return Ok(Span::Tilde(Tilde::Home));
+                }
+                None => {
+                    // `~`.
+                    return Ok(Span::Tilde(Tilde::Home));
+                }
+                _ => {
+                    return Err(plain);
+                }
+            }
+        }
+
+        Err(plain)
+    }
+
     fn visit_word(&mut self) -> Result<Word, LexerError> {
         let mut spans = Vec::new();
-        let mut plain = String::new();
+
+        // Check if the word starts with a tilde expansion.
+        let mut plain = match self.visit_tilde_exp() {
+            Ok(span) => {
+                spans.push(span);
+                String::new()
+            }
+            Err(plain) => plain,
+        };
+
         let mut in_double_quotes = false;
         let mut in_single_quotes = false;
         let mut quote_hctx = None;
@@ -931,6 +998,10 @@ fn is_identifier_char(c: char) -> bool {
 }
 
 fn is_valid_marker_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_'
+}
+
+fn is_valid_username_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || c == '_'
 }
 

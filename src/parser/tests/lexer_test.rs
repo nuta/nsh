@@ -478,3 +478,68 @@ fn assignment() {
         Ok(vec![Token::Argv0(Word::new(vec![plain_span("FOO=123")]))])
     );
 }
+
+#[test]
+fn tilde() {
+    assert_eq!(
+        lex("~"),
+        Ok(vec![Token::Word(Word::new(
+            vec![Span::Tilde(Tilde::Home),]
+        ))])
+    );
+
+    assert_eq!(lex("\\~"), Ok(vec![single_plain_word("~")]));
+
+    assert_eq!(
+        lex("~ a ~"),
+        Ok(vec![
+            Token::Word(Word::new(vec![Span::Tilde(Tilde::Home),])),
+            single_plain_word("a"),
+            Token::Word(Word::new(vec![Span::Tilde(Tilde::Home),]))
+        ])
+    );
+
+    assert_eq!(
+        lex("echo ~/foo/bar/baz"),
+        Ok(vec![
+            single_plain_word("echo"),
+            Token::Word(Word::new(vec![
+                Span::Tilde(Tilde::Home),
+                plain_span("/foo/bar/baz")
+            ]))
+        ])
+    );
+
+    assert_eq!(
+        lex("~seiya"),
+        Ok(vec![Token::Word(Word::new(vec![Span::Tilde(
+            Tilde::HomeOf(string("seiya"))
+        ),]))])
+    );
+
+    assert_eq!(lex("\\~seiya"), Ok(vec![single_plain_word("~seiya")]));
+
+    assert_eq!(
+        lex("~seiya a ~seiya"),
+        Ok(vec![
+            Token::Word(Word::new(
+                vec![Span::Tilde(Tilde::HomeOf(string("seiya"))),]
+            )),
+            single_plain_word("a"),
+            Token::Word(Word::new(
+                vec![Span::Tilde(Tilde::HomeOf(string("seiya"))),]
+            ))
+        ])
+    );
+
+    assert_eq!(
+        lex("echo ~seiya/foo/bar/baz"),
+        Ok(vec![
+            single_plain_word("echo"),
+            Token::Word(Word::new(vec![
+                Span::Tilde(Tilde::HomeOf(string("seiya"))),
+                plain_span("/foo/bar/baz")
+            ]))
+        ])
+    );
+}
