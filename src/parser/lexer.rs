@@ -455,40 +455,14 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         ];
 
         let hctx = self.enter_highlight(0);
-        let mut word = self.visit_word()?;
 
-        // Check if it's a assignment.
-        if let Some(Span::Plain(ref s)) = word.spans().get(0) {
-            let mut name = String::new();
-            let mut chars = s.chars();
-            while let Some(c) = chars.next() {
-                if !is_identifier_char(c) {
-                    if !name.is_empty() && c == '=' {
-                        // It looks like an assignment. Remove the plain text
-                        // until '='.
-                        let mut rest = String::new();
-                        for c in chars {
-                            rest.push(c);
-                        }
-
-                        let mut new_spans = vec![Span::Plain(rest)];
-                        for span in word.0.drain(1..) {
-                            new_spans.push(span);
-                        }
-
-                        return Ok(Token::Assignment {
-                            name,
-                            value: Word(new_spans),
-                        });
-                    }
-
-                    // Not an assignment.
-                    break;
-                }
-
-                name.push(c);
-            }
+        // Check if it's a assignment first.
+        if let Some(assignment) = self.visit_assignment()? {
+            return Ok(assignment);
         }
+
+        // It's not an assignment. It must be a keyword or a command.
+        let word = self.visit_word()?;
 
         // Check if it's a keyword.
         if word.spans().len() == 1 {
@@ -503,6 +477,33 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         // A function or command name.
         self.leave_highlight(hctx, HighlightKind::Argv0, 0);
         Ok(Token::Argv0(word))
+    }
+
+    fn visit_assignment(&mut self) -> Result<Option<Token>, LexerError> {
+        let mut name = String::new();
+        while let Some(c) = self.input.consume() {
+            if !is_identifier_char(c) {
+                if !name.is_empty() && c == '=' {
+                    return Ok(Some(Token::Assignment {
+                        name,
+                        value: self.visit_word()?,
+                    }));
+                }
+
+                // Push c to uncosume later.
+                name.push(c);
+                break;
+            }
+
+            name.push(c);
+        }
+
+        // It's not an assignment. Go back to the beginning of the word.
+        for c in name.chars().rev() {
+            self.input.unconsume(c);
+        }
+
+        Ok(None)
     }
 
     fn visit_word(&mut self) -> Result<Word, LexerError> {

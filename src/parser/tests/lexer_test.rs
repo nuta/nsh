@@ -1,3 +1,5 @@
+use std::str::Chars;
+
 use nsh_parser::highlight::*;
 use nsh_parser::lexer::*;
 
@@ -17,8 +19,12 @@ fn single_plain_word(s: &str) -> Token {
     word(vec![plain_span(s)])
 }
 
-fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
+fn do_lex<F>(input: &str, before_tokenize: F) -> Result<Vec<Token>, LexerError>
+where
+    F: FnOnce(&mut Lexer<Chars>),
+{
     let mut lexer = Lexer::new(input.chars());
+    before_tokenize(&mut lexer);
     let mut tokens = Vec::new();
     loop {
         match lexer.next() {
@@ -28,6 +34,10 @@ fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
         }
     }
     Ok(tokens)
+}
+
+fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
+    do_lex(input, |_| {})
 }
 
 fn lex_with_heredocs(input: &str) -> Result<(Vec<Token>, Vec<HereDoc>), LexerError> {
@@ -446,4 +456,25 @@ fn brace_expansion() {
     );
 
     assert_eq!(lex("{a,b}y"), Ok(vec![single_plain_word("{a,b}y"),]));
+}
+
+#[test]
+fn assignment() {
+    assert_eq!(
+        do_lex("FOO=123", |l| l.set_argv0_mode(true)),
+        Ok(vec![Token::Assignment {
+            name: string("FOO"),
+            value: Word::new(vec![plain_span("123")]),
+        }])
+    );
+
+    assert_eq!(
+        do_lex("FOO=123", |l| l.set_argv0_mode(false)),
+        Ok(vec![single_plain_word("FOO=123")])
+    );
+
+    assert_eq!(
+        do_lex("FOO\\=123", |l| l.set_argv0_mode(true)),
+        Ok(vec![Token::Argv0(Word::new(vec![plain_span("FOO=123")]))])
+    );
 }
