@@ -84,6 +84,22 @@ pub struct Redirection {
     pub fd: usize,
 }
 
+const KEYWORDS: &[(&str, Token)] = &[
+    ("if", Token::If),
+    ("then", Token::Then),
+    ("elif", Token::ElIf),
+    ("else", Token::Else),
+    ("fi", Token::Fi),
+    ("while", Token::While),
+    ("for", Token::For),
+    ("in", Token::In),
+    ("do", Token::Do),
+    ("done", Token::Done),
+    ("case", Token::Case),
+    ("esac", Token::Esac),
+    ("function", Token::Function),
+];
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token {
     /// A newline (`\n`).
@@ -424,8 +440,15 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     }
                     _ => {
                         self.input.unconsume(first);
+                        let hctx = self.enter_highlight(0);
+
                         let word = self.visit_word()?;
+
                         self.visit_keyword(&word)
+                            .map(|token| {
+                                self.leave_highlight(hctx, HighlightKind::Keyword, 0);
+                                token
+                            })
                             .unwrap_or_else(|| Token::Word(word))
                     }
                 }
@@ -436,14 +459,9 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     }
 
     fn visit_keyword(&mut self, word: &Word) -> Option<Token> {
-        let keywords = &[("if", Token::If)];
-
         if self.argv0_mode && word.spans().len() == 1 {
             if let Span::Plain(ref value) = word.spans()[0] {
-                if let Some((keyword, token)) =
-                    keywords.iter().find(|(keyword, _)| keyword == value)
-                {
-                    self.add_highlight(HighlightKind::Keyword, keyword.chars().count());
+                if let Some((_, token)) = KEYWORDS.iter().find(|(k, _)| k == value) {
                     return Some(token.clone());
                 }
             }
