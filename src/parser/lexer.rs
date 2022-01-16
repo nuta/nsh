@@ -495,7 +495,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     // - A command grouping (argv0_mode).
                     // - A brace expansion in non-argv0 words (!argv0_mode).
                     //   It's handled in `visit_word()`.
-                    // - A parameter expansion (brace_param_level). Note that
+                    // - A parameter expansion (unclosed_braces). Note that
                     //   the beginning of it `{` is handled in `visit_word()`.
                     ('{', _) if self.argv0_mode => Token::LeftBrace,
                     ('}', _)
