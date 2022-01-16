@@ -226,7 +226,15 @@ pub enum LexerError {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum ParenContext {
+enum UnclosedBrace {
+    /// A variable expansion `${foo`.
+    Variable,
+    /// A brace expansion `{1,2,3`.
+    Brace,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum UnclosedParen {
     /// A command substitution `$(`.
     Command,
     /// A Arithmetic expansion `$((`.
@@ -321,9 +329,8 @@ pub struct Lexer<I: Iterator<Item = char>> {
     in_backtick: bool,
     argv0_mode: bool,
     brace_as_token_mode: bool,
-    brace_param_level: usize,
-    brace_exp_level: usize,
-    unclosed_parens: Vec<ParenContext>,
+    unclosed_braces: Vec<UnclosedBrace>,
+    unclosed_parens: Vec<UnclosedParen>,
     unclosed_context_stack: Vec<Context>,
     highlight_spans: Vec<HighlightSpan>,
     heredocs: Vec<HereDoc>,
@@ -339,8 +346,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             in_backtick: false,
             argv0_mode: false,
             brace_as_token_mode: false,
-            brace_param_level: 0,
-            brace_exp_level: 0,
+            unclosed_braces: Vec::new(),
             unclosed_parens: Vec::new(),
             unclosed_context_stack: Vec::new(),
             highlight_spans: Vec::new(),
@@ -476,7 +482,10 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     ('}', _)
                         if self.argv0_mode
                             || self.brace_as_token_mode
-                            || self.brace_param_level > 0 =>
+                            || matches!(
+                                self.unclosed_braces.last(),
+                                Some(UnclosedBrace::Variable)
+                            ) =>
                     {
                         Token::RightBrace
                     }
@@ -627,12 +636,12 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     fn in_arith(&self) -> bool {
         matches!(
             self.unclosed_parens.last(),
-            Some(ParenContext::Arith | ParenContext::ArithExpr)
+            Some(UnclosedParen::Arith | UnclosedParen::ArithExpr)
         )
     }
 
     fn in_arith_paren(&self) -> bool {
-        matches!(self.unclosed_parens.last(), Some(ParenContext::ArithExpr))
+        matches!(self.unclosed_parens.last(), Some(UnclosedParen::ArithExpr))
     }
 
     fn visit_word(&mut self) -> Result<Word, LexerError> {
@@ -664,11 +673,11 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 }
                 '(' if self.in_arith() && !in_double_quotes && !in_single_quotes => {
                     plain.push(c);
-                    self.enter_parens(ParenContext::ArithExpr);
+                    self.enter_paren(UnclosedParen::ArithExpr);
                 }
                 ')' if self.in_arith_paren() && !in_double_quotes && !in_single_quotes => {
                     plain.push(c);
-                    self.leave_parens(ParenContext::ArithExpr);
+                    self.leave_paren(UnclosedParen::ArithExpr);
                 }
                 ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | ')' | '<' | '>'
                     if !in_double_quotes && !in_single_quotes =>
@@ -676,11 +685,19 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     self.input.unconsume(c);
                     break;
                 }
-                '}' if self.brace_param_level > 0 && !in_double_quotes && !in_single_quotes => {
+                '}' if matches!(self.unclosed_braces.last(), Some(UnclosedBrace::Variable))
+                    && !in_double_quotes
+                    && !in_single_quotes =>
+                {
+                    // Return as Token::RightBrace in the next next_token() call.
                     self.input.unconsume(c);
                     break;
                 }
-                '}' | ',' if self.brace_exp_level > 0 && !in_double_quotes && !in_single_quotes => {
+                '}' | ','
+                    if matches!(self.unclosed_braces.last(), Some(UnclosedBrace::Brace))
+                        && !in_double_quotes
+                        && !in_single_quotes =>
+                {
                     self.input.unconsume(c);
                     break;
                 }
@@ -782,7 +799,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             Some('(') => {
                 self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
                 let inner_htx = self.enter_highlight(0);
-                self.enter_parens(ParenContext::Command);
+                self.enter_paren(UnclosedParen::Command);
 
                 let tokens = self.consume_tokens_until(
                     Context::Command,
@@ -797,7 +814,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 );
                 self.add_highlight(HighlightKind::CommandSymbol, 1 /* len(')') */);
 
-                self.leave_parens(ParenContext::Command);
+                self.leave_paren(UnclosedParen::Command);
                 Span::Command(tokens)
             }
             Some('{') => {
@@ -815,13 +832,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 }
 
                 // TODO:
-                self.brace_param_level += 1;
+                self.enter_brace(UnclosedBrace::Variable);
                 let _tokens = self.consume_tokens_until(
                     Context::BraceParam,
                     Token::RightBrace,
                     LexerError::NoMatchingRightBrace,
                 )?;
-                self.brace_param_level -= 1;
+                self.leave_brace(UnclosedBrace::Variable);
 
                 self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() }, 0);
                 Span::Variable { name }
@@ -859,7 +876,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     /// Visits an arithmetic expression (after `$((`).
     fn visit_arith_exp(&mut self) -> Result<Span, LexerError> {
-        self.enter_parens(ParenContext::Arith);
+        self.enter_paren(UnclosedParen::Arith);
 
         let tokens = self.consume_tokens_until(
             Context::Arith,
@@ -890,7 +907,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             }
         }
 
-        self.enter_parens(ParenContext::Arith);
+        self.enter_paren(UnclosedParen::Arith);
         Ok(Span::Arith(Word(merged_spans)))
     }
 
@@ -1119,9 +1136,9 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                             list.push(exp);
                         }
                         None => {
-                            self.brace_exp_level += 1;
+                            self.enter_brace(UnclosedBrace::Brace);
                             let word = self.visit_word()?;
-                            self.brace_exp_level -= 1;
+                            self.leave_brace(UnclosedBrace::Brace);
                             list.push(BraceExpansion::Word(word));
                         }
                     }
@@ -1256,11 +1273,20 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         debug_assert_eq!(last_context, context);
     }
 
-    fn enter_parens(&mut self, context: ParenContext) {
+    fn enter_brace(&mut self, context: UnclosedBrace) {
+        self.unclosed_braces.push(context);
+    }
+
+    fn leave_brace(&mut self, context: UnclosedBrace) {
+        let last_context = self.unclosed_braces.pop().unwrap();
+        debug_assert_eq!(last_context, context);
+    }
+
+    fn enter_paren(&mut self, context: UnclosedParen) {
         self.unclosed_parens.push(context);
     }
 
-    fn leave_parens(&mut self, context: ParenContext) {
+    fn leave_paren(&mut self, context: UnclosedParen) {
         let last_context = self.unclosed_parens.pop().unwrap();
         debug_assert_eq!(last_context, context);
     }
