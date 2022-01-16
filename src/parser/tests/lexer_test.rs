@@ -1,5 +1,3 @@
-
-
 use nsh_parser::highlight::*;
 use nsh_parser::lexer::*;
 
@@ -430,4 +428,22 @@ fn quoted_heredocs() {
             ])
         ))
     );
+}
+
+#[test]
+fn brace_expansion() {
+    assert_eq!(
+        lex("echo x{a,b}y"),
+        Ok(vec![
+            single_plain_word("echo"),
+            single_plain_word("x{a,b}y"),
+        ])
+    );
+
+    assert_eq!(
+        lex("echo {a,b}y"),
+        Ok(vec![single_plain_word("echo"), single_plain_word("{a,b}y"),])
+    );
+
+    assert_eq!(lex("{a,b}y"), Ok(vec![single_plain_word("{a,b}y"),]));
 }

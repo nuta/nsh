@@ -219,6 +219,8 @@ pub struct Lexer<I: Iterator<Item = char>> {
     input: InputReader<I>,
     halted: bool,
     in_backtick: bool,
+    argv0_mode: bool,
+    brace_param_level: usize,
     unclosed_context_stack: Vec<Context>,
     highlight_spans: Vec<HighlightSpan>,
     heredocs: Vec<HereDoc>,
@@ -232,12 +234,18 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             halted: false,
             input: InputReader::new(input),
             in_backtick: false,
+            argv0_mode: false,
+            brace_param_level: 0,
             unclosed_context_stack: Vec::new(),
             highlight_spans: Vec::new(),
             heredocs: Vec::new(),
             next_heredoc_index: 0,
             unclosed_heredoc_markers: VecDeque::new(),
         }
+    }
+
+    pub fn set_argv0_mode(&mut self, enable: bool) {
+        self.argv0_mode = enable;
     }
 
     pub fn highlight_spans(&self) -> &[HighlightSpan] {
@@ -345,8 +353,8 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     (';', _) => Token::Semi,
                     ('(', _) => Token::LeftParen,
                     (')', _) => Token::RightParen,
-                    ('{', _) => Token::LeftBrace,
-                    ('}', _) => Token::RightBrace,
+                    ('{', _) if self.argv0_mode => Token::LeftBrace,
+                    ('}', _) if self.argv0_mode || self.brace_param_level > 0 => Token::RightBrace,
                     // The end of A command substitution.
                     ('`', _) if self.in_backtick => Token::ClosingBackTick,
                     // Comment.
@@ -386,9 +394,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         let mut quote_hctx = None;
         while let Some(c) = self.input.consume() {
             match c {
-                ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | '}' | ')' | '<' | '>'
+                ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | ')' | '<' | '>'
                     if !in_double_quotes && !in_single_quotes =>
                 {
+                    self.input.unconsume(c);
+                    break;
+                }
+                '}' if self.brace_param_level > 0 && !in_double_quotes && !in_single_quotes => {
                     self.input.unconsume(c);
                     break;
                 }
@@ -507,11 +519,13 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 }
 
                 // TODO:
+                self.brace_param_level += 1;
                 let _tokens = self.consume_tokens_until(
                     Context::BraceParam,
                     Token::RightBrace,
                     LexerError::NoMatchingRightBrace,
                 )?;
+                self.brace_param_level -= 1;
 
                 self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() }, 0);
                 Span::Variable { name }
