@@ -323,7 +323,6 @@ pub struct Lexer<I: Iterator<Item = char>> {
     brace_as_token_mode: bool,
     brace_param_level: usize,
     brace_exp_level: usize,
-    arith_exp_level: usize,
     unclosed_parens: Vec<ParenContext>,
     unclosed_context_stack: Vec<Context>,
     highlight_spans: Vec<HighlightSpan>,
@@ -342,8 +341,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             brace_as_token_mode: false,
             brace_param_level: 0,
             brace_exp_level: 0,
-            arith_exp_level: 0,
-            arith_paren_level: 0,
             unclosed_parens: Vec::new(),
             unclosed_context_stack: Vec::new(),
             highlight_spans: Vec::new(),
@@ -862,7 +859,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
     /// Visits an arithmetic expression (after `$((`).
     fn visit_arith_exp(&mut self) -> Result<Span, LexerError> {
-        self.arith_exp_level += 1;
         self.enter_parens(ParenContext::Arith);
 
         let tokens = self.consume_tokens_until(
@@ -894,7 +890,6 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             }
         }
 
-        self.arith_exp_level -= 1;
         self.enter_parens(ParenContext::Arith);
         Ok(Span::Arith(Word(merged_spans)))
     }
