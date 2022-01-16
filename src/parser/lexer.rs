@@ -831,7 +831,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         Ok(Span::Command(tokens))
     }
 
-    /// Visits a process substitution (reader is at before `>` or `<`).
+    /// Visits a process substitution (the reader must be at `>` or `<`).
     fn visit_process_sub(&mut self) -> Result<Span, LexerError> {
         let ctor = match self.input.consume() {
             Some('>') => Span::ProcessWritable,
