@@ -58,7 +58,7 @@ impl Parser {
         let mut pipelines = Vec::new();
 
         pipelines.push(self.parse_pipeline()?);
-        while let Some(token) = self.peek_token()? {
+        while let Some(token) = self.peek_token_maybe_argv0()? {
             match token {
                 Token::Semi | Token::And => {
                     self.consume_token()?;
@@ -70,7 +70,7 @@ impl Parser {
             }
         }
 
-        let background = match self.peek_token()? {
+        let background = match self.peek_token_maybe_argv0()? {
             Some(Token::And) => true,
             _ => false,
         };
@@ -82,19 +82,17 @@ impl Parser {
     }
 
     fn parse_pipeline(&mut self) -> Result<Pipeline, ParseError> {
-        self.lexer.set_argv0_mode(true);
-
-        let run_if = match self.peek_token()? {
+        let run_if = match self.peek_token_maybe_argv0()? {
             None | Some(Token::Semi) => {
-                self.consume_token()?;
+                self.consume_token_maybe_argv0()?;
                 RunIf::Always
             }
             Some(Token::DoubleAnd) => {
-                self.consume_token()?;
+                self.consume_token_maybe_argv0()?;
                 RunIf::Success
             }
             Some(Token::DoubleOr) => {
-                self.consume_token()?;
+                self.consume_token_maybe_argv0()?;
                 RunIf::Failure
             }
             _ => RunIf::Always,
@@ -102,9 +100,10 @@ impl Parser {
 
         let mut commands = Vec::new();
         commands.push(self.parse_command()?);
-        while let Some(token) = self.consume_token()? {
+        while let Some(token) = self.peek_token_maybe_argv0()? {
             match token {
                 Token::Or => {
+                    self.consume_token()?;
                     commands.push(self.parse_command()?);
                 }
                 _ => {
@@ -117,7 +116,7 @@ impl Parser {
     }
 
     fn parse_command(&mut self) -> Result<Command, ParseError> {
-        let command = match self.peek_token()? {
+        let command = match self.peek_token_maybe_argv0()? {
             _ => self.parse_simple_command()?,
         };
 
@@ -129,9 +128,8 @@ impl Parser {
         let mut argv = Vec::new();
         let mut redirections = Vec::new();
 
-        self.lexer.set_argv0_mode(true);
-
-        while let Some(token) = self.consume_token()? {
+        // Read until argv0.
+        while let Some(token) = self.consume_token_maybe_argv0()? {
             match token {
                 Token::Assignment(Assignment { name, initializer }) => {
                     assignments.push(Assignment { name, initializer });
@@ -139,18 +137,30 @@ impl Parser {
                 Token::Argv0(word) => {
                     debug_assert!(argv.is_empty());
                     argv.push(word);
-                    self.lexer.set_argv0_mode(false);
+                    break;
                 }
-                Token::Word(word) => {
-                    debug_assert!(!argv.is_empty());
-                    argv.push(word)
+                Token::Word(_) => {
+                    unreachable!();
                 }
                 Token::Redirection(r) => redirections.push(r),
                 _ => break,
             }
         }
 
-        self.lexer.set_argv0_mode(false);
+        while let Some(token) = self.consume_token()? {
+            match token {
+                Token::Assignment(_) | Token::Argv0(_) => {
+                    unreachable!();
+                }
+                Token::Word(word) => {
+                    debug_assert!(!argv.is_empty());
+                    argv.push(word);
+                    break;
+                }
+                Token::Redirection(r) => redirections.push(r),
+                _ => break,
+            }
+        }
 
         if argv.is_empty() {
             return Err(ParseError::Eof);
@@ -161,6 +171,20 @@ impl Parser {
             argv,
             redirections,
         })
+    }
+
+    fn peek_token_maybe_argv0(&mut self) -> Result<&Option<Token>, ParseError> {
+        self.lexer.set_argv0_mode(true);
+        let token = self.peek_token();
+        // We don't need to restore argv0 mode: we'll do so when we consume it.
+        token
+    }
+
+    fn consume_token_maybe_argv0(&mut self) -> Result<Option<Token>, ParseError> {
+        self.lexer.set_argv0_mode(true);
+        let token = self.consume_token();
+        self.lexer.set_argv0_mode(false);
+        token
     }
 
     fn peek_token(&mut self) -> Result<&Option<Token>, ParseError> {

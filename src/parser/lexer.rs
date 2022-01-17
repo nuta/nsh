@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, os::unix::prelude::RawFd};
+use std::collections::VecDeque;
 
 use thiserror::Error;
 

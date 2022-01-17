@@ -11,5 +11,5 @@ fn parse(text: &'static str) -> Result<Ast, ParseError> {
 
 #[test]
 fn simple_command() {
-    assert_eq!(parse("echo hello"), Ok(Ast { terms: vec![] }));
+    assert_eq!(parse("cat foo.log | grep trace"), Ok(Ast { terms: vec![] }));
 }
