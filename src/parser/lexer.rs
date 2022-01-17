@@ -188,6 +188,7 @@ pub enum LexerError {
 /// unnecessarily complicated.
 pub struct Lexer {
     input: InputReader,
+    reached_to_eof: bool,
     halted: bool,
     in_backtick: bool,
     argv0_mode: bool,
@@ -206,6 +207,7 @@ impl Lexer {
         I: Iterator<Item = char> + 'static,
     {
         Lexer {
+            reached_to_eof: false,
             halted: false,
             input: InputReader::new(input),
             in_backtick: false,
@@ -242,12 +244,17 @@ impl Lexer {
             return Err(LexerError::Halted);
         }
 
-        let ret = self.do_next_token();
-        if ret.is_err() {
-            self.halted = true;
+        match self.do_next_token() {
+            Ok(token) => Ok(token),
+            Err(LexerError::Eof) => {
+                self.reached_to_eof = true;
+                Err(LexerError::Eof)
+            }
+            Err(err) => {
+                self.halted = true;
+                Err(err)
+            }
         }
-
-        ret
     }
 
     fn do_next_token(&mut self) -> Result<Token, LexerError> {
@@ -460,7 +467,6 @@ impl Lexer {
         ];
 
         let hctx = self.enter_highlight(0);
-
         // Check if it's a assignment first.
         if let Some(assignment) = self.visit_assignment()? {
             return Ok(assignment);
@@ -490,10 +496,10 @@ impl Lexer {
         while let Some(c) = self.input.consume() {
             if !is_identifier_char(c) {
                 if !name.is_empty() && c == '=' {
-                    return Ok(Some(Token::Assignment {
+                    return Ok(Some(Token::Assignment(Assignment {
                         name,
-                        value: self.visit_word()?,
-                    }));
+                        initializer: Initializer::String(self.visit_word()?),
+                    })));
                 }
 
                 // Push c to uncosume later.
@@ -1324,6 +1330,10 @@ impl Iterator for Lexer {
     type Item = Result<Token, LexerError>;
 
     fn next(&mut self) -> Option<Result<Token, LexerError>> {
+        if self.reached_to_eof {
+            return None;
+        }
+
         match self.next_token() {
             Ok(token) => Some(Ok(token)),
             Err(LexerError::Eof) => None,

@@ -1,3 +1,20 @@
+//! The shell language definition.
+//!
+//! # Overview
+//!
+//! ```text
+//!
+//! cat /var/log/syslog | grep trace   &&   echo found ; cowsay hi
+//! ^^^^^^^^^^^^^^^^^^^   ^^^^^^^^^^        ^^^^^^^^^^   ^^^^^^^^^
+//! simple_command    simple_command    simple_command   simple_command
+//! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^        ^^^^^^^^^^   ^^^^^^^^^
+//!           pipeline                        pipeline   pipeline
+//! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^   ^^^^^^^^^
+//!                     term                             term
+//! ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//!                             term_list
+//!
+//! ```
 use std::os::unix::prelude::RawFd;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -7,33 +24,46 @@ pub struct Ast {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Term {
-    pub code: String,
-    pub pipelines: Vec<Pipeline>, // Separated by `&&' or `||'.
+    pub pipelines: Vec<Pipeline>,
     pub background: bool,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum RunIf {
+    /// `;`.
     Always,
-    /// Run the command if the previous command returned 0.
+    /// `&&`. Run the command if the previous command returned 0.
     Success,
-    /// Run the command if the previous command returned non-zero value.
+    /// `||`. Run the command if the previous command returned non-zero value.
     Failure,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Pipeline {
+    // `;` or `&&' or `||'.
     pub run_if: RunIf,
-    pub commands: Vec<Command>, // Separated by `|'.
+    // Commands in a pipeline separated by `|'.
+    pub commands: Vec<Command>,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Command {
-    // SimpleCommand {
-//     assignments: Vec<Assignment>,
-//     argv: Vec<Word>,
-//     redirects: Vec<Redirection>,
-// },
+    SimpleCommand {
+        assignments: Vec<Assignment>,
+        argv: Vec<Word>,
+        redirections: Vec<Redirection>,
+    },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Initializer {
+    String(Word),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Assignment {
+    pub name: String,
+    pub initializer: Initializer,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -274,12 +304,7 @@ pub enum Token {
     /// The argv0 word: contains a function or command name.
     Argv0(Word),
     /// An assignment (e.g. `FOO=bar`).
-    Assignment {
-        /// The name of the variable.
-        name: String,
-        /// The value of the variable.
-        value: Word,
-    },
+    Assignment(Assignment),
     /// `if`
     If,
     /// `then`

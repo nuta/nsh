@@ -531,10 +531,10 @@ fn quoted_heredocs() {
 fn assignment() {
     assert_eq!(
         do_lex("FOO=123", |l| l.set_argv0_mode(true)),
-        Ok(vec![Token::Assignment {
+        Ok(vec![Token::Assignment(Assignment {
             name: string("FOO"),
-            value: Word::new(vec![plain_span("123")]),
-        }])
+            initializer: Initializer::String(Word::new(vec![plain_span("123")])),
+        })])
     );
 
     assert_eq!(
@@ -614,10 +614,13 @@ fn tilde() {
 
     assert_eq!(
         do_lex("FOO=~/foo/bar/baz", |l| l.set_argv0_mode(true)),
-        Ok(vec![Token::Assignment {
+        Ok(vec![Token::Assignment(Assignment {
             name: string("FOO"),
-            value: Word::new(vec![Span::Tilde(Tilde::Home), plain_span("/foo/bar/baz")]),
-        }])
+            initializer: Initializer::String(Word::new(vec![
+                Span::Tilde(Tilde::Home),
+                plain_span("/foo/bar/baz")
+            ])),
+        })])
     );
 }
 
