@@ -4,6 +4,9 @@ use thiserror::Error;
 
 use crate::highlight::{HighlightKind, HighlightSpan};
 
+const STDIN_FD: i32 = 0;
+const STDOUT_FD: i32 = 1;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Tilde {
     /// `~`.
@@ -35,13 +38,89 @@ pub enum BraceExpansion {
     List(Vec<BraceExpansion>),
 }
 
+/// Variable expansions. `null` is the case where the variable is set but it's
+/// empty.
+#[derive(Debug, PartialEq, Clone)]
+pub enum VarExpansion {
+    /// `${#parameter}`.
+    ///
+    /// set:   length
+    /// null:  "0"
+    /// unset: "0"
+    Length,
+    /// `$parameter and ${parameter}`.
+    ///
+    /// set:   parameter's value
+    /// null:  ""
+    /// unset: null or error if set -u is in effect
+    GetOrEmpty,
+    /// `${parameter:-word}`.
+    ///
+    /// set:   parameter's value
+    /// null:  word
+    /// unset: word
+    GetOrDefault(Word),
+    /// `${parameter-word}`.
+    ///
+    /// set:   parameter's value
+    /// null:  ""
+    /// unset: word
+    GetNullableOrDefault(Word),
+    /// `${parameter:=word}`.
+    ///
+    /// set:   parameter's value
+    /// null:  assign and return word
+    /// unset: assign and return word
+    GetOrDefaultAndAssign(Word),
+    /// `${parameter=word}`.
+    ///
+    /// set:   parameter's value
+    /// null:  ""
+    /// unset: assign and return word
+    GetNullableOrDefaultAndAssign(Word),
+    /// `${parameter:?word}`.
+    ///
+    /// set:   parameter's value
+    /// null:  error
+    /// unset: error
+    GetOrExit(Word),
+    /// `${parameter?word}`.
+    ///
+    /// set:   parameter's value
+    /// null:  ""
+    /// unset: error
+    GetNullableOrExit(Word),
+    /// `${parameter:+word}`.
+    ///
+    /// set:   word
+    /// null:  null
+    /// unset: null
+    GetWordIfSet(Word),
+    /// `${parameter+word}`.
+    ///
+    /// set:   word
+    /// null:  word
+    /// unset: null
+    GetWordIfSetOrNull(Word),
+    // ${parameter/pattern/replacement}
+    Subst {
+        pattern: Word,
+        replacement: Word,
+        replace_all: bool,
+    },
+}
+
 /// A fragment of a word.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Span {
     /// A plain text.
     Plain(String),
     /// A variable substitution, e.g. `$foo`.
-    Variable { name: String },
+    Variable {
+        name: String,
+        expansion: VarExpansion,
+        quoted: bool,
+    },
     /// A command substitution, e.g. `$(echo "hi")`.
     Command(Vec<Token>),
     /// A tilde expansion, e.g. `~`.
@@ -60,6 +139,12 @@ pub enum Span {
     ProcessWritable(Vec<Token>),
     /// An arithmetic expression, e.g. `$((1 + 2))`.
     Arith(Word),
+    /// Wildcard (`*`). It matches zero or more characters.
+    AnyString,
+    /// Wildcard (`?`).
+    AnyChar,
+    /// Wildcard (`[a-z]`). The inner string has the pattern without `[` and `]`.
+    AnyCharIn(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -98,13 +183,17 @@ impl HereDoc {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum RedirectionKind {
+pub enum RedirOp {
     /// `cat < foo.txt` or here document.
-    Input,
+    Input(RawFd),
     /// `cat > foo.txt`
-    Output,
+    Output(RawFd),
     /// `cat >> foo.txt`
-    Append,
+    Append(RawFd),
+    /// `cat &> stdout_and_err.log`
+    OutputStdoutAndStderr,
+    /// `cat &>> stdout_and_err.log`
+    AppendStdoutAndStderr,
 }
 
 enum HereDocMarker {
@@ -115,7 +204,7 @@ enum HereDocMarker {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum RedirectionTarget {
+pub enum RedirRhs {
     /// `foo.log` in `> foo.log`.
     File(Word),
     /// `1` in `2>&1`.
@@ -126,9 +215,8 @@ pub enum RedirectionTarget {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Redirection {
-    pub kind: RedirectionKind,
-    pub target: RedirectionTarget,
-    pub fd: usize,
+    pub op: RedirOp,
+    pub rhs: RedirRhs,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -190,12 +278,18 @@ pub enum Token {
     Do,
     /// `done`
     Done,
+    /// `break`
+    Break,
+    /// `continue`
+    Continue,
     /// `case`
     Case,
     /// `esac`
     Esac,
     /// `function`
     Function,
+    /// `return`
+    Return,
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -219,10 +313,16 @@ pub enum LexerError {
     UnclosedHereDoc,
     #[error("Unclosed brace expansion.")]
     UnclosedBraceExp,
-    #[error("Inconsistent parenthesis (perhaps some ')' needs to be added?).")]
+    #[error("Unclosed parameter expansion.")]
+    UnclosedParamExp,
+    #[error("Unclosed wildcard character set.")]
+    UnclosedAnyCharInPattern,
+    #[error("Inconsistent parenthesis (perhaps some `)' needs to be added?).")]
     InconsistentParenthesis,
     #[error("Invalid word found in an arithmetic expansion.")]
     InvalidTokenInArith,
+    #[error("Invalid variable name `{0}'.")]
+    InvalidVariableName(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -318,6 +418,46 @@ impl<I: Iterator<Item = char>> InputReader<I> {
     }
 }
 
+struct SpansBuilder {
+    spans: Vec<Span>,
+    plain_text: String,
+}
+
+impl SpansBuilder {
+    pub fn new() -> Self {
+        Self {
+            spans: Vec::new(),
+            plain_text: String::new(),
+        }
+    }
+
+    pub fn to_vec(self) -> Vec<Span> {
+        let mut spans = self.spans;
+        if !self.plain_text.is_empty() {
+            spans.push(Span::Plain(self.plain_text));
+        }
+
+        spans
+    }
+
+    pub fn push_char(&mut self, c: char) {
+        self.plain_text.push(c);
+    }
+
+    pub fn push_str(&mut self, s: &str) {
+        self.plain_text.push_str(s);
+    }
+
+    pub fn push_span(&mut self, span: Span) {
+        if !self.plain_text.is_empty() {
+            self.spans.push(Span::Plain(self.plain_text.clone()));
+            self.plain_text = String::new();
+        }
+
+        self.spans.push(span);
+    }
+}
+
 /// A lexer.
 ///
 /// This is NOT await-ready: the iterator should block the thread until the next
@@ -389,15 +529,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
         // Read digits. It sounds a bit weird, but we need to handle the case
         // a redirection with the fd number.
-        let mut digits = String::new();
-        while let Some(c) = self.input.consume() {
-            if !c.is_ascii_digit() {
-                self.input.unconsume(c);
-                break;
-            }
-
-            digits.push(c);
-        }
+        let digits = self.consume_digits();
 
         // First we check if it's a redirection.
         let first = self.input.consume();
@@ -405,22 +537,73 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         let n = if digits.is_empty() {
             None
         } else {
-            Some(digits.parse::<usize>().unwrap())
+            Some(digits.parse::<i32>().unwrap())
         };
         let token = match (first, second) {
+            (Some('>'), Some('&')) => {
+                // Skip '&'.
+                self.input.consume();
+                let dst = self.consume_digits();
+                if dst.is_empty() {
+                    // ">&" is at EOF. Handle it as plain text.
+                    Token::Word(plain_word(format!("{}>&", digits)))
+                } else {
+                    Token::Redirection(Redirection {
+                        op: RedirOp::Output(n.unwrap_or(STDOUT_FD).into()),
+                        // SAFETY: dst is guaranteed to be a valid integer.
+                        rhs: RedirRhs::Fd(dst.parse().unwrap()),
+                    })
+                }
+            }
+            (Some('<'), Some('&')) => {
+                // Skip '&'.
+                self.input.consume();
+                let src = self.consume_digits();
+                if src.is_empty() {
+                    // "<&" is at EOF. Handle it as plain text.
+                    Token::Word(plain_word(format!("{}<&", digits)))
+                } else {
+                    Token::Redirection(Redirection {
+                        op: RedirOp::Input(n.unwrap_or(STDIN_FD).into()),
+                        // SAFETY: dst is guaranteed to be a valid integer.
+                        rhs: RedirRhs::Fd(src.parse().unwrap()),
+                    })
+                }
+            }
+            (Some('&'), Some('>')) => {
+                // Skip '>'.
+                self.input.consume();
+                let (op_str, op) = if let Some('>') = self.input.peek() {
+                    // `&>>`
+                    ("&>>", RedirOp::AppendStdoutAndStderr)
+                } else {
+                    // `&>`
+                    ("&>", RedirOp::OutputStdoutAndStderr)
+                };
+
+                let word = self.visit_word_skipping_whitespaces()?;
+                if !digits.is_empty() || word.spans().is_empty() {
+                    // "&>" is at EOF. Handle it as plain text.
+                    Token::Word(plain_word(format!("{}{}", digits, op_str)))
+                } else {
+                    Token::Redirection(Redirection {
+                        op,
+                        rhs: RedirRhs::File(word),
+                    })
+                }
+            }
             (Some('>'), Some('>')) => {
                 // Skip the second '>'.
                 self.input.consume();
 
-                let word = self.visit_word()?;
+                let word = self.visit_word_skipping_whitespaces()?;
                 if word.spans().is_empty() {
                     // ">>" is at EOF. Handle it as plain text.
-                    Token::Word(Word(vec![Span::Plain(">>".to_owned())]))
+                    Token::Word(plain_word(format!("{}>>", digits)))
                 } else {
                     Token::Redirection(Redirection {
-                        kind: RedirectionKind::Append,
-                        target: RedirectionTarget::File(word),
-                        fd: n.unwrap_or(1 /* stdout */),
+                        op: RedirOp::Append(n.unwrap_or(STDOUT_FD).into()),
+                        rhs: RedirRhs::File(word),
                     })
                 }
             }
@@ -430,34 +613,31 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
                 let heredoc = self.visit_heredoc_marker()?;
                 Token::Redirection(Redirection {
-                    kind: RedirectionKind::Input,
-                    target: RedirectionTarget::HereDoc(heredoc),
-                    fd: n.unwrap_or(0 /* stdin */),
+                    op: RedirOp::Input(n.unwrap_or(STDIN_FD).into()),
+                    rhs: RedirRhs::HereDoc(heredoc),
                 })
             }
             (Some('<'), Some(c)) if c != '(' => {
-                let word = self.visit_word()?;
+                let word = self.visit_word_skipping_whitespaces()?;
                 if word.spans().is_empty() {
                     // "<" is at EOF. Handle it as plain text.
-                    Token::Word(Word(vec![Span::Plain("<".to_owned())]))
+                    Token::Word(plain_word(format!("{}<", digits)))
                 } else {
                     Token::Redirection(Redirection {
-                        kind: RedirectionKind::Input,
-                        target: RedirectionTarget::File(word),
-                        fd: n.unwrap_or(0 /* stdin */),
+                        op: RedirOp::Input(n.unwrap_or(STDIN_FD).into()),
+                        rhs: RedirRhs::File(word),
                     })
                 }
             }
             (Some('>'), Some(c)) if c != '(' => {
-                let word = self.visit_word()?;
+                let word = self.visit_word_skipping_whitespaces()?;
                 if word.spans().is_empty() {
                     // ">" is at EOF. Handle it as plain text.
-                    Token::Word(Word(vec![Span::Plain(">".to_owned())]))
+                    Token::Word(plain_word(format!("{}>", digits)))
                 } else {
                     Token::Redirection(Redirection {
-                        kind: RedirectionKind::Output,
-                        target: RedirectionTarget::File(word),
-                        fd: n.unwrap_or(1 /* stdout */),
+                        op: RedirOp::Output(n.unwrap_or(STDOUT_FD).into()),
+                        rhs: RedirRhs::File(word),
                     })
                 }
             }
@@ -548,6 +728,9 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             ("while", Token::While),
             ("for", Token::For),
             ("function", Token::Function),
+            ("break", Token::Break),
+            ("continue", Token::Continue),
+            ("return", Token::Return),
         ];
 
         let hctx = self.enter_highlight(0);
@@ -662,16 +845,20 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         matches!(self.unclosed_parens.last(), Some(UnclosedParen::ArithExpr))
     }
 
+    fn visit_word_skipping_whitespaces(&mut self) -> Result<Word, LexerError> {
+        self.skip_whitespaces();
+        self.visit_word()
+    }
+
     fn visit_word(&mut self) -> Result<Word, LexerError> {
-        let mut spans = Vec::new();
+        let mut spans = SpansBuilder::new();
 
         // Check if the word starts with a tilde expansion.
-        let mut plain = match self.visit_tilde_exp() {
+        match self.visit_tilde_exp() {
             Ok(span) => {
-                spans.push(span);
-                String::new()
+                spans.push_span(span);
             }
-            Err(plain) => plain,
+            Err(s) => spans.push_str(&s),
         };
 
         let mut in_double_quotes = false;
@@ -681,21 +868,21 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             let next_c = self.input.peek();
             match c {
                 '<' | '>' if next_c == Some('(') && !in_double_quotes && !in_single_quotes => {
-                    if !plain.is_empty() {
-                        spans.push(Span::Plain(plain));
-                        plain = String::new();
-                    }
-
                     self.input.unconsume(c);
-                    spans.push(self.visit_process_sub()?);
+                    spans.push_span(self.visit_process_sub()?);
                 }
                 '(' if self.in_arith() && !in_double_quotes && !in_single_quotes => {
-                    plain.push(c);
+                    spans.push_char(c);
                     self.enter_paren(UnclosedParen::ArithExpr);
                 }
                 ')' if self.in_arith_paren() && !in_double_quotes && !in_single_quotes => {
-                    plain.push(c);
+                    spans.push_char(c);
                     self.leave_paren(UnclosedParen::ArithExpr);
+                }
+                ' ' | '\t'
+                    if matches!(self.unclosed_braces.last(), Some(UnclosedBrace::Variable)) =>
+                {
+                    spans.push_char(c);
                 }
                 ' ' | '\t' | '\n' | '|' | '&' | ';' | '#' | ')' | '<' | '>'
                     if !in_double_quotes && !in_single_quotes =>
@@ -748,62 +935,71 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     quote_hctx = Some(self.enter_highlight(1 /* len('"') */));
                 }
                 '{' if !in_double_quotes && !in_single_quotes => {
-                    if !plain.is_empty() {
-                        spans.push(Span::Plain(plain));
-                        plain = String::new();
-                    }
-                    spans.push(Span::Brace(self.visit_brace_exp()?));
+                    spans.push_span(Span::Brace(self.visit_brace_exp()?));
                 }
-                '`' if self.in_backtick => {
-                    if !plain.is_empty() {
-                        spans.push(Span::Plain(plain));
-                        plain = String::new();
+                '*' if !in_double_quotes && !in_single_quotes && !self.in_arith() => {
+                    spans.push_span(Span::AnyString);
+                }
+                '?' if !in_double_quotes && !in_single_quotes && !self.in_arith() => {
+                    spans.push_span(Span::AnyChar);
+                }
+                '[' if !in_double_quotes && !in_single_quotes && !self.in_arith() => {
+                    // Extract the pattern.
+                    let mut pattern = String::new();
+                    loop {
+                        let c = self
+                            .input
+                            .consume()
+                            .ok_or(LexerError::UnclosedAnyCharInPattern)?;
+
+                        match (c, self.input.peek()) {
+                            ('\\', Some(']')) => {
+                                // Skip the escaped ']'.
+                                self.input.consume();
+                                pattern.push(']');
+                            }
+                            (']', _) => {
+                                break;
+                            }
+                            _ => {
+                                pattern.push(c);
+                            }
+                        }
                     }
 
+                    spans.push_span(Span::AnyCharIn(pattern));
+                }
+                '`' if self.in_backtick => {
                     // Unconsume to return Token::ClosingBackTick.
                     self.input.unconsume(c);
                     break;
                 }
                 '`' if !in_single_quotes => {
-                    if !plain.is_empty() {
-                        spans.push(Span::Plain(plain));
-                        plain = String::new();
-                    }
-
-                    spans.push(self.visit_backtick_exp()?);
+                    spans.push_span(self.visit_backtick_exp()?);
                 }
                 '$' if !in_single_quotes => {
-                    if !plain.is_empty() {
-                        spans.push(Span::Plain(plain));
-                        plain = String::new();
-                    }
-
-                    spans.push(self.visit_variable_exp()?);
+                    spans.push_span(self.visit_variable_exp(in_double_quotes)?);
                 }
                 // Escaped character.
                 '\\' => {
                     let hctx = self.enter_highlight(1 /* len("\\") */);
 
                     let ch = self.input.consume().unwrap_or('\\' /* backslash at EOF */);
-                    plain.push(ch);
+                    spans.push_char(ch);
 
                     self.leave_highlight(hctx, HighlightKind::EscSeq, 0);
                 }
                 _ => {
-                    plain.push(c);
+                    spans.push_char(c);
                 }
             }
         }
 
-        if !plain.is_empty() {
-            spans.push(Span::Plain(plain));
-        }
-
-        Ok(Word(spans))
+        Ok(Word(spans.to_vec()))
     }
 
     /// Visits a variable expansion (after `$`).
-    fn visit_variable_exp(&mut self) -> Result<Span, LexerError> {
+    fn visit_variable_exp(&mut self, quoted: bool) -> Result<Span, LexerError> {
         let c = self.input.consume();
         let next = self.input.peek();
         let span = match c {
@@ -835,31 +1031,80 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 self.leave_paren(UnclosedParen::Command);
                 Span::Command(tokens)
             }
-            Some('{') => {
+            // `${#foo}`
+            Some('{') if next == Some('#') => {
                 let hctx = self.enter_highlight(2 /* len("${") */);
-
-                // Read its name.
-                let mut name = String::new();
+                // Skip '#'.
+                self.input.consume();
                 self.enter_context(Context::BraceParam);
-                while let Some(c) = self.input.consume() {
+
+                // Read the name.
+                let mut name = String::new();
+                let last_c;
+                loop {
+                    let c = self.input.consume().ok_or(LexerError::UnclosedParamExp)?;
                     if !is_identifier_char(c) {
-                        self.input.unconsume(c);
+                        last_c = c;
                         break;
                     }
                     name.push(c);
                 }
 
-                // TODO:
+                if last_c != '}' {
+                    name.push(last_c);
+                    return Err(LexerError::InvalidVariableName(name));
+                }
+
+                self.leave_context(Context::BraceParam);
+                self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() }, 0);
+                Span::Variable {
+                    name,
+                    expansion: VarExpansion::Length,
+                    quoted,
+                }
+            }
+            // `${foo}`
+            Some('{') => {
+                let hctx = self.enter_highlight(2 /* len("${") */);
+                self.enter_context(Context::BraceParam);
+
+                // Read the name.
+                let mut name = String::new();
+                let last_c;
+                loop {
+                    let c = self.input.consume().ok_or(LexerError::UnclosedParamExp)?;
+                    if !is_identifier_char(c) {
+                        last_c = c;
+                        break;
+                    }
+                    name.push(c);
+                }
+
                 self.enter_brace(UnclosedBrace::Variable);
-                let _tokens = self.consume_tokens_until(
-                    Context::BraceParam,
-                    Token::RightBrace,
-                    LexerError::NoMatchingRightBrace,
-                )?;
+                let expansion = match (last_c, self.input.peek()) {
+                    ('}', _) => VarExpansion::GetOrEmpty,
+                    (':', Some('-')) => VarExpansion::GetOrDefault(self.visit_word()?),
+                    ('-', _) => VarExpansion::GetNullableOrDefault(self.visit_word()?),
+                    (':', Some('=')) => VarExpansion::GetOrDefaultAndAssign(self.visit_word()?),
+                    ('=', _) => VarExpansion::GetNullableOrDefaultAndAssign(self.visit_word()?),
+                    (':', Some('?')) => VarExpansion::GetOrExit(self.visit_word()?),
+                    ('?', _) => VarExpansion::GetNullableOrExit(self.visit_word()?),
+                    (':', Some('+')) => VarExpansion::GetWordIfSet(self.visit_word()?),
+                    ('+', None) => VarExpansion::GetWordIfSetOrNull(self.visit_word()?),
+                    _ => {
+                        name.push(last_c);
+                        return Err(LexerError::InvalidVariableName(name));
+                    }
+                };
                 self.leave_brace(UnclosedBrace::Variable);
 
+                self.leave_context(Context::BraceParam);
                 self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() }, 0);
-                Span::Variable { name }
+                Span::Variable {
+                    name,
+                    expansion,
+                    quoted,
+                }
             }
             // `$foo`
             Some(c) if is_identifier_char(c) => {
@@ -876,7 +1121,11 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                 }
 
                 self.leave_highlight(hctx, HighlightKind::Variable { name: name.clone() }, 0);
-                Span::Variable { name }
+                Span::Variable {
+                    name,
+                    expansion: VarExpansion::GetOrEmpty,
+                    quoted,
+                }
             }
             // Not a variable expansion. Handle it as a plain `$`.
             Some(c) => {
@@ -1073,7 +1322,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                                     plain = String::new();
                                 }
 
-                                current_line.push(self.visit_variable_exp()?);
+                                current_line.push(self.visit_variable_exp(false)?);
                             }
 
                             _ => {
@@ -1282,6 +1531,20 @@ impl<I: Iterator<Item = char>> Lexer<I> {
         Ok(tokens)
     }
 
+    fn consume_digits(&mut self) -> String {
+        let mut digits = String::new();
+        while let Some(c) = self.input.consume() {
+            if !c.is_ascii_digit() {
+                self.input.unconsume(c);
+                break;
+            }
+
+            digits.push(c);
+        }
+
+        digits
+    }
+
     fn enter_context(&mut self, context: Context) {
         self.unclosed_context_stack.push(context);
     }
@@ -1341,6 +1604,10 @@ impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
             Err(err) => Some(Err(err)),
         }
     }
+}
+
+fn plain_word<T: Into<String>>(s: T) -> Word {
+    Word::new(vec![Span::Plain(s.into())])
 }
 
 fn is_identifier_char(c: char) -> bool {

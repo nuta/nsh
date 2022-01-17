@@ -11,12 +11,16 @@ fn plain_span(s: &str) -> Span {
     Span::Plain(string(s))
 }
 
-fn word(spans: Vec<Span>) -> Token {
+fn word(s: &str) -> Word {
+    Word::new(vec![Span::Plain(string(s))])
+}
+
+fn word_token_from_spans(spans: Vec<Span>) -> Token {
     Token::Word(Word::new(spans))
 }
 
-fn single_plain_word(s: &str) -> Token {
-    word(vec![plain_span(s)])
+fn word_token(s: &str) -> Token {
+    word_token_from_spans(vec![plain_span(s)])
 }
 
 fn do_lex<F>(input: &str, before_tokenize: F) -> Result<Vec<Token>, LexerError>
@@ -69,22 +73,47 @@ fn simple_command() {
     let input = "echo hello";
     assert_eq!(
         lex(input),
-        Ok(vec![single_plain_word("echo"), single_plain_word("hello")])
+        Ok(vec![word_token("echo"), word_token("hello")])
     );
 
     let input = "123";
-    assert_eq!(lex(input), Ok(vec![single_plain_word("123")]));
+    assert_eq!(lex(input), Ok(vec![word_token("123")]));
 
     let input = "echo | cat|grep foo";
     assert_eq!(
         lex(input),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Or,
-            single_plain_word("cat"),
+            word_token("cat"),
             Token::Or,
-            single_plain_word("grep"),
-            single_plain_word("foo")
+            word_token("grep"),
+            word_token("foo")
+        ])
+    );
+}
+
+#[test]
+fn redirections() {
+    assert_eq!(
+        lex("echo > foo.txt"),
+        Ok(vec![
+            word_token("echo"),
+            Token::Redirection(Redirection {
+                op: RedirOp::Output(1),
+                rhs: RedirRhs::File(word("foo.txt")),
+            })
+        ])
+    );
+
+    assert_eq!(
+        lex("echo 2>foo.txt"),
+        Ok(vec![
+            word_token("echo"),
+            Token::Redirection(Redirection {
+                op: RedirOp::Output(2),
+                rhs: RedirRhs::File(word("foo.txt")),
+            })
         ])
     );
 }
@@ -93,33 +122,35 @@ fn simple_command() {
 fn redirection_markers_at_eof() {
     assert_eq!(
         lex("echo >"),
-        Ok(vec![single_plain_word("echo"), single_plain_word(">"),])
+        Ok(vec![word_token("echo"), word_token(">"),])
     );
 
     assert_eq!(
         lex("echo > "),
-        Ok(vec![single_plain_word("echo"), single_plain_word(">"),])
+        Ok(vec![word_token("echo"), word_token(">"),])
     );
 
     assert_eq!(
         lex("echo <"),
-        Ok(vec![single_plain_word("echo"), single_plain_word("<"),])
+        Ok(vec![word_token("echo"), word_token("<"),])
     );
 
     assert_eq!(
         lex("echo < "),
-        Ok(vec![single_plain_word("echo"), single_plain_word("<"),])
+        Ok(vec![word_token("echo"), word_token("<"),])
     );
 
     assert_eq!(
         lex("echo >>"),
-        Ok(vec![single_plain_word("echo"), single_plain_word(">>"),])
+        Ok(vec![word_token("echo"), word_token(">>"),])
     );
 
     assert_eq!(
         lex("echo >> "),
-        Ok(vec![single_plain_word("echo"), single_plain_word(">>"),])
+        Ok(vec![word_token("echo"), word_token(">>"),])
     );
+
+    assert_eq!(lex("echo <<"), Err(LexerError::ExpectedHereDocMarker));
 }
 
 #[test]
@@ -128,11 +159,8 @@ fn command_substituion_1() {
     assert_eq!(
         lex(input),
         Ok(vec![
-            single_plain_word("echo"),
-            word(vec![Span::Command(vec![
-                single_plain_word("ls"),
-                single_plain_word("/")
-            ])])
+            word_token("echo"),
+            word_token_from_spans(vec![Span::Command(vec![word_token("ls"), word_token("/")])])
         ])
     );
 
@@ -140,14 +168,14 @@ fn command_substituion_1() {
     assert_eq!(
         lex(input),
         Ok(vec![
-            single_plain_word("echo"),
-            word(vec![Span::Command(vec![
-                single_plain_word("grep"),
-                word(vec![Span::Command(vec![
-                    single_plain_word("ls"),
-                    single_plain_word("/foo*"),
+            word_token("echo"),
+            word_token_from_spans(vec![Span::Command(vec![
+                word_token("grep"),
+                word_token_from_spans(vec![Span::Command(vec![
+                    word_token("ls"),
+                    word_token_from_spans(vec![plain_span("/foo"), Span::AnyString,]),
                 ])]),
-                single_plain_word("bar"),
+                word_token("bar"),
             ])])
         ])
     );
@@ -159,11 +187,8 @@ fn command_substituion_2() {
     assert_eq!(
         lex(input),
         Ok(vec![
-            single_plain_word("echo"),
-            word(vec![Span::Command(vec![
-                single_plain_word("ls"),
-                single_plain_word("/")
-            ])])
+            word_token("echo"),
+            word_token_from_spans(vec![Span::Command(vec![word_token("ls"), word_token("/")])])
         ])
     );
 }
@@ -174,14 +199,14 @@ fn process_substituion() {
     assert_eq!(
         lex(input),
         Ok(vec![
-            single_plain_word("echo"),
-            word(vec![Span::ProcessReadable(vec![
-                single_plain_word("ls"),
-                single_plain_word("/")
+            word_token("echo"),
+            word_token_from_spans(vec![Span::ProcessReadable(vec![
+                word_token("ls"),
+                word_token("/")
             ]),]),
-            word(vec![Span::ProcessWritable(vec![
-                single_plain_word("grep"),
-                single_plain_word("usr")
+            word_token_from_spans(vec![Span::ProcessWritable(vec![
+                word_token("grep"),
+                word_token("usr")
             ]),])
         ])
     );
@@ -193,10 +218,14 @@ fn variable_expansion() {
     assert_eq!(
         lex(input),
         Ok(vec![
-            single_plain_word("echo"),
-            word(vec![
+            word_token("echo"),
+            word_token_from_spans(vec![
                 plain_span("a"),
-                Span::Variable { name: string("b") },
+                Span::Variable {
+                    name: string("b"),
+                    expansion: VarExpansion::GetOrEmpty,
+                    quoted: false
+                },
                 plain_span("c"),
             ])
         ])
@@ -208,32 +237,33 @@ fn double_quotes() {
     let input = "echo \"a b c\"";
     assert_eq!(
         lex(input),
-        Ok(vec![single_plain_word("echo"), single_plain_word("a b c"),])
+        Ok(vec![word_token("echo"), word_token("a b c"),])
     );
 
     let input = "echo \"a\\\"b\"";
     assert_eq!(
         lex(input),
-        Ok(vec![single_plain_word("echo"), single_plain_word("a\"b"),])
+        Ok(vec![word_token("echo"), word_token("a\"b"),])
     );
 
     let input = "echo X\"a b c\"X";
     assert_eq!(
         lex(input),
-        Ok(vec![
-            single_plain_word("echo"),
-            single_plain_word("Xa b cX"),
-        ])
+        Ok(vec![word_token("echo"), word_token("Xa b cX"),])
     );
 
     let input = "echo \"a $b c\"";
     assert_eq!(
         lex(input),
         Ok(vec![
-            single_plain_word("echo"),
-            word(vec![
+            word_token("echo"),
+            word_token_from_spans(vec![
                 plain_span("a "),
-                Span::Variable { name: string("b") },
+                Span::Variable {
+                    name: string("b"),
+                    expansion: VarExpansion::GetOrEmpty,
+                    quoted: true
+                },
                 plain_span(" c"),
             ])
         ])
@@ -243,10 +273,10 @@ fn double_quotes() {
     assert_eq!(
         lex(input),
         Ok(vec![
-            single_plain_word("echo"),
-            single_plain_word("a b"),
-            single_plain_word("c"),
-            single_plain_word("d e"),
+            word_token("echo"),
+            word_token("a b"),
+            word_token("c"),
+            word_token("d e"),
         ])
     );
 }
@@ -256,38 +286,48 @@ fn single_quotes() {
     let input = "echo 'a b c'";
     assert_eq!(
         lex(input),
-        Ok(vec![single_plain_word("echo"), single_plain_word("a b c"),])
+        Ok(vec![word_token("echo"), word_token("a b c"),])
     );
 
     let input = "echo 'a\\'b'";
-    assert_eq!(
-        lex(input),
-        Ok(vec![single_plain_word("echo"), single_plain_word("a'b"),])
-    );
+    assert_eq!(lex(input), Ok(vec![word_token("echo"), word_token("a'b"),]));
 
     let input = "echo X'a b c'X";
     assert_eq!(
         lex(input),
-        Ok(vec![
-            single_plain_word("echo"),
-            single_plain_word("Xa b cX"),
-        ])
+        Ok(vec![word_token("echo"), word_token("Xa b cX"),])
     );
 
     let input = "echo 'a $b c'";
     assert_eq!(
         lex(input),
-        Ok(vec![single_plain_word("echo"), single_plain_word("a $b c"),])
+        Ok(vec![word_token("echo"), word_token("a $b c"),])
     );
 
     let input = "echo 'a b' c 'd e'";
     assert_eq!(
         lex(input),
         Ok(vec![
-            single_plain_word("echo"),
-            single_plain_word("a b"),
-            single_plain_word("c"),
-            single_plain_word("d e"),
+            word_token("echo"),
+            word_token("a b"),
+            word_token("c"),
+            word_token("d e"),
+        ])
+    );
+}
+
+#[test]
+fn wildcard() {
+    let input = "echo *?[a-z\\]0-9]";
+    assert_eq!(
+        lex(input),
+        Ok(vec![
+            word_token("echo"),
+            word_token_from_spans(vec![
+                Span::AnyString,
+                Span::AnyChar,
+                Span::AnyCharIn(string("a-z]0-9")),
+            ]),
         ])
     );
 }
@@ -377,13 +417,12 @@ fn normal_heredocs() {
         )),
         Ok((
             (vec![
-                single_plain_word("cat"),
+                word_token("cat"),
                 Token::Redirection(Redirection {
-                    kind: RedirectionKind::Input,
-                    target: RedirectionTarget::HereDoc(0),
-                    fd: 0
+                    op: RedirOp::Input(0),
+                    rhs: RedirRhs::HereDoc(0),
                 }),
-                single_plain_word("xyz"),
+                word_token("xyz"),
                 Token::Newline,
             ]),
             (vec![HereDoc::new(vec![
@@ -405,16 +444,14 @@ fn normal_heredocs() {
         )),
         Ok((
             (vec![
-                single_plain_word("cat"),
+                word_token("cat"),
                 Token::Redirection(Redirection {
-                    kind: RedirectionKind::Input,
-                    target: RedirectionTarget::HereDoc(0),
-                    fd: 0
+                    op: RedirOp::Input(0),
+                    rhs: RedirRhs::HereDoc(0),
                 }),
                 Token::Redirection(Redirection {
-                    kind: RedirectionKind::Input,
-                    target: RedirectionTarget::HereDoc(1),
-                    fd: 0
+                    op: RedirOp::Input(0),
+                    rhs: RedirRhs::HereDoc(1),
                 }),
                 Token::Newline,
             ]),
@@ -423,6 +460,8 @@ fn normal_heredocs() {
                     vec![plain_span("foo")],
                     vec![Span::Variable {
                         name: string("bar"),
+                        expansion: VarExpansion::GetOrEmpty,
+                        quoted: false
                     }]
                 ]),
                 HereDoc::new(vec![vec![plain_span("baz")]]),
@@ -443,13 +482,12 @@ fn quoted_heredocs() {
         )),
         Ok((
             (vec![
-                single_plain_word("cat"),
+                word_token("cat"),
                 Token::Redirection(Redirection {
-                    kind: RedirectionKind::Input,
-                    target: RedirectionTarget::HereDoc(0),
-                    fd: 0
+                    op: RedirOp::Input(0),
+                    rhs: RedirRhs::HereDoc(0),
                 }),
-                single_plain_word("xyz"),
+                word_token("xyz"),
                 Token::Newline,
             ]),
             (vec![HereDoc::new(vec![
@@ -462,7 +500,7 @@ fn quoted_heredocs() {
 
     assert_eq!(
         lex_with_heredocs(concat!(
-            "cat <<'EOF1' << \"EOF2\"\n",
+            "cat <<'EOF1' 3<< \"EOF2\"\n",
             "foo\n",
             "$bar\n",
             "EOF1\n",
@@ -471,16 +509,14 @@ fn quoted_heredocs() {
         )),
         Ok((
             (vec![
-                single_plain_word("cat"),
+                word_token("cat"),
                 Token::Redirection(Redirection {
-                    kind: RedirectionKind::Input,
-                    target: RedirectionTarget::HereDoc(0),
-                    fd: 0
+                    op: RedirOp::Input(0),
+                    rhs: RedirRhs::HereDoc(0),
                 }),
                 Token::Redirection(Redirection {
-                    kind: RedirectionKind::Input,
-                    target: RedirectionTarget::HereDoc(1),
-                    fd: 0
+                    op: RedirOp::Input(3),
+                    rhs: RedirRhs::HereDoc(1),
                 }),
                 Token::Newline,
             ]),
@@ -504,7 +540,7 @@ fn assignment() {
 
     assert_eq!(
         do_lex("FOO=123", |l| l.set_argv0_mode(false)),
-        Ok(vec![single_plain_word("FOO=123")])
+        Ok(vec![word_token("FOO=123")])
     );
 
     assert_eq!(
@@ -522,13 +558,13 @@ fn tilde() {
         ))])
     );
 
-    assert_eq!(lex("\\~"), Ok(vec![single_plain_word("~")]));
+    assert_eq!(lex("\\~"), Ok(vec![word_token("~")]));
 
     assert_eq!(
         lex("~ a ~"),
         Ok(vec![
             Token::Word(Word::new(vec![Span::Tilde(Tilde::Home),])),
-            single_plain_word("a"),
+            word_token("a"),
             Token::Word(Word::new(vec![Span::Tilde(Tilde::Home),]))
         ])
     );
@@ -536,7 +572,7 @@ fn tilde() {
     assert_eq!(
         lex("echo ~/foo/bar/baz"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![
                 Span::Tilde(Tilde::Home),
                 plain_span("/foo/bar/baz")
@@ -551,7 +587,7 @@ fn tilde() {
         ),]))])
     );
 
-    assert_eq!(lex("\\~seiya"), Ok(vec![single_plain_word("~seiya")]));
+    assert_eq!(lex("\\~seiya"), Ok(vec![word_token("~seiya")]));
 
     assert_eq!(
         lex("~seiya a ~seiya"),
@@ -559,7 +595,7 @@ fn tilde() {
             Token::Word(Word::new(
                 vec![Span::Tilde(Tilde::HomeOf(string("seiya"))),]
             )),
-            single_plain_word("a"),
+            word_token("a"),
             Token::Word(Word::new(
                 vec![Span::Tilde(Tilde::HomeOf(string("seiya"))),]
             ))
@@ -569,7 +605,7 @@ fn tilde() {
     assert_eq!(
         lex("echo ~seiya/foo/bar/baz"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![
                 Span::Tilde(Tilde::HomeOf(string("seiya"))),
                 plain_span("/foo/bar/baz")
@@ -591,7 +627,7 @@ fn brace_expansion() {
     assert_eq!(
         lex("echo {a,b}"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
                 BraceExpansion::Word(Word::new(vec![plain_span("a")])),
                 BraceExpansion::Word(Word::new(vec![plain_span("b")])),
@@ -602,7 +638,7 @@ fn brace_expansion() {
     assert_eq!(
         lex("echo x{a,b}y"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![
                 plain_span("x"),
                 Span::Brace(BraceExpansion::List(vec![
@@ -620,7 +656,7 @@ fn sequence_brace_expansion() {
     assert_eq!(
         lex("echo {0..10}"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
                 BraceExpansion::Sequence(Sequence::Integer {
                     start: 0,
@@ -634,7 +670,7 @@ fn sequence_brace_expansion() {
     assert_eq!(
         lex("echo {001..100}"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
                 BraceExpansion::Sequence(Sequence::Integer {
                     start: 1,
@@ -651,7 +687,7 @@ fn not_sequence_brace_expansion() {
     assert_eq!(
         lex("echo {123}"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
                 BraceExpansion::Word(Word::new(vec![plain_span("123")]))
             ])),]))
@@ -661,7 +697,7 @@ fn not_sequence_brace_expansion() {
     assert_eq!(
         lex("echo {123..}"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
                 BraceExpansion::Word(Word::new(vec![plain_span("123..")]))
             ])),]))
@@ -671,7 +707,7 @@ fn not_sequence_brace_expansion() {
     assert_eq!(
         lex("echo {0..x}"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
                 BraceExpansion::Word(Word::new(vec![plain_span("0..x")]))
             ])),]))
@@ -683,7 +719,7 @@ fn not_sequence_brace_expansion() {
 fn not_brace_expansion() {
     assert_eq!(
         lex("echo a,b"),
-        Ok(vec![single_plain_word("echo"), single_plain_word("a,b")])
+        Ok(vec![word_token("echo"), word_token("a,b")])
     );
 }
 
@@ -692,7 +728,7 @@ fn arithmetic_expansion() {
     assert_eq!(
         lex("echo $((1 + 2 - 3 * 4 / 5 % 6))"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![Span::Arith(Word::new(vec![
                 plain_span("1"),
                 plain_span("+"),
@@ -712,14 +748,14 @@ fn arithmetic_expansion() {
     assert_eq!(
         lex("echo $(((1 + (n + ( $(echo) + 4 ))  )))"),
         Ok(vec![
-            single_plain_word("echo"),
+            word_token("echo"),
             Token::Word(Word::new(vec![Span::Arith(Word::new(vec![
                 plain_span("(1"),
                 plain_span("+"),
                 plain_span("(n"),
                 plain_span("+"),
                 plain_span("("),
-                Span::Command(vec![single_plain_word("echo")]),
+                Span::Command(vec![word_token("echo")]),
                 plain_span("+"),
                 plain_span("4"),
                 plain_span("))"),
@@ -733,7 +769,7 @@ fn arithmetic_expansion() {
 fn unclosed_braces_and_parens() {
     assert_eq!(lex("echo $(ls "), Err(LexerError::NoMatchingRightParen));
     assert_eq!(lex("echo {"), Err(LexerError::UnclosedBraceExp));
-    assert_eq!(lex("echo ${"), Err(LexerError::NoMatchingRightBrace));
+    assert_eq!(lex("echo ${"), Err(LexerError::UnclosedParamExp));
     assert_eq!(lex("echo $(("), Err(LexerError::NoMatchingRightParen));
     assert_eq!(lex("echo $((("), Err(LexerError::NoMatchingRightParen));
 }
