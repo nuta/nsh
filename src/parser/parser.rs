@@ -1,8 +1,7 @@
 use thiserror::Error;
 
+use crate::ast::*;
 use crate::lexer::{Lexer, LexerError};
-
-pub struct Ast {}
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ParseError {
@@ -25,7 +24,7 @@ impl Parser {
         Self { lexer }
     }
 
-    pub fn parse() -> Result<Ast, ParseError> {
+    pub fn parse(self, text: &str) -> Result<Ast, ParseError> {
         todo!()
     }
 }
