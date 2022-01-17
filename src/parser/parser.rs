@@ -1,6 +1,6 @@
 use crate::lexer::Lexer;
 
-pub struct Parser<I> {
+pub struct Parser<I: Iterator<Item = char>> {
     pub lexer: Lexer<I>,
 }
 
