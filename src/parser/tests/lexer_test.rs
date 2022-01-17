@@ -1,3 +1,4 @@
+use nsh_parser::ast::*;
 use nsh_parser::highlight::*;
 use nsh_parser::lexer::*;
 
