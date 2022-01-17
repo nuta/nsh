@@ -431,7 +431,7 @@ impl SpansBuilder {
         }
     }
 
-    pub fn to_vec(self) -> Vec<Span> {
+    pub fn into_vec(self) -> Vec<Span> {
         let mut spans = self.spans;
         if !self.plain_text.is_empty() {
             spans.push(Span::Plain(self.plain_text));
@@ -549,7 +549,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     Token::Word(plain_word(format!("{}>&", digits)))
                 } else {
                     Token::Redirection(Redirection {
-                        op: RedirOp::Output(n.unwrap_or(STDOUT_FD).into()),
+                        op: RedirOp::Output(n.unwrap_or(STDOUT_FD)),
                         // SAFETY: dst is guaranteed to be a valid integer.
                         rhs: RedirRhs::Fd(dst.parse().unwrap()),
                     })
@@ -564,7 +564,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     Token::Word(plain_word(format!("{}<&", digits)))
                 } else {
                     Token::Redirection(Redirection {
-                        op: RedirOp::Input(n.unwrap_or(STDIN_FD).into()),
+                        op: RedirOp::Input(n.unwrap_or(STDIN_FD)),
                         // SAFETY: dst is guaranteed to be a valid integer.
                         rhs: RedirRhs::Fd(src.parse().unwrap()),
                     })
@@ -602,7 +602,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     Token::Word(plain_word(format!("{}>>", digits)))
                 } else {
                     Token::Redirection(Redirection {
-                        op: RedirOp::Append(n.unwrap_or(STDOUT_FD).into()),
+                        op: RedirOp::Append(n.unwrap_or(STDOUT_FD)),
                         rhs: RedirRhs::File(word),
                     })
                 }
@@ -613,7 +613,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
 
                 let heredoc = self.visit_heredoc_marker()?;
                 Token::Redirection(Redirection {
-                    op: RedirOp::Input(n.unwrap_or(STDIN_FD).into()),
+                    op: RedirOp::Input(n.unwrap_or(STDIN_FD)),
                     rhs: RedirRhs::HereDoc(heredoc),
                 })
             }
@@ -624,7 +624,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     Token::Word(plain_word(format!("{}<", digits)))
                 } else {
                     Token::Redirection(Redirection {
-                        op: RedirOp::Input(n.unwrap_or(STDIN_FD).into()),
+                        op: RedirOp::Input(n.unwrap_or(STDIN_FD)),
                         rhs: RedirRhs::File(word),
                     })
                 }
@@ -636,7 +636,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
                     Token::Word(plain_word(format!("{}>", digits)))
                 } else {
                     Token::Redirection(Redirection {
-                        op: RedirOp::Output(n.unwrap_or(STDOUT_FD).into()),
+                        op: RedirOp::Output(n.unwrap_or(STDOUT_FD)),
                         rhs: RedirRhs::File(word),
                     })
                 }
@@ -995,7 +995,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
             }
         }
 
-        Ok(Word(spans.to_vec()))
+        Ok(Word(spans.into_vec()))
     }
 
     /// Visits a variable expansion (after `$`).
