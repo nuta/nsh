@@ -39,29 +39,35 @@ impl Parser {
 
     fn parse_terms(&mut self) -> Result<Vec<Term>, ParseError> {
         let mut terms = vec![self.parse_term()?];
-        loop {
-            let term = match self.parse_term() {
-                Ok(term) => term,
-                Err(ParseError::Eof) => break,
-                Err(err) => return Err(err),
-            };
-
-            terms.push(term);
+        while let Some(token) = self.peek_token_maybe_argv0()? {
+            match token {
+                Token::Semi | Token::And => {
+                    self.consume_token()?;
+                    terms.push(self.parse_term()?);
+                }
+                _ => {
+                    break;
+                }
+            }
         }
 
         Ok(terms)
     }
 
     fn parse_term(&mut self) -> Result<Term, ParseError> {
-        let mut pipelines = vec![self.parse_pipeline()?];
+        let mut pipelines = vec![self.parse_pipeline(RunIf::Always)?];
         while let Some(token) = self.peek_token_maybe_argv0()? {
             match token {
-                Token::Semi | Token::And => {
+                Token::DoubleAnd => {
                     self.consume_token()?;
-                    break;
+                    pipelines.push(self.parse_pipeline(RunIf::Success)?);
+                }
+                Token::DoubleOr => {
+                    self.consume_token()?;
+                    pipelines.push(self.parse_pipeline(RunIf::Failure)?);
                 }
                 _ => {
-                    pipelines.push(self.parse_pipeline()?);
+                    break;
                 }
             }
         }
@@ -73,23 +79,7 @@ impl Parser {
         })
     }
 
-    fn parse_pipeline(&mut self) -> Result<Pipeline, ParseError> {
-        let run_if = match self.peek_token_maybe_argv0()? {
-            None | Some(Token::Semi) => {
-                self.consume_token_maybe_argv0()?;
-                RunIf::Always
-            }
-            Some(Token::DoubleAnd) => {
-                self.consume_token_maybe_argv0()?;
-                RunIf::Success
-            }
-            Some(Token::DoubleOr) => {
-                self.consume_token_maybe_argv0()?;
-                RunIf::Failure
-            }
-            _ => RunIf::Always,
-        };
-
+    fn parse_pipeline(&mut self, run_if: RunIf) -> Result<Pipeline, ParseError> {
         let mut commands = vec![self.parse_command()?];
         while let Some(token) = self.peek_token_maybe_argv0()? {
             match token {
@@ -121,6 +111,7 @@ impl Parser {
 
         // Read until argv0.
         while let Some(token) = self.consume_token_maybe_argv0()? {
+            dbg!(&token);
             match token {
                 Token::Assignment(Assignment { name, initializer }) => {
                     assignments.push(Assignment { name, initializer });
