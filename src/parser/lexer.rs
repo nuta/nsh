@@ -363,16 +363,16 @@ struct HighlighterContext {
     char_offset_start: usize,
 }
 
-struct InputReader<I: Iterator<Item = char>> {
-    input: I,
+struct InputReader {
+    input: Box<dyn Iterator<Item = char>>,
     char_offset: usize,
     push_back_stack: Vec<char>,
 }
 
-impl<I: Iterator<Item = char>> InputReader<I> {
-    pub fn new(input: I) -> InputReader<I> {
+impl InputReader {
+    pub fn new(input: impl Iterator<Item = char> + 'static) -> InputReader {
         InputReader {
-            input,
+            input: Box::new(input),
             char_offset: 0,
             push_back_stack: Vec::new(),
         }
@@ -463,8 +463,8 @@ impl SpansBuilder {
 /// This is NOT await-ready: the iterator should block the thread until the next
 /// character gets available. This is because the lexer in async seemed to be
 /// unnecessarily complicated.
-pub struct Lexer<I: Iterator<Item = char>> {
-    input: InputReader<I>,
+pub struct Lexer {
+    input: InputReader,
     halted: bool,
     in_backtick: bool,
     argv0_mode: bool,
@@ -477,8 +477,11 @@ pub struct Lexer<I: Iterator<Item = char>> {
     unclosed_heredoc_markers: VecDeque<HereDocMarker>,
 }
 
-impl<I: Iterator<Item = char>> Lexer<I> {
-    pub fn new(input: I) -> Lexer<I> {
+impl Lexer {
+    pub fn new<I>(input: I) -> Lexer
+    where
+        I: Iterator<Item = char> + 'static,
+    {
         Lexer {
             halted: false,
             input: InputReader::new(input),
@@ -1594,7 +1597,7 @@ impl<I: Iterator<Item = char>> Lexer<I> {
     }
 }
 
-impl<I: Iterator<Item = char>> Iterator for Lexer<I> {
+impl Iterator for Lexer {
     type Item = Result<Token, LexerError>;
 
     fn next(&mut self) -> Option<Result<Token, LexerError>> {

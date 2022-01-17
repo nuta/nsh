@@ -1,5 +1,3 @@
-use std::str::Chars;
-
 use nsh_parser::highlight::*;
 use nsh_parser::lexer::*;
 
@@ -23,9 +21,9 @@ fn word_token(s: &str) -> Token {
     word_token_from_spans(vec![plain_span(s)])
 }
 
-fn do_lex<F>(input: &str, before_tokenize: F) -> Result<Vec<Token>, LexerError>
+fn do_lex<F>(input: &'static str, before_tokenize: F) -> Result<Vec<Token>, LexerError>
 where
-    F: FnOnce(&mut Lexer<Chars>),
+    F: FnOnce(&mut Lexer),
 {
     let mut lexer = Lexer::new(input.chars());
     before_tokenize(&mut lexer);
@@ -40,11 +38,11 @@ where
     Ok(tokens)
 }
 
-fn lex(input: &str) -> Result<Vec<Token>, LexerError> {
+fn lex(input: &'static str) -> Result<Vec<Token>, LexerError> {
     do_lex(input, |_| {})
 }
 
-fn lex_with_heredocs(input: &str) -> Result<(Vec<Token>, Vec<HereDoc>), LexerError> {
+fn lex_with_heredocs(input: &'static str) -> Result<(Vec<Token>, Vec<HereDoc>), LexerError> {
     let mut lexer = Lexer::new(input.chars());
     let mut tokens = Vec::new();
     loop {
@@ -59,7 +57,7 @@ fn lex_with_heredocs(input: &str) -> Result<(Vec<Token>, Vec<HereDoc>), LexerErr
     Ok((tokens, heredocs))
 }
 
-fn highlight(input: &str) -> Vec<HighlightSpan> {
+fn highlight(input: &'static str) -> Vec<HighlightSpan> {
     let mut lexer = Lexer::new(input.chars());
     while lexer.next().is_some() {}
 

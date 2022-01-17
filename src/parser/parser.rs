@@ -1,13 +1,31 @@
-use crate::lexer::Lexer;
+use thiserror::Error;
 
-pub struct Parser<I: Iterator<Item = char>> {
-    pub lexer: Lexer<I>,
+use crate::lexer::{Lexer, LexerError};
+
+pub struct Ast {}
+
+#[derive(Error, Debug, PartialEq)]
+pub enum ParseError {
+    #[error("{0}")]
+    LexerError(LexerError),
 }
 
-impl<I: Iterator<Item = char>> Parser<I> {
-    pub fn new(input: I) -> Parser<I> {
-        Self {
-            lexer: Lexer::new(input),
-        }
+impl Into<ParseError> for LexerError {
+    fn into(self) -> ParseError {
+        ParseError::LexerError(self)
+    }
+}
+
+pub struct Parser {
+    pub lexer: Lexer,
+}
+
+impl Parser {
+    pub fn new(lexer: Lexer) -> Parser {
+        Self { lexer }
+    }
+
+    pub fn parse() -> Result<Ast, ParseError> {
+        todo!()
     }
 }
