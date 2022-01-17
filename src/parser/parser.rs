@@ -13,9 +13,9 @@ pub enum ParseError {
     Eof,
 }
 
-impl Into<ParseError> for LexerError {
-    fn into(self) -> ParseError {
-        ParseError::LexerError(self)
+impl From<LexerError> for ParseError {
+    fn from(err: LexerError) -> ParseError {
+        ParseError::LexerError(err)
     }
 }
 
@@ -38,9 +38,7 @@ impl Parser {
     }
 
     fn parse_terms(&mut self) -> Result<Vec<Term>, ParseError> {
-        let mut terms = Vec::new();
-
-        terms.push(self.parse_term()?);
+        let mut terms = vec![self.parse_term()?];
         loop {
             let term = match self.parse_term() {
                 Ok(term) => term,
@@ -55,9 +53,7 @@ impl Parser {
     }
 
     fn parse_term(&mut self) -> Result<Term, ParseError> {
-        let mut pipelines = Vec::new();
-
-        pipelines.push(self.parse_pipeline()?);
+        let mut pipelines = vec![self.parse_pipeline()?];
         while let Some(token) = self.peek_token_maybe_argv0()? {
             match token {
                 Token::Semi | Token::And => {
@@ -98,8 +94,7 @@ impl Parser {
             _ => RunIf::Always,
         };
 
-        let mut commands = Vec::new();
-        commands.push(self.parse_command()?);
+        let mut commands = vec![self.parse_command()?];
         while let Some(token) = self.peek_token_maybe_argv0()? {
             match token {
                 Token::Or => {
@@ -175,7 +170,7 @@ impl Parser {
 
     fn peek_token_maybe_argv0(&mut self) -> Result<&Option<Token>, ParseError> {
         self.lexer.set_argv0_mode(true);
-        
+
         // We don't need to restore argv0 mode: we'll do so when we consume it.
         self.peek_token()
     }
