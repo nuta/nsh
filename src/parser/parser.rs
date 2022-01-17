@@ -66,11 +66,7 @@ impl Parser {
             }
         }
 
-        let background = match self.peek_token_maybe_argv0()? {
-            Some(Token::And) => true,
-            _ => false,
-        };
-
+        let background = matches!(self.peek_token_maybe_argv0()?, Some(Token::And));
         Ok(Term {
             pipelines,
             background,
