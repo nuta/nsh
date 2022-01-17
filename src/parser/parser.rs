@@ -9,8 +9,6 @@ pub enum ParseError {
     LexerError(LexerError),
     #[error("Expected {0}.")]
     Expected(&'static str),
-    #[error("EOF (BUG: this is internally used).")]
-    Eof,
 }
 
 impl From<LexerError> for ParseError {
@@ -72,6 +70,7 @@ impl Parser {
             }
         }
 
+        dbg!(self.peek_token_maybe_argv0()?);
         let background = matches!(self.peek_token_maybe_argv0()?, Some(Token::And));
         Ok(Term {
             pipelines,
@@ -80,12 +79,31 @@ impl Parser {
     }
 
     fn parse_pipeline(&mut self, run_if: RunIf) -> Result<Pipeline, ParseError> {
-        let mut commands = vec![self.parse_command()?];
+        let mut commands = Vec::new();
+        match self.parse_command()? {
+            Some(command) => {
+                commands.push(command);
+            }
+            None => {
+                return Ok(Pipeline {
+                    run_if,
+                    commands: vec![],
+                });
+            }
+        }
+
         while let Some(token) = self.peek_token_maybe_argv0()? {
             match token {
                 Token::Or => {
                     self.consume_token()?;
-                    commands.push(self.parse_command()?);
+                    match self.parse_command()? {
+                        Some(command) => {
+                            commands.push(command);
+                        }
+                        None => {
+                            return Ok(Pipeline { run_if, commands });
+                        }
+                    }
                 }
                 _ => {
                     break;
@@ -96,7 +114,7 @@ impl Parser {
         Ok(Pipeline { run_if, commands })
     }
 
-    fn parse_command(&mut self) -> Result<Command, ParseError> {
+    fn parse_command(&mut self) -> Result<Option<Command>, ParseError> {
         let command = match self.peek_token_maybe_argv0()? {
             _ => self.parse_simple_command()?,
         };
@@ -104,14 +122,13 @@ impl Parser {
         Ok(command)
     }
 
-    fn parse_simple_command(&mut self) -> Result<Command, ParseError> {
+    fn parse_simple_command(&mut self) -> Result<Option<Command>, ParseError> {
         let mut assignments = Vec::new();
         let mut argv = Vec::new();
         let mut redirections = Vec::new();
 
         // Read until argv0.
         while let Some(token) = self.consume_token_maybe_argv0()? {
-            dbg!(&token);
             match token {
                 Token::Assignment(Assignment { name, initializer }) => {
                     assignments.push(Assignment { name, initializer });
@@ -129,30 +146,37 @@ impl Parser {
             }
         }
 
-        while let Some(token) = self.consume_token()? {
+        while let Some(token) = self.peek_token()?.clone() {
             match token {
                 Token::Assignment(_) | Token::Argv0(_) => {
                     unreachable!();
                 }
                 Token::Word(word) => {
                     debug_assert!(!argv.is_empty());
+                    self.consume_token()?;
                     argv.push(word);
                     break;
                 }
-                Token::Redirection(r) => redirections.push(r),
-                _ => break,
+                Token::Redirection(r) => {
+                    self.consume_token()?;
+                    redirections.push(r);
+                }
+                _ => {
+                    dbg!(token, argv.len());
+                    break;
+                }
             }
         }
 
-        if argv.is_empty() {
-            return Err(ParseError::Eof);
+        if assignments.is_empty() && argv.is_empty() {
+            return Ok(None);
         }
 
-        Ok(Command::SimpleCommand {
+        Ok(Some(Command::SimpleCommand {
             assignments,
             argv,
             redirections,
-        })
+        }))
     }
 
     fn peek_token_maybe_argv0(&mut self) -> Result<&Option<Token>, ParseError> {
