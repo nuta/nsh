@@ -3,15 +3,6 @@ use thiserror::Error;
 use crate::ast::*;
 use crate::lexer::{Lexer, LexerError};
 
-macro_rules! break_if_empty {
-    ($expr:expr) => {
-        match $expr {
-            Ok(expr) => expr,
-            Err(EmptyOrError::Empty) => break,
-            Err(EmptyOrError::Error(err)) => return Err(EmptyOrError::Error(err)),
-        }
-    };
-}
 #[derive(Error, Debug, PartialEq)]
 pub enum ParseError {
     #[error("{0}")]
@@ -66,7 +57,11 @@ impl Parser {
             match token {
                 Token::Semi | Token::And => {
                     self.consume_token()?;
-                    terms.push(break_if_empty!(self.parse_term()));
+                    terms.push(match self.parse_term() {
+                        Ok(term) => term,
+                        Err(EmptyOrError::Empty) => break,
+                        Err(err) => return Err(err),
+                    });
                 }
                 _ => {
                     break;
@@ -81,13 +76,18 @@ impl Parser {
         let mut pipelines = vec![self.parse_pipeline(RunIf::Always)?];
         while let Some(token) = self.peek_token_maybe_argv0()? {
             match token {
-                Token::DoubleAnd => {
-                    self.consume_token()?;
-                    pipelines.push(break_if_empty!(self.parse_pipeline(RunIf::Success)));
-                }
-                Token::DoubleOr => {
-                    self.consume_token()?;
-                    pipelines.push(break_if_empty!(self.parse_pipeline(RunIf::Failure)));
+                Token::DoubleAnd | Token::DoubleOr => {
+                    let run_if = match self.consume_token().unwrap().unwrap() {
+                        Token::DoubleAnd => RunIf::Success,
+                        Token::DoubleOr => RunIf::Failure,
+                        _ => unreachable!(),
+                    };
+
+                    pipelines.push(match self.parse_pipeline(run_if) {
+                        Ok(pipeline) => pipeline,
+                        Err(EmptyOrError::Empty) => break,
+                        Err(err) => return Err(err),
+                    });
                 }
                 _ => {
                     break;
@@ -109,7 +109,11 @@ impl Parser {
             match token {
                 Token::Or => {
                     self.consume_token()?;
-                    commands.push(break_if_empty!(self.parse_command()));
+                    commands.push(match self.parse_command() {
+                        Ok(command) => command,
+                        Err(EmptyOrError::Empty) => break,
+                        Err(err) => return Err(err),
+                    });
                 }
                 _ => {
                     break;
