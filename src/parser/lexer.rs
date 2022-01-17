@@ -394,11 +394,20 @@ impl Lexer {
                 let first = self.input.consume().ok_or(LexerError::Eof)?;
                 let second = self.input.peek();
                 match (first, second) {
-                    ('|', Some('|')) => Token::DoubleOr,
+                    ('|', Some('|')) => {
+                        self.input.consume();
+                        Token::DoubleOr
+                    }
+                    ('&', Some('&')) => {
+                        self.input.consume();
+                        Token::DoubleAnd
+                    }
+                    (';', Some(';')) => {
+                        self.input.consume();
+                        Token::DoubleSemi
+                    }
                     ('|', _) => Token::Or,
-                    ('&', Some('&')) => Token::DoubleAnd,
                     ('&', _) => Token::And,
-                    (';', Some(';')) => Token::DoubleSemi,
                     (';', _) => Token::Semi,
                     ('(', _) if !self.in_arith() => Token::LeftParen,
                     (')', _) if !self.in_arith_paren() => Token::RightParen,

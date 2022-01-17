@@ -69,14 +69,26 @@ fn highlight(input: &'static str) -> Vec<HighlightSpan> {
 
 #[test]
 fn simple_command() {
+    let input = "123";
+    assert_eq!(lex(input), Ok(vec![word_token("123")]));
+
     let input = "echo hello";
     assert_eq!(
         lex(input),
         Ok(vec![word_token("echo"), word_token("hello")])
     );
 
-    let input = "123";
-    assert_eq!(lex(input), Ok(vec![word_token("123")]));
+    let input = "echo hello && echo foo";
+    assert_eq!(
+        lex(input),
+        Ok(vec![
+            word_token("echo"),
+            word_token("hello"),
+            Token::DoubleAnd,
+            word_token("echo"),
+            word_token("foo")
+        ])
+    );
 
     let input = "echo | cat|grep foo";
     assert_eq!(
