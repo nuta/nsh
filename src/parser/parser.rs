@@ -112,7 +112,7 @@ impl Parser {
             }
         }
 
-        return Ok(Pipeline { run_if, commands });
+        Ok(Pipeline { run_if, commands })
     }
 
     fn parse_command(&mut self) -> Result<Command, ParseError> {
@@ -175,9 +175,9 @@ impl Parser {
 
     fn peek_token_maybe_argv0(&mut self) -> Result<&Option<Token>, ParseError> {
         self.lexer.set_argv0_mode(true);
-        let token = self.peek_token();
+        
         // We don't need to restore argv0 mode: we'll do so when we consume it.
-        token
+        self.peek_token()
     }
 
     fn consume_token_maybe_argv0(&mut self) -> Result<Option<Token>, ParseError> {
@@ -206,7 +206,7 @@ impl Parser {
 
         match self.lexer.next() {
             Some(Ok(token)) => Ok(Some(token)),
-            Some(Err(err)) => return Err(err.into()),
+            Some(Err(err)) => Err(err.into()),
             None => Ok(None),
         }
     }
