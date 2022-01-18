@@ -7,6 +7,8 @@ use crate::lexer::{Lexer, LexerError};
 pub enum ParseError {
     #[error("{0}")]
     LexerError(LexerError),
+    #[error("Unexpected token near {0:?}.")]
+    UnexpectedTokenNear(Token),
     #[error("Expected {0}.")]
     Expected(&'static str),
 }
@@ -43,7 +45,14 @@ impl Parser {
 
     pub fn parse(mut self) -> Result<Ast, ParseError> {
         let terms = match self.parse_terms() {
-            Ok(terms) => terms,
+            // Check if the lexer still have more tokens.
+            Ok(terms) => match self.peek_token() {
+                Ok(Some(token)) => {
+                    // Nobody consumed the token. Handle it as a syntax error.
+                    return Err(ParseError::UnexpectedTokenNear(token.clone()));
+                }
+                _ => terms,
+            },
             Err(EmptyOrError::Empty) => vec![],
             Err(EmptyOrError::Error(err)) => return Err(err),
         };
@@ -95,7 +104,6 @@ impl Parser {
             }
         }
 
-        dbg!(self.peek_token_maybe_argv0()?);
         let background = matches!(self.peek_token_maybe_argv0()?, Some(Token::And));
         Ok(Term {
             pipelines,
@@ -125,8 +133,16 @@ impl Parser {
     }
 
     fn parse_command(&mut self) -> Result<Command, EmptyOrError> {
-        let command = match self.peek_token_maybe_argv0()? {
-            _ => self.parse_simple_command()?,
+        let token = match self.peek_token_maybe_argv0()? {
+            Some(token) => token,
+            _ => return Err(EmptyOrError::Empty),
+        };
+
+        let command = match token {
+            Token::Argv0(_) | Token::Assignment(_) | Token::Redirection(_) => {
+                self.parse_simple_command()?
+            }
+            _ => return Err(EmptyOrError::Empty),
         };
 
         Ok(command)
@@ -171,10 +187,7 @@ impl Parser {
                     self.consume_token()?;
                     redirections.push(r);
                 }
-                _ => {
-                    dbg!(token, argv.len());
-                    break;
-                }
+                _ => break,
             }
         }
 

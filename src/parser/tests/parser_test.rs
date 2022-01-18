@@ -12,7 +12,7 @@ fn parse(text: &'static str) -> Result<Ast, ParseError> {
 #[test]
 fn simple_command() {
     assert_eq!(
-        parse("cat foo.log | grep trace && cowsay &"),
+        parse("cat foo.log | grep trace && a"),
         Ok(Ast { terms: vec![] })
     );
 }
