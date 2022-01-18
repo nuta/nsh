@@ -9,8 +9,6 @@ pub enum ParseError {
     LexerError(LexerError),
     #[error("Unexpected token near {0:?}.")]
     UnexpectedTokenNear(Token),
-    #[error("Expected {0}.")]
-    Expected(&'static str),
 }
 
 enum EmptyOrError {
@@ -65,11 +63,9 @@ impl Parser {
         self.skip_term_separators()?;
 
         let mut terms = vec![self.parse_term()?];
-        while let Some(token) = self.peek_token_maybe_argv0()? {
+        while let Some(token) = self.consume_token_maybe_argv0()? {
             match token {
                 Token::Semi | Token::And | Token::Newline => {
-                    self.consume_token()?;
-
                     // Skip empty lines.
                     self.skip_term_separators()?;
 
@@ -80,6 +76,7 @@ impl Parser {
                     });
                 }
                 _ => {
+                    self.unpeek_token(token);
                     break;
                 }
             }
@@ -106,10 +103,10 @@ impl Parser {
 
     fn parse_term(&mut self) -> Result<Term, EmptyOrError> {
         let mut pipelines = vec![self.parse_pipeline(RunIf::Always)?];
-        while let Some(token) = self.peek_token_maybe_argv0()? {
+        while let Some(token) = self.consume_token_maybe_argv0()? {
             match token {
                 Token::DoubleAnd | Token::DoubleOr => {
-                    let run_if = match self.consume_token().unwrap().unwrap() {
+                    let run_if = match token {
                         Token::DoubleAnd => RunIf::Success,
                         Token::DoubleOr => RunIf::Failure,
                         _ => unreachable!(),
@@ -122,6 +119,7 @@ impl Parser {
                     });
                 }
                 _ => {
+                    self.unpeek_token(token);
                     break;
                 }
             }
@@ -136,10 +134,9 @@ impl Parser {
 
     fn parse_pipeline(&mut self, run_if: RunIf) -> Result<Pipeline, EmptyOrError> {
         let mut commands = vec![self.parse_command()?];
-        while let Some(token) = self.peek_token_maybe_argv0()? {
+        while let Some(token) = self.consume_token_maybe_argv0()? {
             match token {
                 Token::Or => {
-                    self.consume_token()?;
                     commands.push(match self.parse_command() {
                         Ok(command) => command,
                         Err(EmptyOrError::Empty) => break,
@@ -147,6 +144,7 @@ impl Parser {
                     });
                 }
                 _ => {
+                    self.unpeek_token(token);
                     break;
                 }
             }
@@ -177,20 +175,18 @@ impl Parser {
         let mut redirections = Vec::new();
 
         // Read until argv0.
-        while let Some(token) = self.peek_token_maybe_argv0()?.clone() {
+        while let Some(token) = self.consume_token_maybe_argv0()? {
             match token {
                 Token::Assignment(Assignment {
                     name,
                     rhs: initializer,
                 }) => {
-                    self.consume_token()?;
                     assignments.push(Assignment {
                         name,
                         rhs: initializer,
                     });
                 }
                 Token::Argv0(word) => {
-                    self.consume_token()?;
                     debug_assert!(argv.is_empty());
                     argv.push(word);
                     break;
@@ -199,31 +195,29 @@ impl Parser {
                     unreachable!();
                 }
                 Token::Redirection(r) => {
-                    self.consume_token()?;
                     redirections.push(r);
                 }
                 _ => {
+                    self.unpeek_token(token);
                     break;
                 }
             }
         }
 
-        while let Some(token) = self.peek_token()?.clone() {
+        while let Some(token) = self.consume_token()? {
             match token {
                 Token::Assignment(_) | Token::Argv0(_) => {
                     unreachable!();
                 }
                 Token::Word(word) => {
                     debug_assert!(!argv.is_empty());
-                    self.consume_token()?;
                     argv.push(word);
                 }
                 Token::Redirection(r) => {
-                    self.consume_token()?;
                     redirections.push(r);
                 }
                 _ => {
-                    dbg!("out of command");
+                    self.unpeek_token(token);
                     break;
                 }
             }
@@ -247,8 +241,7 @@ impl Parser {
 
     fn consume_token_maybe_argv0(&mut self) -> Result<Option<Token>, ParseError> {
         self.lexer.set_argv0_mode(true);
-        let token = self.consume_token();
-        token
+        self.do_consume_token()
     }
 
     fn peek_token(&mut self) -> Result<&Option<Token>, ParseError> {
@@ -283,5 +276,10 @@ impl Parser {
             Some(Err(err)) => Err(err.into()),
             None => Ok(None),
         }
+    }
+
+    fn unpeek_token(&mut self, token: Token) {
+        assert!(self.peeked_token.is_none());
+        self.peeked_token = Some(Some(token));
     }
 }
