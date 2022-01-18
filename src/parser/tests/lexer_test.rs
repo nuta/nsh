@@ -1,3 +1,5 @@
+use pretty_assertions::assert_eq;
+
 use nsh_parser::ast::*;
 use nsh_parser::highlight::*;
 use nsh_parser::lexer::*;
@@ -131,34 +133,28 @@ fn redirections() {
 
 #[test]
 fn redirection_markers_at_eof() {
-    assert_eq!(
-        lex("echo >"),
-        Ok(vec![word_token("echo"), word_token(">"),])
-    );
+    assert_eq!(lex("echo >"), Ok(vec![word_token("echo"), word_token(">")]));
 
     assert_eq!(
         lex("echo > "),
-        Ok(vec![word_token("echo"), word_token(">"),])
+        Ok(vec![word_token("echo"), word_token(">")])
     );
 
-    assert_eq!(
-        lex("echo <"),
-        Ok(vec![word_token("echo"), word_token("<"),])
-    );
+    assert_eq!(lex("echo <"), Ok(vec![word_token("echo"), word_token("<")]));
 
     assert_eq!(
         lex("echo < "),
-        Ok(vec![word_token("echo"), word_token("<"),])
+        Ok(vec![word_token("echo"), word_token("<")])
     );
 
     assert_eq!(
         lex("echo >>"),
-        Ok(vec![word_token("echo"), word_token(">>"),])
+        Ok(vec![word_token("echo"), word_token(">>")])
     );
 
     assert_eq!(
         lex("echo >> "),
-        Ok(vec![word_token("echo"), word_token(">>"),])
+        Ok(vec![word_token("echo"), word_token(">>")])
     );
 
     assert_eq!(lex("echo <<"), Err(LexerError::ExpectedHereDocMarker));
@@ -214,11 +210,11 @@ fn process_substituion() {
             word_token_from_spans(vec![Span::ProcessReadable(vec![
                 word_token("ls"),
                 word_token("/")
-            ]),]),
+            ])]),
             word_token_from_spans(vec![Span::ProcessWritable(vec![
                 word_token("grep"),
                 word_token("usr")
-            ]),])
+            ])])
         ])
     );
 }
@@ -248,19 +244,16 @@ fn double_quotes() {
     let input = "echo \"a b c\"";
     assert_eq!(
         lex(input),
-        Ok(vec![word_token("echo"), word_token("a b c"),])
+        Ok(vec![word_token("echo"), word_token("a b c")])
     );
 
     let input = "echo \"a\\\"b\"";
-    assert_eq!(
-        lex(input),
-        Ok(vec![word_token("echo"), word_token("a\"b"),])
-    );
+    assert_eq!(lex(input), Ok(vec![word_token("echo"), word_token("a\"b")]));
 
     let input = "echo X\"a b c\"X";
     assert_eq!(
         lex(input),
-        Ok(vec![word_token("echo"), word_token("Xa b cX"),])
+        Ok(vec![word_token("echo"), word_token("Xa b cX")])
     );
 
     let input = "echo \"a $b c\"";
@@ -297,22 +290,22 @@ fn single_quotes() {
     let input = "echo 'a b c'";
     assert_eq!(
         lex(input),
-        Ok(vec![word_token("echo"), word_token("a b c"),])
+        Ok(vec![word_token("echo"), word_token("a b c")])
     );
 
     let input = "echo 'a\\'b'";
-    assert_eq!(lex(input), Ok(vec![word_token("echo"), word_token("a'b"),]));
+    assert_eq!(lex(input), Ok(vec![word_token("echo"), word_token("a'b")]));
 
     let input = "echo X'a b c'X";
     assert_eq!(
         lex(input),
-        Ok(vec![word_token("echo"), word_token("Xa b cX"),])
+        Ok(vec![word_token("echo"), word_token("Xa b cX")])
     );
 
     let input = "echo 'a $b c'";
     assert_eq!(
         lex(input),
-        Ok(vec![word_token("echo"), word_token("a $b c"),])
+        Ok(vec![word_token("echo"), word_token("a $b c")])
     );
 
     let input = "echo 'a b' c 'd e'";
@@ -532,7 +525,7 @@ fn quoted_heredocs() {
                 Token::Newline,
             ]),
             (vec![
-                HereDoc::new(vec![vec![plain_span("foo")], vec![plain_span("$bar")],]),
+                HereDoc::new(vec![vec![plain_span("foo")], vec![plain_span("$bar")]]),
                 HereDoc::new(vec![vec![plain_span("baz")]]),
             ])
         ))
@@ -564,9 +557,7 @@ fn assignment() {
 fn tilde() {
     assert_eq!(
         lex("~"),
-        Ok(vec![Token::Word(Word::new(
-            vec![Span::Tilde(Tilde::Home),]
-        ))])
+        Ok(vec![Token::Word(Word::new(vec![Span::Tilde(Tilde::Home)]))])
     );
 
     assert_eq!(lex("\\~"), Ok(vec![word_token("~")]));
@@ -574,9 +565,9 @@ fn tilde() {
     assert_eq!(
         lex("~ a ~"),
         Ok(vec![
-            Token::Word(Word::new(vec![Span::Tilde(Tilde::Home),])),
+            Token::Word(Word::new(vec![Span::Tilde(Tilde::Home)])),
             word_token("a"),
-            Token::Word(Word::new(vec![Span::Tilde(Tilde::Home),]))
+            Token::Word(Word::new(vec![Span::Tilde(Tilde::Home)]))
         ])
     );
 
@@ -595,7 +586,7 @@ fn tilde() {
         lex("~seiya"),
         Ok(vec![Token::Word(Word::new(vec![Span::Tilde(
             Tilde::HomeOf(string("seiya"))
-        ),]))])
+        )]))])
     );
 
     assert_eq!(lex("\\~seiya"), Ok(vec![word_token("~seiya")]));
@@ -603,13 +594,9 @@ fn tilde() {
     assert_eq!(
         lex("~seiya a ~seiya"),
         Ok(vec![
-            Token::Word(Word::new(
-                vec![Span::Tilde(Tilde::HomeOf(string("seiya"))),]
-            )),
+            Token::Word(Word::new(vec![Span::Tilde(Tilde::HomeOf(string("seiya")))])),
             word_token("a"),
-            Token::Word(Word::new(
-                vec![Span::Tilde(Tilde::HomeOf(string("seiya"))),]
-            ))
+            Token::Word(Word::new(vec![Span::Tilde(Tilde::HomeOf(string("seiya")))]))
         ])
     );
 
@@ -645,7 +632,7 @@ fn brace_expansion() {
             Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
                 BraceExpansion::Word(Word::new(vec![plain_span("a")])),
                 BraceExpansion::Word(Word::new(vec![plain_span("b")])),
-            ])),]))
+            ]))]))
         ])
     );
 
@@ -677,7 +664,7 @@ fn sequence_brace_expansion() {
                     end: 10,
                     num_digits: 1
                 })
-            ])),]))
+            ]))]))
         ])
     );
 
@@ -691,7 +678,7 @@ fn sequence_brace_expansion() {
                     end: 100,
                     num_digits: 3
                 })
-            ])),]))
+            ]))]))
         ])
     );
 }
@@ -704,7 +691,7 @@ fn not_sequence_brace_expansion() {
             word_token("echo"),
             Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
                 BraceExpansion::Word(Word::new(vec![plain_span("123")]))
-            ])),]))
+            ]))]))
         ])
     );
 
@@ -714,7 +701,7 @@ fn not_sequence_brace_expansion() {
             word_token("echo"),
             Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
                 BraceExpansion::Word(Word::new(vec![plain_span("123..")]))
-            ])),]))
+            ]))]))
         ])
     );
 
@@ -724,7 +711,7 @@ fn not_sequence_brace_expansion() {
             word_token("echo"),
             Token::Word(Word::new(vec![Span::Brace(BraceExpansion::List(vec![
                 BraceExpansion::Word(Word::new(vec![plain_span("0..x")]))
-            ])),]))
+            ]))]))
         ])
     );
 }
@@ -786,4 +773,37 @@ fn unclosed_braces_and_parens() {
     assert_eq!(lex("echo ${"), Err(LexerError::UnclosedParamExp));
     assert_eq!(lex("echo $(("), Err(LexerError::NoMatchingRightParen));
     assert_eq!(lex("echo $((("), Err(LexerError::NoMatchingRightParen));
+}
+
+#[test]
+fn newline_handling() {
+    assert_eq!(lex(""), Ok(vec![]));
+    assert_eq!(lex(" "), Ok(vec![]));
+    assert_eq!(
+        lex("\n\n\n"),
+        Ok(vec![Token::Newline, Token::Newline, Token::Newline])
+    );
+}
+
+#[test]
+fn backslash_at_the_end_of_line() {
+    assert_eq!(
+        lex("echo \\\nhello"),
+        Ok(vec![word_token("echo"), word_token("hello")])
+    );
+
+    assert_eq!(
+        lex("echo abc\\\n123"),
+        Ok(vec![word_token("echo"), word_token("abc123")])
+    );
+
+    assert_eq!(
+        lex("echo \nfoo"),
+        Ok(vec![word_token("echo"), Token::Newline, word_token("foo")])
+    );
+
+    assert_eq!(
+        lex("echo \\\nfoo"),
+        Ok(vec![word_token("echo"), word_token("foo")])
+    );
 }

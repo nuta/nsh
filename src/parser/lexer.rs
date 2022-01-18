@@ -721,6 +721,10 @@ impl Lexer {
                 '$' if !in_single_quotes => {
                     spans.push_span(self.visit_variable_exp(in_double_quotes)?);
                 }
+                '\\' if next_c == Some('\n') => {
+                    // Skip the newline character.
+                    self.input.consume();
+                }
                 // Escaped character.
                 '\\' => {
                     let hctx = self.enter_highlight(1 /* len("\\") */);
@@ -1238,9 +1242,18 @@ impl Lexer {
     /// Skip whitespace characters.
     fn skip_whitespaces(&mut self) {
         while let Some(c) = self.input.consume() {
-            if !matches!(c, ' ' | '\t') {
-                self.input.unconsume(c);
-                break;
+            match c {
+                ' ' | '\t' => {
+                    continue;
+                }
+                '\\' if self.input.peek() == Some('\n') => {
+                    self.input.unconsume(c);
+                    break;
+                }
+                _ => {
+                    self.input.unconsume(c);
+                    break;
+                }
             }
         }
     }
