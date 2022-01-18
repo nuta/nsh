@@ -179,9 +179,15 @@ impl Parser {
         // Read until argv0.
         while let Some(token) = self.peek_token_maybe_argv0()?.clone() {
             match token {
-                Token::Assignment(Assignment { name, initializer }) => {
+                Token::Assignment(Assignment {
+                    name,
+                    rhs: initializer,
+                }) => {
                     self.consume_token()?;
-                    assignments.push(Assignment { name, initializer });
+                    assignments.push(Assignment {
+                        name,
+                        rhs: initializer,
+                    });
                 }
                 Token::Argv0(word) => {
                     self.consume_token()?;

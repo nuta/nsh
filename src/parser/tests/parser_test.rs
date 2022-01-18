@@ -49,11 +49,11 @@ fn simple_command() {
                         assignments: vec![
                             Assignment {
                                 name: string("FOO"),
-                                initializer: Initializer::String(word("123")),
+                                rhs: AssignRhs::String(word("123")),
                             },
                             Assignment {
                                 name: string("BAR"),
-                                initializer: Initializer::String(word("456")),
+                                rhs: AssignRhs::String(word("456")),
                             },
                         ],
                         argv: vec![word("echo"), word("world")],

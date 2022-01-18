@@ -56,14 +56,14 @@ pub enum Command {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Initializer {
+pub enum AssignRhs {
     String(Word),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Assignment {
     pub name: String,
-    pub initializer: Initializer,
+    pub rhs: AssignRhs,
 }
 
 #[derive(Clone, Debug, PartialEq)]

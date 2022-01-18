@@ -538,7 +538,7 @@ fn assignment() {
         do_lex("FOO=123", |l| l.set_argv0_mode(true)),
         Ok(vec![Token::Assignment(Assignment {
             name: string("FOO"),
-            initializer: Initializer::String(Word::new(vec![plain_span("123")])),
+            rhs: AssignRhs::String(Word::new(vec![plain_span("123")])),
         })])
     );
 
@@ -615,7 +615,7 @@ fn tilde() {
         do_lex("FOO=~/foo/bar/baz", |l| l.set_argv0_mode(true)),
         Ok(vec![Token::Assignment(Assignment {
             name: string("FOO"),
-            initializer: Initializer::String(Word::new(vec![
+            rhs: AssignRhs::String(Word::new(vec![
                 Span::Tilde(Tilde::Home),
                 plain_span("/foo/bar/baz")
             ])),

@@ -507,7 +507,7 @@ impl Lexer {
                 if !name.is_empty() && c == '=' {
                     return Ok(Some(Token::Assignment(Assignment {
                         name,
-                        initializer: Initializer::String(self.visit_word()?),
+                        rhs: AssignRhs::String(self.visit_word()?),
                     })));
                 }
 
