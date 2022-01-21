@@ -123,6 +123,10 @@ impl Shell {
     }
 }
 
+pub fn expand_words(words: &[Word]) -> Result<Vec<String>> {
+    todo!()
+}
+
 /// spans_vec[0] = vec!["x y"]     // $(echo x y)
 /// spans_vec[1] = vec!["c", "h"]  // {c,h}
 /// spans_vec[2] = vec![AnyString] // *

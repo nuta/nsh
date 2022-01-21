@@ -8,7 +8,9 @@ name = "nsh"
 path = "main.rs"
 
 [dependencies]
+log = "0"
 anyhow = "1"
+nix = "0"
 
 nsh_parser = { path = "../parser" }
 
