@@ -8,11 +8,12 @@ use nix::{
     sys::{
         signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, Signal},
         termios::{tcsetattr, SetArg, Termios},
+        wait::{waitpid, WaitPidFlag, WaitStatus},
     },
     unistd::{close, dup2, execv, fork, getpid, setpgid, tcsetpgrp, ForkResult, Pid},
 };
 
-use crate::shell::Shell;
+use crate::{job::ProcessState, shell::Shell};
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct Pgid(usize);
@@ -210,4 +211,38 @@ pub fn run_external_command(
             }
         }
     }
+}
+
+/// Waits for *any* processes, i.e. `waitpid(-1)`, and then updates the process
+/// state recorded in the `shell`. Returns `None` it would block.
+pub fn wait_for_any_process(shell: &mut Shell, no_block: bool) -> Option<Pid> {
+    let options = if no_block {
+        WaitPidFlag::WUNTRACED | WaitPidFlag::WNOHANG
+    } else {
+        WaitPidFlag::WUNTRACED
+    };
+
+    let result = waitpid(None, Some(options));
+    let (pid, state) = match result {
+        Ok(WaitStatus::Exited(pid, status)) => {
+            trace!("exited: pid={} status={}", pid, status);
+            (pid, ProcessState::Completed(status))
+        }
+        Ok(WaitStatus::Signaled(pid, _signal, _)) => {
+            // The `pid` process has been killed by `_signal`.
+            (pid, ProcessState::Completed(-1))
+        }
+        Ok(WaitStatus::Stopped(pid, _signal)) => (pid, ProcessState::Stopped(pid)),
+        Err(nix::errno::Errno::ECHILD) | Ok(WaitStatus::StillAlive) => {
+            // No childs to be reported.
+            return None;
+        }
+        status => {
+            panic!("unexpected waitpid event: {:?}", status);
+        }
+    };
+
+    // TODO:
+    // shell.set_process_state(pid, state);
+    Some(pid)
 }
