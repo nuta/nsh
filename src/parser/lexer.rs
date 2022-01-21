@@ -716,7 +716,7 @@ impl Lexer {
                     break;
                 }
                 '`' if !in_single_quotes => {
-                    spans.push_span(self.visit_backtick_exp()?);
+                    spans.push_span(self.visit_backtick_exp(in_double_quotes)?);
                 }
                 '$' if !in_single_quotes => {
                     spans.push_span(self.visit_variable_exp(in_double_quotes)?);
@@ -774,7 +774,7 @@ impl Lexer {
                 self.add_highlight(HighlightKind::CommandSymbol, 1 /* len(')') */);
 
                 self.leave_paren(UnclosedParen::Command);
-                Span::Command(tokens)
+                Span::Command { tokens, quoted }
             }
             // `${#foo}`
             Some('{') if next == Some('#') => {
@@ -924,7 +924,7 @@ impl Lexer {
     }
 
     /// Visits a backtick substitution (after `\``).
-    fn visit_backtick_exp(&mut self) -> Result<Span, LexerError> {
+    fn visit_backtick_exp(&mut self, quoted: bool) -> Result<Span, LexerError> {
         self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
         let inner_htx = self.enter_highlight(0);
 
@@ -943,7 +943,7 @@ impl Lexer {
         );
         self.add_highlight(HighlightKind::CommandSymbol, 1 /* len('`') */);
 
-        Ok(Span::Command(tokens))
+        Ok(Span::Command { tokens, quoted })
     }
 
     /// Visits a process substitution (the reader must be at `>` or `<`).
@@ -1059,7 +1059,7 @@ impl Lexer {
                                     plain = String::new();
                                 }
 
-                                current_line.push(self.visit_backtick_exp()?);
+                                current_line.push(self.visit_backtick_exp(false)?);
                             }
                             '$' => {
                                 if !plain.is_empty() {

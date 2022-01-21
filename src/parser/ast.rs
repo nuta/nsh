@@ -181,7 +181,7 @@ pub enum Span {
         quoted: bool,
     },
     /// A command substitution, e.g. `$(echo "hi")`.
-    Command(Vec<Token>),
+    Command { tokens: Vec<Token>, quoted: bool },
     /// A tilde expansion, e.g. `~`.
     Tilde(Tilde),
     /// A brace expansion, e.g. `a{b,c}d`.

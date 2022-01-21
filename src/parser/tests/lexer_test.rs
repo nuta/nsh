@@ -167,7 +167,10 @@ fn command_substituion_1() {
         lex(input),
         Ok(vec![
             word_token("echo"),
-            word_token_from_spans(vec![Span::Command(vec![word_token("ls"), word_token("/")])])
+            word_token_from_spans(vec![Span::Command {
+                tokens: vec![word_token("ls"), word_token("/")],
+                quoted: false,
+            }])
         ])
     );
 
@@ -176,14 +179,20 @@ fn command_substituion_1() {
         lex(input),
         Ok(vec![
             word_token("echo"),
-            word_token_from_spans(vec![Span::Command(vec![
-                word_token("grep"),
-                word_token_from_spans(vec![Span::Command(vec![
-                    word_token("ls"),
-                    word_token_from_spans(vec![plain_span("/foo"), Span::AnyString,]),
-                ])]),
-                word_token("bar"),
-            ])])
+            word_token_from_spans(vec![Span::Command {
+                tokens: vec![
+                    word_token("grep"),
+                    word_token_from_spans(vec![Span::Command {
+                        tokens: vec![
+                            word_token("ls"),
+                            word_token_from_spans(vec![plain_span("/foo"), Span::AnyString,]),
+                        ],
+                        quoted: false,
+                    }]),
+                    word_token("bar"),
+                ],
+                quoted: false,
+            }])
         ])
     );
 }
@@ -195,7 +204,10 @@ fn command_substituion_2() {
         lex(input),
         Ok(vec![
             word_token("echo"),
-            word_token_from_spans(vec![Span::Command(vec![word_token("ls"), word_token("/")])])
+            word_token_from_spans(vec![Span::Command {
+                tokens: vec![word_token("ls"), word_token("/")],
+                quoted: false,
+            }])
         ])
     );
 }
@@ -756,7 +768,10 @@ fn arithmetic_expansion() {
                 plain_span("(n"),
                 plain_span("+"),
                 plain_span("("),
-                Span::Command(vec![word_token("echo")]),
+                Span::Command {
+                    tokens: vec![word_token("echo")],
+                    quoted: false
+                },
                 plain_span("+"),
                 plain_span("4"),
                 plain_span("))"),
