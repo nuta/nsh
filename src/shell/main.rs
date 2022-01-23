@@ -6,7 +6,7 @@ extern crate log;
 mod exec;
 mod expand;
 mod job;
-mod path_table;
+mod path;
 mod shell;
 
 pub fn main() {}

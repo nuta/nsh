@@ -7,7 +7,7 @@ use nsh_parser::parser::Parser;
 
 use crate::{
     job::{Job, ProcessState},
-    path_table::PathTable,
+    path::PathTable,
 };
 
 fn restore_terminal_attrs(termios: &Termios) -> Result<()> {
