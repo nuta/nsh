@@ -4,11 +4,9 @@ use crate::completion::{Completion, Opt, OptSuffix, Value};
 
 #[derive(Debug)]
 enum State {
-    SynopsisFirst,
-    SynopsisWrapped { indent_len: usize },
-    MaybeOptions,
-    OptDesc { indent_len: usize, option: String },
-    OptDescSkipped { indent_len: usize },
+    Usage,
+    MaybeOption,
+    SkipIfDeeperIndent { indent_len: usize },
     Unknown,
 }
 
@@ -30,8 +28,8 @@ impl ManParser {
         while let Some(line) = lines.next() {
             let trimmed_line = line.trim();
             if trimmed_line.is_empty() {
-                if matches!(state, State::SynopsisFirst | State::SynopsisWrapped { .. }) {
-                    state = State::MaybeOptions;
+                if matches!(state, State::Usage) {
+                    state = State::MaybeOption;
                 }
 
                 continue;
@@ -41,12 +39,12 @@ impl ManParser {
             let indent_len = line.len() - trimmed_line.len();
 
             if lowered_line.starts_with("synopsis") {
-                state = State::SynopsisFirst;
+                state = State::Usage;
                 continue;
             }
 
             if lowered_line.starts_with("options") {
-                state = State::SynopsisFirst;
+                state = State::Usage;
                 continue;
             }
 
@@ -57,43 +55,37 @@ impl ManParser {
             let first_word = *words.peek().unwrap();
             loop {
                 match state {
-                    State::SynopsisFirst => {
+                    State::Usage => {
                         command = Some(first_word.to_owned());
-                        state = State::SynopsisWrapped { indent_len };
+                        state = State::SkipIfDeeperIndent { indent_len };
                     }
-                    State::SynopsisWrapped { .. } => {
-                        // TODO:
-                    }
-                    State::MaybeOptions if first_word.starts_with('-') => {
+                    State::MaybeOption if first_word.starts_with('-') => {
                         // Skip `first_word`.
                         words.next();
 
                         let option = first_word;
-                        if let Some(opt) = extract_option(first_word, &mut words) {
+                        if let Some(opt) = extract_option(first_word, words) {
+                            // --foo This is description.
                             options.push(opt);
-                            state = State::OptDescSkipped { indent_len };
-                        } else {
-                            state = State::OptDesc {
-                                indent_len,
-                                option: first_word.to_owned(),
-                            };
+                        } else if let Some(next_line) = lines.next() {
+                            // --foo
+                            // This is description.
+                            let words = next_line.trim_start().split_ascii_whitespace().peekable();
+                            if let Some(opt) = extract_option(first_word, words) {
+                                options.push(opt);
+                            }
                         }
+
+                        state = State::SkipIfDeeperIndent { indent_len };
                     }
-                    State::OptDescSkipped {
+                    State::SkipIfDeeperIndent {
                         indent_len: prev_indent_len,
                         ..
                     } if indent_len <= prev_indent_len => {
-                        state = State::MaybeOptions;
+                        state = State::MaybeOption;
                         continue;
                     }
-                    State::OptDesc { option, .. } => {
-                        if let Some(opt) = extract_option(&option, &mut words) {
-                            options.push(opt);
-                        }
-
-                        state = State::MaybeOptions;
-                    }
-                    State::MaybeOptions | State::OptDescSkipped { .. } | State::Unknown => {
+                    State::MaybeOption | State::SkipIfDeeperIndent { .. } | State::Unknown => {
                         /* ignore */
                     }
                 }
@@ -111,7 +103,7 @@ impl ManParser {
     }
 }
 
-fn extract_option<'a, I>(option: &str, words: &mut Peekable<I>) -> Option<Opt>
+fn extract_option<'a, I>(option: &str, mut words: Peekable<I>) -> Option<Opt>
 where
     I: Iterator<Item = &'a str>,
 {
@@ -140,7 +132,6 @@ where
     }
 
     let mut description = String::new();
-    dbg!(words.peek());
     for word in words {
         if !description.is_empty() {
             description.push(' ');
@@ -246,7 +237,7 @@ mod tests {
 
                     --env1=<VALUE>  First sentence for --env1.
 
-                     --env2=<VALUE>
+                    --env2=<VALUE>
                          First sentence for --env2.
 
                     --base-dir=<DIR>  First sentence for --base-dir.

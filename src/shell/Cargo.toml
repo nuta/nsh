@@ -11,8 +11,10 @@ path = "main.rs"
 log = "0"
 anyhow = "1"
 nix = "0"
+clap = { version = "3", features = ["derive"] }
 
 nsh_parser = { path = "../parser" }
+nsh_completion = { path = "../completion" }
 
 [dev-dependencies]
 pretty_assertions = "1"
