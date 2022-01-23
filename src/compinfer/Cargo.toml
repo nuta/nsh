@@ -1,0 +1,13 @@
+[package]
+name = "nsh_compinfer"
+version = "0.0.0"
+edition = "2021"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+thiserror = "1"
+
+[dev-dependencies]
+pretty_assertions = "1"

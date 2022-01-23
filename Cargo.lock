@@ -106,6 +106,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nsh_compinfer"
+version = "0.0.0"
+dependencies = [
+ "pretty_assertions",
+ "thiserror",
+]
+
+[[package]]
 name = "nsh_parser"
 version = "0.0.0"
 dependencies = [
