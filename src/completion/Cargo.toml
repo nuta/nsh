@@ -1,5 +1,5 @@
 [package]
-name = "nsh_compinfer"
+name = "nsh_completion"
 version = "0.0.0"
 edition = "2021"
 
