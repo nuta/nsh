@@ -17,7 +17,7 @@ pub struct Opt {
     /// The character immediately following the option name.
     pub suffix: OptSuffix,
     /// The argument to the option.
-    pub arg: Option<Argument>,
+    pub value: Value,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -28,17 +28,18 @@ pub enum PathKind {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Candidate {
+pub enum Value {
     Path { kind: PathKind },
     ExternalCommand { command: String },
+    Any,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Argument {
     /// The name of the argument.
     pub name: String,
-    /// The completion item providers.
-    pub candidates: Vec<Candidate>,
+    /// The completion provider.
+    pub value: Value,
 }
 
 #[derive(Debug, Clone, PartialEq)]
