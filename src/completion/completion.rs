@@ -10,7 +10,7 @@ pub enum OptSuffix {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Opt {
-    /// "foo" (long option) or "f" (short option).
+    /// "--foo" (long option) or "-f" (short option).
     pub name: String,
     /// The brief description of the option.
     pub description: String,
@@ -37,17 +37,14 @@ pub enum Candidate {
 pub struct Argument {
     /// The name of the argument.
     pub name: String,
-    /// The brief description of the argument.
-    pub description: String,
     /// The completion item providers.
     pub candidates: Vec<Candidate>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Command {
-    pub argv0: String,
-    pub short_options: Vec<Opt>,
-    pub long_options: Vec<Opt>,
+pub struct Completion {
+    pub command: String,
+    pub options: Vec<Opt>,
     pub arguments: Vec<Argument>,
-    pub subcommands: HashMap<String, Command>,
+    pub subcommands: Vec<Completion>,
 }
