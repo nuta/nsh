@@ -11,7 +11,7 @@ pub enum OptSuffix {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Opt {
     /// "--foo" (long option) or "-f" (short option).
-    pub name: String,
+    pub flags: Vec<String>,
     /// The brief description of the option.
     pub description: String,
     /// The character immediately following the option name.

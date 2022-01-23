@@ -63,16 +63,41 @@ impl ManParser {
                         // Skip `first_word`.
                         words.next();
 
-                        let option = first_word;
-                        if let Some(opt) = extract_option(first_word, words) {
-                            // --foo This is description.
-                            options.push(opt);
-                        } else if let Some(next_line) = lines.next() {
-                            // --foo
-                            // This is description.
-                            let words = next_line.trim_start().split_ascii_whitespace().peekable();
-                            if let Some(opt) = extract_option(first_word, words) {
-                                options.push(opt);
+                        let mut flags = Vec::new();
+                        let (flag, mut suffix, value) = parse_option(first_word);
+                        flags.push(flag);
+                        'outer: loop {
+                            if let Some(description) = extract_option_desc(words) {
+                                options.push(Opt {
+                                    flags,
+                                    description,
+                                    suffix,
+                                    value,
+                                });
+
+                                break;
+                            }
+
+                            // The description is not in the same line.
+                            loop {
+                                let next_line = match lines.next() {
+                                    Some(next_line) if next_line.is_empty() => continue,
+                                    Some(next_line) => next_line.trim_start(),
+                                    None => break 'outer,
+                                };
+
+                                words = next_line.split_ascii_whitespace().peekable();
+                                let first_word = words.peek().unwrap();
+                                if first_word.starts_with("-") {
+                                    let flag = parse_option(first_word).0;
+                                    if !flag.is_empty() {
+                                        flags.push(flag);
+                                    }
+
+                                    continue;
+                                }
+
+                                break;
                             }
                         }
 
@@ -103,7 +128,7 @@ impl ManParser {
     }
 }
 
-fn extract_option<'a, I>(option: &str, mut words: Peekable<I>) -> Option<Opt>
+fn extract_option_desc<'a, I>(mut words: Peekable<I>) -> Option<String>
 where
     I: Iterator<Item = &'a str>,
 {
@@ -143,35 +168,35 @@ where
         }
     }
 
-    if !description.is_empty() {
-        //
-        //  --aase-dir=<path>
-        //            ^^^^^^^
-        //            Parse here
-        let mut name = String::new();
-        let mut suffix = OptSuffix::Whitespace;
-        for (offset, c) in option.char_indices() {
-            if !c.is_ascii_alphanumeric() && c != '-' && c != '_' {
-                if c == '=' {
-                    suffix = OptSuffix::Equal;
-                }
+    if description.is_empty() {
+        None
+    } else {
+        Some(description)
+    }
+}
 
-                value = guess_value(&option[(offset + 1)..]);
-                break;
+fn parse_option(option: &str) -> (String, OptSuffix, Value) {
+    //
+    //  --base-dir=<path>
+    //            ^^^^^^^
+    //            Parse here
+    let mut name = String::new();
+    let mut suffix = OptSuffix::Whitespace;
+    let mut value = Value::Any;
+    for (offset, c) in option.char_indices() {
+        if !c.is_ascii_alphanumeric() && c != '-' && c != '_' {
+            if c == '=' {
+                suffix = OptSuffix::Equal;
             }
 
-            name.push(c);
+            value = guess_value(&option[(offset + 1)..]);
+            break;
         }
 
-        return Some(Opt {
-            name,
-            description,
-            suffix,
-            value,
-        });
+        name.push(c);
     }
 
-    None
+    (name, suffix, value)
 }
 
 fn guess_value(arg: &str) -> Value {
@@ -238,7 +263,8 @@ mod tests {
                     --env1=<VALUE>  First sentence for --env1.
 
                     --env2=<VALUE>
-                         First sentence for --env2.
+                    --env3=<VALUE>
+                         First sentence for --env2 and --env3.
 
                     --base-dir=<DIR>  First sentence for --base-dir.
                 #"
@@ -247,49 +273,49 @@ mod tests {
                 command: string("my_command"),
                 options: vec![
                     Opt {
-                        name: string("-a"),
+                        flags: vec![string("-a")],
                         description: string("First sentence for -a."),
                         suffix: OptSuffix::Whitespace,
                         value: Value::Any,
                     },
                     Opt {
-                        name: string("-b"),
+                        flags: vec![string("-b")],
                         description: string("First sentence for -b."),
                         suffix: OptSuffix::Whitespace,
                         value: Value::Any,
                     },
                     Opt {
-                        name: string("-c"),
+                        flags: vec![string("-c")],
                         description: string("First sentence for -c."),
                         suffix: OptSuffix::Whitespace,
                         value: Value::Any,
                     },
                     Opt {
-                        name: string("-d"),
+                        flags: vec![string("-d")],
                         description: string("First sentence for -d."),
                         suffix: OptSuffix::Whitespace,
                         value: Value::Any,
                     },
                     Opt {
-                        name: string("--help"),
+                        flags: vec![string("--help")],
                         description: string("First sentence for --help."),
                         suffix: OptSuffix::Whitespace,
                         value: Value::Any,
                     },
                     Opt {
-                        name: string("--env1"),
+                        flags: vec![string("--env1")],
                         description: string("First sentence for --env1."),
                         suffix: OptSuffix::Equal,
                         value: Value::Any,
                     },
                     Opt {
-                        name: string("--env2"),
-                        description: string("First sentence for --env2."),
+                        flags: vec![string("--env2"), string("--env3")],
+                        description: string("First sentence for --env2 and --env3."),
                         suffix: OptSuffix::Equal,
                         value: Value::Any,
                     },
                     Opt {
-                        name: string("--base-dir"),
+                        flags: vec![string("--base-dir")],
                         description: string("First sentence for --base-dir."),
                         suffix: OptSuffix::Equal,
                         value: Value::Path {
