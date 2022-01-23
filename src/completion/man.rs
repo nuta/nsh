@@ -64,8 +64,7 @@ impl ManParser {
                         words.next();
 
                         let mut flags = Vec::new();
-                        let (flag, mut suffix, value) = parse_option(first_word);
-                        flags.push(flag);
+                        let (suffix, value) = parse_option(trimmed_line, &mut flags);
                         'outer: loop {
                             if let Some(description) = extract_option_desc(words) {
                                 options.push(Opt {
@@ -81,19 +80,22 @@ impl ManParser {
                             // The description is not in the same line.
                             loop {
                                 let next_line = match lines.next() {
-                                    Some(next_line) if next_line.is_empty() => continue,
-                                    Some(next_line) => next_line.trim_start(),
+                                    Some(l) if l.is_empty() => continue,
+                                    Some(l) => l.trim_start(),
                                     None => break 'outer,
                                 };
 
                                 words = next_line.split_ascii_whitespace().peekable();
+
+                                // Handle the case where multiple flags defined:
+                                //
+                                //   -f, --foo
+                                //   --bar
+                                //   Do something.
+                                //
                                 let first_word = words.peek().unwrap();
                                 if first_word.starts_with("-") {
-                                    let flag = parse_option(first_word).0;
-                                    if !flag.is_empty() {
-                                        flags.push(flag);
-                                    }
-
+                                    parse_option(next_line, &mut flags);
                                     continue;
                                 }
 
@@ -175,7 +177,7 @@ where
     }
 }
 
-fn parse_option(option: &str) -> (String, OptSuffix, Value) {
+fn parse_option(line: &str, flags: &mut Vec<String>) -> (OptSuffix, Value) {
     //
     //  --base-dir=<path>
     //            ^^^^^^^
@@ -183,20 +185,37 @@ fn parse_option(option: &str) -> (String, OptSuffix, Value) {
     let mut name = String::new();
     let mut suffix = OptSuffix::Whitespace;
     let mut value = Value::Any;
-    for (offset, c) in option.char_indices() {
-        if !c.is_ascii_alphanumeric() && c != '-' && c != '_' {
+    let mut chars = line.char_indices().peekable();
+    while let Some((offset, c)) = chars.next() {
+        if c == ',' {
+            flags.push(name);
+            name = String::new();
+
+            // Skip whitespaces.
+            while let Some((_, c)) = chars.peek() {
+                if !c.is_ascii_whitespace() {
+                    break;
+                }
+
+                chars.next();
+            }
+        } else if !c.is_ascii_alphanumeric() && c != '-' && c != '_' {
             if c == '=' {
                 suffix = OptSuffix::Equal;
             }
 
-            value = guess_value(&option[(offset + 1)..]);
+            value = guess_value(&line[(offset + 1)..]);
             break;
+        } else {
+            name.push(c);
         }
-
-        name.push(c);
     }
 
-    (name, suffix, value)
+    if !name.is_empty() && name != "-" && name != "--" {
+        flags.push(name);
+    }
+
+    (suffix, value)
 }
 
 fn guess_value(arg: &str) -> Value {
@@ -258,7 +277,7 @@ mod tests {
                      -d
                          First sentence for -d.
 
-                     --help  First sentence for --help.
+                     --help, -h  First sentence for --help.
 
                     --env1=<VALUE>  First sentence for --env1.
 
@@ -297,7 +316,7 @@ mod tests {
                         value: Value::Any,
                     },
                     Opt {
-                        flags: vec![string("--help")],
+                        flags: vec![string("--help"), string("-h")],
                         description: string("First sentence for --help."),
                         suffix: OptSuffix::Whitespace,
                         value: Value::Any,
