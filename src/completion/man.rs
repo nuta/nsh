@@ -66,30 +66,20 @@ impl ManParser {
                     }
                     State::MaybeOptions if first_word.starts_with('-') => {
                         // Skip `first_word`.
-                        let option = words.next();
+                        words.next();
 
-                        let next_indent_len = lines
-                            .peek()
-                            .map(|l| l.len() - l.trim_start().len())
-                            .unwrap_or(indent_len);
-
+                        let option = first_word;
                         if let Some(opt) = extract_option(first_word, &mut words) {
                             options.push(opt);
-                            state = State::OptDescSkipped {
-                                indent_len: next_indent_len,
-                            };
+                            state = State::OptDescSkipped { indent_len };
                         } else {
                             state = State::OptDesc {
-                                indent_len: next_indent_len,
+                                indent_len,
                                 option: first_word.to_owned(),
                             };
                         }
                     }
-                    State::OptDesc {
-                        indent_len: prev_indent_len,
-                        ..
-                    }
-                    | State::OptDescSkipped {
+                    State::OptDescSkipped {
                         indent_len: prev_indent_len,
                         ..
                     } if indent_len <= prev_indent_len => {
@@ -97,7 +87,6 @@ impl ManParser {
                         continue;
                     }
                     State::OptDesc { option, .. } => {
-                        dbg!(words.peek());
                         if let Some(opt) = extract_option(&option, &mut words) {
                             options.push(opt);
                         }
@@ -246,6 +235,21 @@ mod tests {
 
                      -a      First sentence for -a. Second sentence.
                      -b      First sentence for -b. Second sentence.
+
+                     -c
+                     First sentence for -c.
+
+                     -d
+                         First sentence for -d.
+
+                     --help  First sentence for --help.
+
+                    --env1=<VALUE>  First sentence for --env1.
+
+                     --env2=<VALUE>
+                         First sentence for --env2.
+
+                    --base-dir=<DIR>  First sentence for --base-dir.
                 #"
             ),
             Some(Completion {
@@ -262,6 +266,44 @@ mod tests {
                         description: string("First sentence for -b."),
                         suffix: OptSuffix::Whitespace,
                         value: Value::Any,
+                    },
+                    Opt {
+                        name: string("-c"),
+                        description: string("First sentence for -c."),
+                        suffix: OptSuffix::Whitespace,
+                        value: Value::Any,
+                    },
+                    Opt {
+                        name: string("-d"),
+                        description: string("First sentence for -d."),
+                        suffix: OptSuffix::Whitespace,
+                        value: Value::Any,
+                    },
+                    Opt {
+                        name: string("--help"),
+                        description: string("First sentence for --help."),
+                        suffix: OptSuffix::Whitespace,
+                        value: Value::Any,
+                    },
+                    Opt {
+                        name: string("--env1"),
+                        description: string("First sentence for --env1."),
+                        suffix: OptSuffix::Equal,
+                        value: Value::Any,
+                    },
+                    Opt {
+                        name: string("--env2"),
+                        description: string("First sentence for --env2."),
+                        suffix: OptSuffix::Equal,
+                        value: Value::Any,
+                    },
+                    Opt {
+                        name: string("--base-dir"),
+                        description: string("First sentence for --base-dir."),
+                        suffix: OptSuffix::Equal,
+                        value: Value::Path {
+                            kind: crate::completion::PathKind::DirOnly,
+                        },
                     },
                 ],
                 arguments: vec![],
