@@ -1,19 +1,14 @@
-use anyhow::Result;
 use nix::sys::{
     signal::Signal,
     termios::{tcsetattr, SetArg, Termios},
 };
+use nsh_common::oops::OopsExt;
 use nsh_parser::parser::Parser;
 
 use crate::{
     job::{Job, ProcessState},
     path::PathTable,
 };
-
-fn restore_terminal_attrs(termios: &Termios) -> Result<()> {
-    tcsetattr(0, SetArg::TCSADRAIN, termios)?;
-    Ok(())
-}
 
 pub struct Shell {
     parser: Parser,
@@ -27,7 +22,7 @@ impl Shell {
     }
 
     pub fn restore_termios(&self) {
-        restore_terminal_attrs(&self.saved_termios);
+        tcsetattr(0, SetArg::TCSADRAIN, &self.saved_termios).oops();
     }
 
     pub fn run_in_foreground(&mut self, job: &Job, sigcont: bool) -> ProcessState {

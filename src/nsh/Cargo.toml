@@ -1,19 +1,19 @@
 [package]
-name = "nsh_shell"
+name = "nsh"
 version = "0.0.0"
 edition = "2021"
 
-[lib]
-name = "nsh_shell"
-path = "lib.rs"
+[[bin]]
+name = "nsh"
+path = "main.rs"
 
 [dependencies]
 log = "0"
-nix = "0"
+anyhow = "1"
 clap = { version = "3", features = ["derive"] }
 
-nsh_common = { path = "../common" }
-nsh_parser = { path = "../parser" }
+nsh_shell = { path = "../shell" }
+nsh_completion = { path = "../completion" }
 
 [dev-dependencies]
 pretty_assertions = "1"

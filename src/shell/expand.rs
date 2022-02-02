@@ -1,10 +1,9 @@
-use anyhow::Result;
 use nsh_parser::ast::{BraceExpansion, Span, Tilde, Token, VarExpansion, Word};
 
 use crate::shell::Shell;
 
 impl Shell {
-    pub fn expand_word(&mut self, word: &Word) -> Result<Vec<String>> {
+    pub fn expand_word(&mut self, word: &Word) -> Result<Vec<String>, ()> {
         // Example of "$(echo x y){c,h}*" => vec!["a.txt", "bxc.txt", "byc.txt"] ":
         //
         // expanded_spans[0] = vec!["x y"]     // $(echo x y)
@@ -88,42 +87,47 @@ impl Shell {
     }
 
     /// Appends the result of expanding the variable to `buf`.
-    fn expand_variable(&mut self, name: &str, exp: &VarExpansion, quoted: bool) -> Result<String> {
+    fn expand_variable(
+        &mut self,
+        name: &str,
+        exp: &VarExpansion,
+        quoted: bool,
+    ) -> Result<String, ()> {
         todo!()
     }
 
     /// Appends the result of expanding the variable to `buf`.
-    fn expand_command(&mut self, tokens: &[Token], quoted: bool) -> Result<String> {
+    fn expand_command(&mut self, tokens: &[Token], quoted: bool) -> Result<String, ()> {
         todo!()
     }
 
     /// Appends the result of expanding the variable to `buf`.
-    fn expand_tilde(&self, tilde: &Tilde) -> Result<String> {
+    fn expand_tilde(&self, tilde: &Tilde) -> Result<String, ()> {
         todo!()
     }
 
     /// Appends the result of expanding the variable to `buf`.
-    fn expand_brace(&self, brace: &BraceExpansion) -> Result<Vec<String>> {
+    fn expand_brace(&self, brace: &BraceExpansion) -> Result<Vec<String>, ()> {
         todo!()
     }
 
     /// Appends the result of expanding the variable to `buf`.
-    fn expand_process_substitution_readable(&mut self, token: &[Token]) -> Result<String> {
+    fn expand_process_substitution_readable(&mut self, token: &[Token]) -> Result<String, ()> {
         todo!()
     }
 
     /// Appends the result of expanding the variable to `buf`.
-    fn expand_process_substitution_writable(&mut self, token: &[Token]) -> Result<String> {
+    fn expand_process_substitution_writable(&mut self, token: &[Token]) -> Result<String, ()> {
         todo!()
     }
 
     /// Appends the result of expanding the variable to `buf`.
-    fn expand_arithmetic_expression(&mut self, word: &Word) -> Result<String> {
+    fn expand_arithmetic_expression(&mut self, word: &Word) -> Result<String, ()> {
         todo!()
     }
 }
 
-pub fn expand_words(words: &[Word]) -> Result<Vec<String>> {
+pub fn expand_words(words: &[Word]) -> Result<Vec<String>, ()> {
     todo!()
 }
 

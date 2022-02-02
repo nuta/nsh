@@ -2,7 +2,6 @@ use std::{ffi::CString, os::unix::prelude::RawFd};
 
 use nsh_parser::ast::{Assignment, Redirection};
 
-use anyhow::Result;
 use nix::{
     libc::TCSADRAIN,
     sys::{
@@ -55,13 +54,23 @@ fn set_terminal_process_group(pgid: Pid) {
     tcsetpgrp(0, pgid).expect("failed to tcsetpgrp");
 }
 
+pub enum ExternalCommandError {
+    NullCharInArgv,
+}
+
+impl From<std::ffi::NulError> for ExternalCommandError {
+    fn from(_: std::ffi::NulError) -> Self {
+        ExternalCommandError::NullCharInArgv
+    }
+}
+
 /// Spawn a child process and execute a command.
 pub fn run_external_command(
     ctx: &Context<'_>,
     argv: &[String],
     redirects: &[Redirection],
     assignments: &[Assignment],
-) -> Result<ExitStatus> {
+) -> Result<ExitStatus, ExternalCommandError> {
     let mut fds = Vec::new();
     for r in redirects {
         // TODO:
