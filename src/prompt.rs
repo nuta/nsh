@@ -126,8 +126,7 @@ fn get_current_username() -> String {
 }
 
 fn get_hostname() -> String {
-    let mut hostname_buf = [0u8; 128];
-    let hostname_cstr = unistd::gethostname(&mut hostname_buf).expect("failed to get hostname");
+    let hostname_cstr = unistd::gethostname().expect("failed to get hostname");
     let hostname = hostname_cstr
         .to_str()
         .expect("Hostname is not valid utf-8 string");
