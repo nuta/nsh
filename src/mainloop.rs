@@ -360,6 +360,9 @@ impl Mainloop {
             (KeyCode::Backspace, NONE) => {
                 self.input.backspace();
             }
+            (KeyCode::Delete, NONE) => {
+                self.input.delete();
+            }
             (KeyCode::Char('d'), CTRL) => {
                 if self.input.is_empty() {
                     self.exited = Some(ExitStatus::ExitedWith(0));
