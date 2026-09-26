@@ -2,47 +2,11 @@
 name = "nsh"
 version = "0.4.2"
 authors = ["Seiya Nuta <nuta@seiya.me>"]
-edition = "2018"
-description = "A command-line shell written in Rust that focuses on productivity and swiftness."
+edition = "2024"
 keywords = ["shell"]
 categories = ["command-line-utilities"]
 readme = "README.md"
-license = "CC0-1.0 OR MIT"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/nuta/nsh"
-include = [
-    "**/*.rs",
-    "**/*.pest",
-    "Cargo.toml",
-]
-
-[profile.release]
-opt-level = 3
-debug = true
-rpath = false
-lto = true
-debug-assertions = false
-codegen-units = 1
-panic = 'unwind'
-incremental = false
-overflow-checks = false
 
 [dependencies]
-lazy_static = "1"
-log = { version = "^0", features = ["max_level_trace", "release_max_level_warn"] }
-fern = { version = "0", features = ["colored"] }
-nix = "0"
-libc = "0"
-dirs = "1"
-structopt = "0"
-glob = "0"
-failure = "0"
-pest = "2"
-pest_derive = "2"
-backtrace = "0"
-crossterm = "^0.18"
-signal-hook = "0.2"
-phf = { version = "0", features = ["macros"] }
-
-[dev-dependencies]
-pretty_assertions = "0"
-tempfile = "3"
