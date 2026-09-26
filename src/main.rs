@@ -1,3 +1,8 @@
+mod shell;
+
+use shell::Shell;
+
 pub fn main() {
-    println!("Hello, world!");
+    let shell = Shell::new();
+    shell.run("");
 }

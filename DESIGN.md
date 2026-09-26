@@ -36,45 +36,19 @@ Immediately before execution, expand each word using a context such as `Argument
 
 | Component | Responsibility | Boundary rule |
 | --- | --- | --- |
-| `input.rs` | Input frames, locations, alias origin, incremental reads | Preserve original input and expansion provenance for errors. |
-| `tokenizer.rs` | Pull-based token recognition, quote and substitution nesting | Return raw syntax; ask parser for context where required. |
-| `parser.rs` | Grammar, reserved/assignment classification, alias eligibility, here-document queue | Return `Complete(ast)`, `NeedMoreInput`, or syntax error. |
-| `ast.rs` | Small owned syntax types with spans and structured words | No execution state or open file descriptors. |
-| `expand.rs` | Context-specific word expansion and pattern matching | Carry quote/field metadata until final quote removal. |
-| `eval.rs` | Control flow, command lookup, command status, state scope | Execute complete commands in order; no global mutable shell. |
-| `shell.rs`, `variable.rs` | Shell state and byte-valued variables | Explicitly pass state to evaluator and expansion. |
-| `process.rs` | Pipes, descriptors, process creation, waits, signals, process groups, terminal control | Hide `nix` types and unsafe edges from language modules. |
-| `main.rs`, later `mainloop.rs` | CLI input and, later, terminal editing | Scripts use the same parser and evaluator as the REPL. |
+| Input | Input frames, locations, alias origin, incremental reads | Preserve original input and expansion provenance for errors. |
+| Tokenizer | Pull-based token recognition, quote and substitution nesting | Return raw syntax; ask parser for context where required. |
+| Parser | Grammar, reserved/assignment classification, alias eligibility, here-document queue | Return `Complete(ast)`, `NeedMoreInput`, or syntax error. |
+| Syntax tree | Small owned syntax types with spans and structured words | No execution state or open file descriptors. |
+| Expansion | Context-specific word expansion and pattern matching | Carry quote/field metadata until final quote removal. |
+| Evaluator | Control flow, command lookup, command status, state scope | Execute complete commands in order; no global mutable shell. |
+| Shell state | Variables, export flags, positional parameters, functions, aliases, options, traps, cwd, last status | Explicitly pass state to evaluator and expansion. |
+| Unix operations | Pipes, descriptors, process creation, waits, signals, process groups, terminal control | Keep `nix` types and unsafe edges away from language semantics. |
+| Interface | CLI input and, later, terminal editing | Scripts use the same parser and evaluator as the REPL. |
 
 Prefer enums for semantic distinctions over booleans: `ExpansionContext`, `CommandOutcome` (`Status`, `Return`, `Break`, `Continue`, `Exit`), and `ParseOutcome`. Keep Rust infrastructure errors distinct from shell exit status and shell control flow. Use RAII for owned file descriptors and scoped restoration when a parent-run builtin redirects its own descriptors. Keep the process-owning core single-threaded; the child side of `fork` should perform only the minimum descriptor setup and `exec`/exit path.
 
 Represent Unix variable values and pathnames as bytes or `OsString`, since POSIX parameters may contain arbitrary non-NUL bytes. Source locations should use byte offsets. Keep character- and locale-sensitive operations behind explicit interfaces; this choice does not itself solve every locale rule. We should decide the supported input encodings before freezing the lexer API.
-
-## Planned files and naming
-
-Follow the existing layout: flat, snake_case modules under `src/`; `src/builtins/mod.rs` plus one snake_case file per builtin; no new workspace crates or nested module tree. These are planned replacement files in the rewrite, **not** files to create now. An existing path means its old contents would be replaced, not reused as a design constraint.
-
-**First implementation slice:**
-
-| Path | Purpose |
-| --- | --- |
-| `Cargo.toml` | Reset package metadata and dependencies to the agreed baseline. |
-| `src/main.rs` | CLI argument handling and selection of `-c`, file, or standard input. |
-| `src/input.rs` | Incremental input and stack of original/alias sources. New path. |
-| `src/tokenizer.rs` | Pull tokenizer. New path. |
-| `src/parser.rs` | Context-sensitive grammar, alias substitution, and here-document scheduling. |
-| `src/ast.rs` | Syntax nodes, word parts, and source spans. New path. |
-| `src/shell.rs` | Explicit shell state and top-level read/parse/evaluate loop. |
-| `src/variable.rs` | Variable representation, attributes, and lookup. |
-| `src/expand.rs` | Word expansion by context. |
-| `src/eval.rs` | Command evaluation and control flow. |
-| `src/process.rs` | The `nix` boundary for processes and file descriptors. |
-| `src/builtins/mod.rs` | Builtin lookup, categories, and dispatch. |
-| `src/builtins/alias.rs`, `cd.rs`, `exit.rs`, `export.rs`, `unset.rs` | Initial state-changing builtins, each in its own existing-style file. |
-
-**As their milestones arrive:** add `src/pattern.rs` for shell patterns and pathname expansion; individual `src/builtins/*.rs` files for each remaining builtin; `src/mainloop.rs` for the interactive loop; and `src/history.rs`, `src/prompt.rs`, and `src/highlight.rs` only when those features are actually designed. Reuse the existing `test/*.sh` and expected `.stdout`/`.stderr` naming convention for black-box compatibility cases, with focused Rust unit tests beside their modules.
-
-Do not create parallel names for the same responsibility (`lexer.rs` beside `tokenizer.rs`, `state.rs` beside `shell.rs`, or `unix.rs` beside `process.rs`). Split a file only when a concrete module boundary makes it easier to understand.
 
 ## Minimal build order
 
