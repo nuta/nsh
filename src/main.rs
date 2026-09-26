@@ -4,5 +4,5 @@ use shell::Shell;
 
 pub fn main() {
     let shell = Shell::new();
-    shell.run("");
+    shell.run("echo hello");
 }
