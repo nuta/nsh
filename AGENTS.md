@@ -1,3 +1,5 @@
+This is a POSIX-compatible command-line shell in Rust.
+
 See DESIGN.md.
 
 ## Coding style
