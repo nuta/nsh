@@ -1,3 +1,0 @@
-name = { (ASCII_ALPHANUMERIC | "_" | "-")+ }
-body = { "\""? ~ (!"\"" ~ ANY)+ ~ "~\""? }
-alias = { SOI ~ name ~ "=" ~ body ~ EOI }
